@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import Link from "next/link";
-import { useSwipeable } from "react-swipeable";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { getFlashcards, submitReview } from "@/lib/api";
 import { getStoredUserId } from "@/components/user-selector";
+
+const HINT_STORAGE_KEY = "flashcardHintSeen";
 
 interface StudyPageProps {
   params: { deck_id: string };
@@ -24,6 +25,12 @@ export default function StudyPage({ params }: StudyPageProps) {
   const [loading, setLoading] = useState(true);
   const [currentCardIndex, setCurrentCardIndex] = useState(0);
   const [showAnswer, setShowAnswer] = useState(false);
+  const [showHint, setShowHint] = useState(false);
+  const touchStartX = useRef(0);
+
+  useEffect(() => {
+    setShowHint(typeof window !== "undefined" && !localStorage.getItem(HINT_STORAGE_KEY));
+  }, []);
 
   useEffect(() => {
     async function fetchFlashcards() {
@@ -45,28 +52,39 @@ export default function StudyPage({ params }: StudyPageProps) {
     setShowAnswer(false);
   }, [params.deck_id]);
 
-  const handleNext = () => {
+  const handleNext = useCallback(() => {
     setShowAnswer(false);
     setCurrentCardIndex((i) => Math.min(i + 1, flashcards.length - 1));
-  };
+  }, [flashcards.length]);
 
-  const handlePrev = () => {
+  const handlePrev = useCallback(() => {
     setShowAnswer(false);
     setCurrentCardIndex((i) => Math.max(i - 1, 0));
-  };
+  }, []);
 
-  const swipeHandlers = useSwipeable({
-    onSwipedLeft: handleNext,
-    onSwipedRight: handlePrev,
-    trackMouse: true,
-  });
+  function handleTouchStart(e: React.TouchEvent) {
+    touchStartX.current = e.touches[0].clientX;
+  }
+
+  function handleTouchEnd(e: React.TouchEvent) {
+    const diff = e.changedTouches[0].clientX - touchStartX.current;
+    if (diff > 60) handlePrev();
+    if (diff < -60) handleNext();
+  }
+
+  function dismissHint() {
+    if (typeof window !== "undefined") {
+      localStorage.setItem(HINT_STORAGE_KEY, "true");
+      setShowHint(false);
+    }
+  }
 
   useEffect(() => {
     if (loading || flashcards.length === 0) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.code === "Space") {
         e.preventDefault();
-        setShowAnswer(true);
+        setShowAnswer((prev) => !prev);
       }
       if (e.code === "ArrowRight") {
         e.preventDefault();
@@ -128,7 +146,7 @@ export default function StudyPage({ params }: StudyPageProps) {
   };
 
   return (
-    <main className="min-h-[70vh] flex flex-col pt-4 pb-6">
+    <main className="min-h-[70vh] flex flex-col items-center px-4">
       <Link
         href={`/decks/${params.deck_id}`}
         className="self-start inline-flex h-10 items-center justify-center rounded-lg px-4 text-sm font-medium hover:bg-muted"
@@ -136,17 +154,18 @@ export default function StudyPage({ params }: StudyPageProps) {
         ← Back
       </Link>
 
-      <div className="text-center text-sm text-muted-foreground pt-4 pb-6">
+      <div className="text-sm text-muted-foreground mb-4 text-center w-full">
         Card {currentCardIndex + 1} / {flashcards.length}
       </div>
 
-      <div className="flex-1 flex items-center justify-center min-h-0">
+      <div className="flex-1 flex items-center justify-center min-h-0 w-full max-w-3xl mx-auto relative">
         <div
-          {...swipeHandlers}
-          className="w-full max-w-3xl mx-auto px-4 flex items-center justify-center touch-pan-y"
+          onTouchStart={handleTouchStart}
+          onTouchEnd={handleTouchEnd}
+          className="w-full flex items-center justify-center touch-pan-y"
         >
           <Card
-            onClick={() => setShowAnswer(true)}
+            onClick={() => setShowAnswer((prev) => !prev)}
             className="w-full flex items-center justify-center p-6 md:p-8 text-center cursor-pointer hover:bg-muted/50 transition-colors min-h-[280px]"
           >
             <div className="w-full">
@@ -161,7 +180,7 @@ export default function StudyPage({ params }: StudyPageProps) {
               )}
 
               {showAnswer && (
-                <div className="mt-8">
+                <div className="mt-8" onClick={(e) => e.stopPropagation()}>
                   <div className="text-lg md:text-xl leading-relaxed">
                     {card.answer_short}
                   </div>
@@ -205,14 +224,23 @@ export default function StudyPage({ params }: StudyPageProps) {
             </div>
           </Card>
         </div>
+
+        {showHint && (
+          <div
+            className="absolute bottom-6 left-1/2 -translate-x-1/2 text-sm text-muted-foreground opacity-70 bg-background/90 px-4 py-2 rounded-lg border border-border"
+            onClick={dismissHint}
+          >
+            Tap to flip • Swipe to navigate
+          </div>
+        )}
       </div>
 
-      <div className="flex flex-col sm:flex-row justify-center gap-3 pt-6 pb-4">
+      <div className="hidden md:flex justify-center gap-4 mt-6 pb-4">
         <Button
           variant="outline"
           onClick={handlePrev}
           disabled={isFirst}
-          className="h-12 text-base w-full sm:w-auto"
+          className="h-12 text-base"
         >
           ← Previous
         </Button>
@@ -220,7 +248,7 @@ export default function StudyPage({ params }: StudyPageProps) {
           variant="outline"
           onClick={handleNext}
           disabled={isLast}
-          className="h-12 text-base w-full sm:w-auto"
+          className="h-12 text-base"
         >
           Next →
         </Button>
