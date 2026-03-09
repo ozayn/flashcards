@@ -1,4 +1,7 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+/** Base API URL, normalized (no trailing slash) to avoid double slashes. */
+export const apiUrl =
+  (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/$/, "");
+const API_URL = apiUrl;
 
 export async function fetchApi<T>(
   endpoint: string,

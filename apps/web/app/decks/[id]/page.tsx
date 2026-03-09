@@ -9,6 +9,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { apiUrl } from "@/lib/api";
 
 interface DeckPageProps {
   params: { id: string };
@@ -36,7 +37,7 @@ export default function DeckPage({ params }: DeckPageProps) {
     async function fetchDeck() {
       try {
         const res = await fetch(
-          `${process.env.NEXT_PUBLIC_API_URL}/decks/${params.id}`
+          `${apiUrl}/decks/${params.id}`
         );
         if (!res.ok) {
           setNotFound(true);
@@ -60,7 +61,7 @@ export default function DeckPage({ params }: DeckPageProps) {
     async function fetchFlashcards() {
       try {
         const res = await fetch(
-          `${process.env.NEXT_PUBLIC_API_URL}/decks/${params.id}/flashcards`
+          `${apiUrl}/decks/${params.id}/flashcards`
         );
         if (res.ok) {
           const data = await res.json();

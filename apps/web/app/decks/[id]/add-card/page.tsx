@@ -12,6 +12,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { apiUrl } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 interface AddCardPageProps {
@@ -34,7 +35,7 @@ export default function AddCardPage({ params }: AddCardPageProps) {
 
     try {
       const res = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/flashcards`,
+        `${apiUrl}/flashcards`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },

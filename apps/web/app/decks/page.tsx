@@ -9,6 +9,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { apiUrl } from "@/lib/api";
 
 export type Deck = {
   id: string;
@@ -27,7 +28,7 @@ export default function DecksPage() {
   useEffect(() => {
     async function fetchDecks() {
       try {
-        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/decks?user_id=0c6dfccc-8a36-4ffb-a002-a288a6401a69`);
+        const res = await fetch(`${apiUrl}/decks?user_id=0c6dfccc-8a36-4ffb-a002-a288a6401a69`);
         const data = await res.json();
         // API returns array directly: [{ id, user_id, name, ... }, ...]
         setDecks(Array.isArray(data) ? data : []);
