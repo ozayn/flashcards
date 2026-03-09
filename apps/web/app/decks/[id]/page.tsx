@@ -154,7 +154,7 @@ export default function DeckPage({ params }: DeckPageProps) {
           </CardHeader>
           <CardContent className="flex flex-wrap gap-3">
             <Link
-              href={`/study?deck=${deck.id}`}
+              href={`/study/${deck.id}`}
               className="inline-flex h-8 items-center justify-center rounded-lg bg-primary px-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/80"
             >
               Study
