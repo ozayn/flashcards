@@ -138,6 +138,57 @@ Planned experiments enabled by the LLM router:
 
 ---
 
+## Local LLM Support (Future)
+
+The platform will eventually support running open-source language models locally instead of relying only on external APIs.
+
+**Purpose:**
+
+- Reduce AI API costs
+- Allow offline experimentation
+- Enable full control of AI generation
+- Support AI research and model comparisons
+
+**Planned architecture:**
+
+```
+Frontend
+   ↓
+FastAPI Backend
+   ↓
+LLM Router
+   ↓
+Providers:
+   - Groq (current production)
+   - OpenAI (future)
+   - Local models via Ollama (future)
+```
+
+**Possible local models:**
+
+- Llama 3
+- Mistral
+- Phi-3
+- Gemma
+
+**Possible hosting setups:**
+
+1. Development machine using Ollama
+2. Dedicated GPU server (RunPod, Lambda Labs, Vast.ai)
+3. Self-hosted AI infrastructure
+
+The LLM router already implemented in the backend allows switching providers via:
+
+```
+LLM_PROVIDER=groq
+LLM_PROVIDER=openai
+LLM_PROVIDER=local
+```
+
+This will make experimentation and model benchmarking possible.
+
+---
+
 ## Long-Term Goal
 
 Turn the flashcard platform into an **AI learning laboratory**, where different models can be evaluated for:
