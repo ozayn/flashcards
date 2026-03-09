@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useSwipeable } from "react-swipeable";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { apiUrl } from "@/lib/api";
 
@@ -66,6 +66,26 @@ export default function StudyPage({ params }: StudyPageProps) {
     trackMouse: true,
   });
 
+  useEffect(() => {
+    if (loading || flashcards.length === 0) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.code === "Space") {
+        e.preventDefault();
+        setShowAnswer(true);
+      }
+      if (e.code === "ArrowRight") {
+        e.preventDefault();
+        handleNext();
+      }
+      if (e.code === "ArrowLeft") {
+        e.preventDefault();
+        handlePrev();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [loading, flashcards.length, handleNext, handlePrev]);
+
   if (loading) {
     return (
       <main className="min-h-screen flex items-center justify-center p-6">
@@ -101,66 +121,71 @@ export default function StudyPage({ params }: StudyPageProps) {
   const isLast = currentCardIndex === flashcards.length - 1;
 
   return (
-    <main className="h-[calc(100vh-80px)] flex flex-col items-center px-6">
+    <main className="h-[calc(100vh-80px)] flex flex-col px-6">
       <Link
         href={`/decks/${params.deck_id}`}
-        className="self-start inline-flex h-10 items-center justify-center rounded-lg px-4 text-sm font-medium hover:bg-muted mb-4"
+        className="self-start inline-flex h-10 items-center justify-center rounded-lg px-4 text-sm font-medium hover:bg-muted py-4"
       >
         ← Back
       </Link>
 
-      <div className="text-center text-sm text-muted-foreground mb-4">
+      <div className="text-center text-sm text-muted-foreground py-4">
         Card {currentCardIndex + 1} / {flashcards.length}
       </div>
 
-      <div className="flex-1 w-full flex items-center justify-center min-h-0">
+      <div className="flex-1 flex items-center justify-center min-h-0">
         <div
           {...swipeHandlers}
-          className="w-full h-full max-w-5xl flex items-center justify-center touch-pan-y"
+          className="w-full h-full flex items-center justify-center touch-pan-y"
         >
-          <button
-            type="button"
+          <Card
             onClick={() => setShowAnswer(true)}
-            className="w-full h-full flex items-center justify-center text-center cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded-xl"
-            aria-label={showAnswer ? "Answer revealed" : "Tap to reveal answer"}
+            className="w-full max-w-6xl h-full flex items-center justify-center p-12 text-center cursor-pointer hover:bg-muted/50 transition-colors"
           >
-            <Card className="w-full h-full max-w-5xl flex items-center justify-center cursor-pointer hover:bg-muted/50 transition-colors">
-              <CardContent className="p-12 flex flex-col items-center justify-center text-center h-full">
-                <p className="text-3xl md:text-4xl lg:text-5xl font-semibold">{card.question}</p>
-                {showAnswer ? (
-                  <>
-                    <p className="text-xl md:text-2xl lg:text-3xl mt-4">{card.answer_short}</p>
-                    {card.answer_detailed && (
-                      <p className="text-muted-foreground mt-2">
-                        {card.answer_detailed}
-                      </p>
-                    )}
-                  </>
-                ) : (
-                  <p className="text-sm text-muted-foreground mt-4">Tap to reveal</p>
-                )}
-              </CardContent>
-            </Card>
-          </button>
+            <div>
+              <div className="text-3xl md:text-4xl lg:text-5xl font-semibold">
+                {card.question}
+              </div>
+
+              {!showAnswer && (
+                <div className="mt-6 text-muted-foreground">
+                  Tap to reveal
+                </div>
+              )}
+
+              {showAnswer && (
+                <div className="mt-8">
+                  <div className="text-xl md:text-2xl">
+                    {card.answer_short}
+                  </div>
+                  {card.answer_detailed && (
+                    <div className="mt-2 text-muted-foreground">
+                      {card.answer_detailed}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </Card>
         </div>
       </div>
 
-      <div className="w-full max-w-4xl flex justify-center gap-4 mt-4 pb-4">
+      <div className="flex justify-center gap-4 py-6">
         <Button
           variant="outline"
           onClick={handlePrev}
           disabled={isFirst}
-          className="flex-1 min-w-[150px] h-12 text-base"
+          className="h-12 text-base"
         >
-          Previous Card
+          ← Previous
         </Button>
         <Button
           variant="outline"
           onClick={handleNext}
           disabled={isLast}
-          className="flex-1 min-w-[150px] h-12 text-base"
+          className="h-12 text-base"
         >
-          Next Card
+          Next →
         </Button>
       </div>
     </main>
