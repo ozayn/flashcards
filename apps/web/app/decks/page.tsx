@@ -28,9 +28,15 @@ export default function DecksPage() {
   useEffect(() => {
     async function fetchDecks() {
       try {
-        const res = await fetch(`${apiUrl}/decks?user_id=d3b5a509-1d7b-4f11-b20c-2dc78dc3b093`);
-        const data = await res.json();
-        // API returns array directly: [{ id, user_id, name, ... }, ...]
+        const usersRes = await fetch(`${apiUrl}/users`);
+        const users = await usersRes.json();
+        if (!Array.isArray(users) || users.length === 0) {
+          setDecks([]);
+          return;
+        }
+        const userId = users[0].id;
+        const decksRes = await fetch(`${apiUrl}/decks?user_id=${userId}`);
+        const data = await decksRes.json();
         setDecks(Array.isArray(data) ? data : []);
       } catch (err) {
         console.error("Failed to load decks", err);
