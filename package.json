@@ -1,0 +1,14 @@
+{
+  "name": "flashcard-ai",
+  "private": true,
+  "scripts": {
+    "dev": "npm run dev --workspace=web",
+    "dev:web": "npm run dev --workspace=web",
+    "dev:api": "cd apps/api && uvicorn app.main:app --reload",
+    "build:web": "npm run build --workspace=web",
+    "build:api": "cd apps/api && pip install -r requirements.txt"
+  },
+  "workspaces": [
+    "apps/web"
+  ]
+}

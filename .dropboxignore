@@ -1,0 +1,8 @@
+# Exclude from Dropbox sync to avoid webpack cache conflicts
+# Add these in Dropbox: Settings > Sync > Selective Sync (uncheck these folders)
+apps/web/.next/
+apps/web/node_modules/
+apps/api/.venv/
+apps/api/venv/
+*.db
+dev.db

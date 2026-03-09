@@ -1,0 +1,28 @@
+from datetime import datetime
+from typing import Optional
+
+from pydantic import BaseModel, Field
+
+from app.models.enums import SourceType
+
+
+class DeckCreate(BaseModel):
+    user_id: str = Field(..., description="User ID")
+    name: str = Field(..., min_length=1, max_length=255)
+    description: Optional[str] = Field(None, max_length=500)
+    source_type: SourceType = Field(default=SourceType.topic)
+    source_url: Optional[str] = Field(None, max_length=2048)
+    source_text: Optional[str] = None
+
+
+class DeckResponse(BaseModel):
+    id: str
+    user_id: str
+    name: str
+    description: Optional[str] = None
+    source_type: SourceType
+    source_url: Optional[str] = None
+    source_text: Optional[str] = None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
