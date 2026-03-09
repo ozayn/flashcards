@@ -135,7 +135,7 @@ export default function AddCardPage({ params }: AddCardPageProps) {
               {error && (
                 <p className="text-sm text-destructive">{error}</p>
               )}
-              <Button type="submit" disabled={submitting}>
+              <Button type="submit" disabled={submitting} className="w-full sm:w-auto">
                 {submitting ? "Adding..." : "Add Card"}
               </Button>
             </form>

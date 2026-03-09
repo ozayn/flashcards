@@ -128,70 +128,74 @@ export default function StudyPage({ params }: StudyPageProps) {
   };
 
   return (
-    <main className="h-[calc(100vh-80px)] flex flex-col px-6">
+    <main className="min-h-[70vh] flex flex-col pt-4 pb-6">
       <Link
         href={`/decks/${params.deck_id}`}
-        className="self-start inline-flex h-10 items-center justify-center rounded-lg px-4 text-sm font-medium hover:bg-muted py-4"
+        className="self-start inline-flex h-10 items-center justify-center rounded-lg px-4 text-sm font-medium hover:bg-muted"
       >
         ← Back
       </Link>
 
-      <div className="text-center text-sm text-muted-foreground py-4">
+      <div className="text-center text-sm text-muted-foreground pt-4 pb-6">
         Card {currentCardIndex + 1} / {flashcards.length}
       </div>
 
       <div className="flex-1 flex items-center justify-center min-h-0">
         <div
           {...swipeHandlers}
-          className="w-full h-full flex items-center justify-center touch-pan-y"
+          className="w-full max-w-3xl mx-auto px-4 flex items-center justify-center touch-pan-y"
         >
           <Card
             onClick={() => setShowAnswer(true)}
-            className="w-full max-w-6xl h-full flex items-center justify-center p-12 text-center cursor-pointer hover:bg-muted/50 transition-colors"
+            className="w-full flex items-center justify-center p-6 md:p-8 text-center cursor-pointer hover:bg-muted/50 transition-colors min-h-[280px]"
           >
-            <div>
-              <div className="text-3xl md:text-4xl lg:text-5xl font-semibold">
+            <div className="w-full">
+              <div className="text-lg md:text-xl leading-relaxed font-semibold">
                 {card.question}
               </div>
 
               {!showAnswer && (
-                <div className="mt-6 text-muted-foreground">
+                <div className="mt-6 text-muted-foreground text-sm">
                   Tap to reveal
                 </div>
               )}
 
               {showAnswer && (
                 <div className="mt-8">
-                  <div className="text-xl md:text-2xl">
+                  <div className="text-lg md:text-xl leading-relaxed">
                     {card.answer_short}
                   </div>
                   {card.answer_detailed && (
-                    <div className="mt-2 text-muted-foreground">
+                    <div className="mt-4 text-muted-foreground text-sm md:text-base">
                       {card.answer_detailed}
                     </div>
                   )}
-                  <div className="flex gap-3 justify-center mt-8 flex-wrap">
+                  <div className="flex flex-col sm:flex-row gap-3 justify-center mt-8 flex-wrap">
                     <Button
                       variant="destructive"
                       onClick={() => rateCard("again")}
+                      className="w-full sm:w-auto"
                     >
                       Again
                     </Button>
                     <Button
                       variant="secondary"
                       onClick={() => rateCard("hard")}
+                      className="w-full sm:w-auto"
                     >
                       Hard
                     </Button>
                     <Button
                       variant="default"
                       onClick={() => rateCard("good")}
+                      className="w-full sm:w-auto"
                     >
                       Good
                     </Button>
                     <Button
                       variant="outline"
                       onClick={() => rateCard("easy")}
+                      className="w-full sm:w-auto"
                     >
                       Easy
                     </Button>
@@ -203,12 +207,12 @@ export default function StudyPage({ params }: StudyPageProps) {
         </div>
       </div>
 
-      <div className="flex justify-center gap-4 py-6">
+      <div className="flex flex-col sm:flex-row justify-center gap-3 pt-6 pb-4">
         <Button
           variant="outline"
           onClick={handlePrev}
           disabled={isFirst}
-          className="h-12 text-base"
+          className="h-12 text-base w-full sm:w-auto"
         >
           ← Previous
         </Button>
@@ -216,7 +220,7 @@ export default function StudyPage({ params }: StudyPageProps) {
           variant="outline"
           onClick={handleNext}
           disabled={isLast}
-          className="h-12 text-base"
+          className="h-12 text-base w-full sm:w-auto"
         >
           Next →
         </Button>

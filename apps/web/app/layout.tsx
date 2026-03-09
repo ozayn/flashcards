@@ -14,16 +14,30 @@ export const metadata: Metadata = {
   description: "AI-powered flashcard learning platform",
 };
 
+function ThemeScript() {
+  const script = `
+    (function() {
+      var s = localStorage.getItem('flashcard-theme');
+      var d = s === 'dark' || (s !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      document.documentElement.classList.toggle('dark', d);
+    })();
+  `;
+  return <script dangerouslySetInnerHTML={{ __html: script }} />;
+}
+
 export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={cn("font-sans", inter.variable)}>
-      <body className={cn(inter.className, "antialiased")}>
+    <html lang="en" className={cn("font-sans", inter.variable)} suppressHydrationWarning>
+      <body className={cn(inter.className, "antialiased bg-background text-foreground")}>
+        <ThemeScript />
         <Nav />
-        {children}
+        <div className="min-h-screen px-4 md:px-6">
+          {children}
+        </div>
       </body>
     </html>
   );

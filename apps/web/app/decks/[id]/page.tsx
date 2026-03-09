@@ -198,16 +198,16 @@ export default function DeckPage({ params }: DeckPageProps) {
               </p>
             )}
           </CardHeader>
-          <CardContent className="flex flex-wrap gap-3">
+          <CardContent className="flex flex-col sm:flex-row flex-wrap gap-3">
             <Link
               href={`/study/${deck.id}`}
-              className="inline-flex h-8 items-center justify-center rounded-lg bg-primary px-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/80"
+              className="inline-flex h-10 items-center justify-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/80 w-full sm:w-auto"
             >
               Study
             </Link>
             <Link
               href={`/decks/${deck.id}/add-card`}
-              className="inline-flex h-8 items-center justify-center rounded-lg border border-border bg-background px-2.5 text-sm font-medium hover:bg-muted"
+              className="inline-flex h-10 items-center justify-center rounded-lg border border-border bg-background px-4 text-sm font-medium hover:bg-muted w-full sm:w-auto"
             >
               Add Card
             </Link>
@@ -215,7 +215,7 @@ export default function DeckPage({ params }: DeckPageProps) {
               type="button"
               onClick={handleGenerate}
               disabled={generating}
-              className="inline-flex h-8 items-center justify-center rounded-lg border border-border bg-background px-2.5 text-sm font-medium hover:bg-muted disabled:opacity-50 disabled:pointer-events-none"
+              className="inline-flex h-10 items-center justify-center rounded-lg border border-border bg-background px-4 text-sm font-medium hover:bg-muted disabled:opacity-50 disabled:pointer-events-none w-full sm:w-auto"
             >
               {generating ? "Generating..." : "Generate Flashcards"}
             </button>
