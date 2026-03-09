@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { apiUrl } from "@/lib/api";
+import { getStoredUserId } from "@/components/user-selector";
 
 export default function CreateDeckPage() {
   const [name, setName] = useState("");
@@ -22,6 +23,18 @@ export default function CreateDeckPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    let userId = getStoredUserId();
+    if (!userId) {
+      const usersRes = await fetch(`${apiUrl}/users`, { cache: "no-store" });
+      const users = await usersRes.json();
+      if (Array.isArray(users) && users.length > 0) {
+        userId = users[0].id;
+      } else {
+        alert("No user found. Please refresh the page.");
+        return;
+      }
+    }
+
     setLoading(true);
 
     const res = await fetch(`${apiUrl}/decks`, {
@@ -30,7 +43,7 @@ export default function CreateDeckPage() {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        user_id: "0c6dfccc-8a36-4ffb-a002-a288a6401a69",
+        user_id: userId,
         name,
         description,
         source_type: "topic",

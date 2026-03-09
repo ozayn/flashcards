@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { UserSelector } from "@/components/user-selector";
 
 export function Nav() {
   return (
@@ -27,6 +28,7 @@ export function Nav() {
             >
               Create
             </Link>
+            <UserSelector />
           </div>
         </div>
       </div>

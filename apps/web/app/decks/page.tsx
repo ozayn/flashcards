@@ -10,6 +10,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { apiUrl } from "@/lib/api";
+import { getStoredUserId } from "@/components/user-selector";
 
 export type Deck = {
   id: string;
@@ -24,28 +25,52 @@ export type Deck = {
 
 export default function DecksPage() {
   const [decks, setDecks] = useState<Deck[]>([]);
+  const [userId, setUserId] = useState<string | null>(() => getStoredUserId());
 
   useEffect(() => {
-    async function fetchDecks() {
+    async function resolveUserId() {
+      const stored = getStoredUserId();
+      if (stored) {
+        setUserId(stored);
+        return;
+      }
       try {
         const usersRes = await fetch(`${apiUrl}/users`, { cache: "no-store" });
         const users = await usersRes.json();
-        if (!Array.isArray(users) || users.length === 0) {
-          setDecks([]);
-          return;
+        if (Array.isArray(users) && users.length > 0) {
+          const firstId = users[0].id;
+          setUserId(firstId);
         }
-        const userId = users[0].id;
-        const decksRes = await fetch(`${apiUrl}/decks?user_id=${userId}`, { cache: "no-store" });
-        const data = await decksRes.json();
+      } catch {
+        setUserId(null);
+      }
+    }
+    resolveUserId();
+  }, []);
+
+  useEffect(() => {
+    const handleUserChanged = () => setUserId(getStoredUserId());
+    window.addEventListener("flashcard_user_changed", handleUserChanged);
+    return () => window.removeEventListener("flashcard_user_changed", handleUserChanged);
+  }, []);
+
+  useEffect(() => {
+    if (!userId) {
+      setDecks([]);
+      return;
+    }
+    async function fetchDecks() {
+      try {
+        const res = await fetch(`${apiUrl}/decks?user_id=${userId}`, { cache: "no-store" });
+        const data = await res.json();
         setDecks(Array.isArray(data) ? data : []);
       } catch (err) {
         console.error("Failed to load decks", err);
         setDecks([]);
       }
     }
-
     fetchDecks();
-  }, []);
+  }, [userId]);
 
   return (
     <main className="min-h-screen p-6">
