@@ -67,6 +67,65 @@ Providers:
 
 ---
 
+## AI Reliability Improvements
+
+To ensure flashcard generation is robust and production-ready, the platform will implement several reliability improvements.
+
+### Structured JSON Generation
+
+All LLM providers must return flashcards in strict JSON format.
+
+Example schema:
+
+```json
+{
+  "flashcards": [
+    {
+      "question": "...",
+      "answer_short": "...",
+      "answer_detailed": "...",
+      "difficulty": "easy"
+    }
+  ]
+}
+```
+
+The backend will validate responses before inserting cards into the database.
+
+### Automatic JSON Validation
+
+Responses will be validated against a schema before processing. Invalid responses will be rejected and logged.
+
+### Automatic Retry on Failure
+
+If JSON validation fails:
+
+1. Retry generation with a stricter prompt
+2. Attempt regeneration with the same model
+3. Optionally fall back to another LLM provider
+
+### LLM Fallback Routing
+
+If a provider fails or returns invalid output:
+
+- Retry with the same provider
+- Optionally route to another provider (OpenAI, local model)
+
+This will be enabled by the LLM router architecture.
+
+### Logging & Debugging
+
+All generation failures should log:
+
+- topic
+- model used
+- raw LLM response
+- validation errors
+
+This will make debugging and improving prompts easier.
+
+---
+
 ## Future AI Experiments
 
 Planned experiments enabled by the LLM router:
