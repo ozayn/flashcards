@@ -1,16 +1,15 @@
 import json
 import logging
-import os
 import re
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
-from groq import Groq
 from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.llm.router import generate_flashcards as llm_generate_flashcards
 from app.models import Deck, Flashcard
 from app.schemas.flashcard import DIFFICULTY_TO_INT
 from app.schemas.generated_flashcards import FlashcardGenerationResponse
@@ -18,8 +17,6 @@ from app.schemas.generated_flashcards import FlashcardGenerationResponse
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/generate-flashcards", tags=["generation"])
-
-GROQ_MODEL = "llama-3.1-8b-instant"
 
 
 class GenerateFlashcardsRequest(BaseModel):
@@ -51,14 +48,7 @@ async def generate_flashcards(
     payload: GenerateFlashcardsRequest,
     db: AsyncSession = Depends(get_db),
 ):
-    """Generate flashcards using Groq LLM."""
-    api_key = os.getenv("GROQ_API_KEY")
-    if not api_key:
-        raise HTTPException(
-            status_code=503,
-            detail="GROQ_API_KEY not configured. Set it in environment or .env.",
-        )
-
+    """Generate flashcards using configured LLM provider."""
     deck_id_str = str(payload.deck_id)
     result = await db.execute(select(Deck).where(Deck.id == deck_id_str))
     deck = result.scalar_one_or_none()
@@ -80,18 +70,10 @@ Return JSON with the format:
 
 Return only valid JSON, no other text."""
 
-    client = Groq(api_key=api_key)
-    chat_completion = client.chat.completions.create(
-        messages=[
-            {
-                "role": "system",
-                "content": "You are a helpful assistant. Return only valid JSON, no other text.",
-            },
-            {"role": "user", "content": prompt},
-        ],
-        model=GROQ_MODEL,
-    )
-    response_text = chat_completion.choices[0].message.content or ""
+    try:
+        response_text = llm_generate_flashcards(prompt)
+    except ValueError as e:
+        raise HTTPException(status_code=503, detail=str(e))
 
     try:
         parsed_json = _extract_json(response_text)

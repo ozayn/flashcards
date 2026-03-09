@@ -40,10 +40,26 @@ Topic → Groq LLM → JSON → Pydantic validation → Database → UI
 
 **Key components:**
 
-- Groq LLM (Llama 3.1)
+- Pluggable LLM router (Groq, OpenAI, local)
 - Structured JSON outputs
 - Pydantic schema validation
 - FastAPI generation endpoint
+
+## LLM Providers
+
+Flashcard generation uses a pluggable LLM router.
+
+Supported providers:
+
+- **groq** (default)
+- **openai** (future)
+- **local** (future)
+
+Set provider via environment variable:
+
+```
+LLM_PROVIDER=groq
+```
 
 **Endpoint:**
 
@@ -95,7 +111,7 @@ cd apps/web && npm run dev
 
 ### Environment Variables
 
-**Backend:** `DATABASE_URL` (optional, defaults to SQLite), `GROQ_API_KEY` (for AI generation)  
+**Backend:** `DATABASE_URL` (optional, defaults to SQLite), `LLM_PROVIDER` (groq/openai/local, default: groq), `GROQ_API_KEY` (for Groq AI generation)  
 **Frontend:** `NEXT_PUBLIC_API_URL` (e.g. http://localhost:8000)
 
 ## Deployment (Railway)
