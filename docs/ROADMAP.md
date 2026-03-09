@@ -26,6 +26,70 @@
 - [ ] User authentication
 - [ ] Study tutor / AI assistance
 
+## LLM Architecture & Model Routing
+
+The platform uses a pluggable LLM router that allows switching between different model providers without changing application logic.
+
+**Purpose:**
+
+- Support experimentation with different AI models
+- Allow cost optimization
+- Enable future local model support
+- Enable A/B testing of learning quality
+
+**Architecture:**
+
+```
+Frontend
+   ↓
+FastAPI Backend
+   ↓
+LLM Router
+   ↓
+Providers:
+  - Groq
+  - OpenAI
+  - Local models (future)
+```
+
+**Capabilities:**
+
+- Switch providers using environment variable `LLM_PROVIDER`
+- Compare model output quality
+- Route requests to different models
+- Add fallback models for reliability
+
+**Example providers:**
+
+- Groq (current)
+- OpenAI (future)
+- Local models via Ollama (future)
+
+---
+
+## Future AI Experiments
+
+Planned experiments enabled by the LLM router:
+
+- A/B testing flashcard quality between models
+- Compare explanation clarity
+- Evaluate learning retention with different AI-generated cards
+- Cost-aware routing (local model vs API model)
+- Adaptive model selection based on task difficulty
+
+---
+
+## Long-Term Goal
+
+Turn the flashcard platform into an **AI learning laboratory**, where different models can be evaluated for:
+
+- learning efficiency
+- explanation quality
+- flashcard usefulness
+- spaced-repetition optimization
+
+---
+
 ## Future Learning Features
 
 ### Spaced Repetition Engine
