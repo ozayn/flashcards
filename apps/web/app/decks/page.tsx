@@ -29,9 +29,11 @@ export default function DecksPage() {
       try {
         const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/decks?user_id=0c6dfccc-8a36-4ffb-a002-a288a6401a69`);
         const data = await res.json();
-        setDecks(data);
+        // API returns array directly: [{ id, user_id, name, ... }, ...]
+        setDecks(Array.isArray(data) ? data : []);
       } catch (err) {
         console.error("Failed to load decks", err);
+        setDecks([]);
       }
     }
 
