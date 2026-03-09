@@ -18,3 +18,13 @@
 - [ ] **Webpage parsing** - Create decks from URLs
 - [ ] **Authentication** - JWT or session-based auth
 - [ ] **User preferences** - Theme, default difficulty
+
+### Learning Engine (Future)
+
+- Implement spaced repetition scheduler
+- Add review rating system (Again / Hard / Good / Easy)
+- Create daily review queue
+- Track learning analytics
+- Add AI tutor explanations
+
+---
