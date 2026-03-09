@@ -4,7 +4,7 @@ import re
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,7 +12,6 @@ from app.core.database import get_db
 from app.llm.router import generate_flashcards as llm_generate_flashcards
 from app.models import Deck, Flashcard
 from app.schemas.flashcard import DIFFICULTY_TO_INT
-from app.schemas.generated_flashcards import FlashcardGenerationResponse
 
 logger = logging.getLogger(__name__)
 
@@ -55,20 +54,38 @@ async def generate_flashcards(
     if not deck:
         raise HTTPException(status_code=404, detail="Deck not found")
 
-    prompt = f"""Generate {payload.num_cards} flashcards about {payload.topic}.
-Return JSON with the format:
+    prompt = f"""You are an expert educator creating high-quality flashcards.
+
+Generate {payload.num_cards} flashcards about the following topic:
+
+{payload.topic}
+
+Each flashcard must contain:
+- question
+- answer_short
+- answer_detailed
+- difficulty (easy, medium, hard)
+
+Rules:
+- Questions must be clear and concise.
+- answer_short must be a short direct answer.
+- answer_detailed should briefly explain the concept.
+- Difficulty should reflect how challenging the card is.
+
+Return ONLY valid JSON.
+
+Format:
 
 {{
   "flashcards": [
     {{
       "question": "...",
       "answer_short": "...",
-      "answer_detailed": "..."
+      "answer_detailed": "...",
+      "difficulty": "easy"
     }}
   ]
-}}
-
-Return only valid JSON, no other text."""
+}}"""
 
     try:
         response_text = llm_generate_flashcards(prompt)
@@ -84,20 +101,32 @@ Return only valid JSON, no other text."""
             detail="Failed to parse LLM response as JSON",
         )
 
-    try:
-        validated = FlashcardGenerationResponse.model_validate(parsed_json)
-    except ValidationError as e:
-        logger.exception("LLM output validation failed: %s", e)
-        raise HTTPException(
-            status_code=500,
-            detail="LLM returned invalid flashcard format",
-        )
+    cards: list = parsed_json.get("flashcards", [])
+    print("Generated cards:", cards)
+    logger.info("Generated cards: %s", cards)
 
     created = 0
-    for card in validated.flashcards:
-        question = card.question
-        answer_short = card.answer_short
-        answer_detailed = card.answer_detailed
+    for raw_card in cards:
+        if not isinstance(raw_card, dict):
+            logger.warning("Skipping invalid card (not a dict): %s", raw_card)
+            continue
+
+        # Read question, answer_short, answer_detailed, difficulty (fallback: front/back)
+        question = raw_card.get("question") or raw_card.get("front")
+        answer_short = raw_card.get("answer_short") or raw_card.get("back") or raw_card.get("answer")
+
+        if not question or not answer_short:
+            logger.warning(
+                "Skipping card missing required fields (question/front, answer_short/back): %s",
+                raw_card,
+            )
+            continue
+
+        answer_detailed = raw_card.get("answer_detailed")
+        difficulty_str = raw_card.get("difficulty", "medium")
+        if difficulty_str not in DIFFICULTY_TO_INT:
+            difficulty_str = "medium"
+        difficulty = DIFFICULTY_TO_INT[difficulty_str]
 
         result = await db.execute(
             select(Flashcard).where(
@@ -109,10 +138,10 @@ Return only valid JSON, no other text."""
         if not existing:
             flashcard = Flashcard(
                 deck_id=deck_id_str,
-                question=question[:10000],
-                answer_short=answer_short[:1000],
-                answer_detailed=(answer_detailed[:10000] if answer_detailed else None),
-                difficulty=DIFFICULTY_TO_INT.get("medium", 1),
+                question=str(question)[:10000],
+                answer_short=str(answer_short)[:1000],
+                answer_detailed=(str(answer_detailed)[:10000] if answer_detailed else None),
+                difficulty=difficulty,
             )
             db.add(flashcard)
             created += 1

@@ -36,13 +36,13 @@ The system can automatically generate flashcards using an LLM.
 
 **Pipeline:**
 
-Topic → Groq LLM → JSON → Pydantic validation → Database → UI
+Topic → LLM → JSON → Parse & validate → Database → UI
 
 **Key components:**
 
 - Pluggable LLM router (Groq, OpenAI, local)
-- Structured JSON outputs
-- Pydantic schema validation
+- Structured JSON outputs (question, answer_short, answer_detailed, difficulty)
+- Manual parsing with fallbacks for simplified formats
 - FastAPI generation endpoint
 
 ## LLM Providers
@@ -60,6 +60,30 @@ Set provider via environment variable:
 ```
 LLM_PROVIDER=groq
 ```
+
+**Expected LLM JSON format:**
+
+The LLM must return JSON in this format:
+
+```json
+{
+  "flashcards": [
+    {
+      "question": "...",
+      "answer_short": "...",
+      "answer_detailed": "...",
+      "difficulty": "easy"
+    }
+  ]
+}
+```
+
+- `question` (required): The flashcard question.
+- `answer_short` (required): A short direct answer.
+- `answer_detailed` (optional): A brief explanation of the concept.
+- `difficulty` (optional): `"easy"`, `"medium"`, or `"hard"`. Defaults to `"medium"` if missing or invalid.
+
+The parser also accepts the simplified format `{"front": "...", "back": "..."}` (mapped to question/answer_short).
 
 **Endpoint:**
 
