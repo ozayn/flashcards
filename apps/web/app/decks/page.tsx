@@ -10,8 +10,19 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 
+export type Deck = {
+  id: string;
+  user_id: string;
+  name: string;
+  description: string | null;
+  source_type: string;
+  source_url: string | null;
+  source_text: string | null;
+  created_at: string;
+};
+
 export default function DecksPage() {
-  const [decks, setDecks] = useState<any[]>([]);
+  const [decks, setDecks] = useState<Deck[]>([]);
 
   useEffect(() => {
     async function fetchDecks() {
