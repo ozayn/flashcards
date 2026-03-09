@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { getUsers } from "@/lib/api";
 import { apiUrl } from "@/lib/api";
 
 const STORAGE_KEY = "flashcard_user_id";
@@ -18,12 +19,13 @@ export function UserSelector() {
   const [users, setUsers] = useState<User[]>([]);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [apiError, setApiError] = useState(false);
 
   useEffect(() => {
     async function loadUsers() {
+      setApiError(false);
       try {
-        const res = await fetch(`${apiUrl}/users`, { cache: "no-store" });
-        const data = await res.json();
+        const data = await getUsers();
         const userList = Array.isArray(data) ? data : [];
         setUsers(userList);
 
@@ -39,6 +41,7 @@ export function UserSelector() {
         }
       } catch {
         setUsers([]);
+        setApiError(true);
       } finally {
         setLoading(false);
       }
@@ -55,7 +58,21 @@ export function UserSelector() {
     );
   };
 
-  if (loading || users.length === 0) return null;
+  if (loading) return <span className="text-muted-foreground text-sm">Loading...</span>;
+
+  if (apiError) {
+    return (
+      <span className="text-amber-600 text-sm" title={`API at ${apiUrl}`}>
+        API unavailable
+      </span>
+    );
+  }
+
+  if (users.length === 0) {
+    return (
+      <span className="text-muted-foreground text-sm">No users</span>
+    );
+  }
 
   return (
     <select

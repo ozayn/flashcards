@@ -9,7 +9,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { apiUrl } from "@/lib/api";
+import { getDeck, getFlashcards, generateFlashcards, updateDeck } from "@/lib/api";
 
 interface DeckPageProps {
   params: { id: string };
@@ -33,19 +33,15 @@ export default function DeckPage({ params }: DeckPageProps) {
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [editingDescription, setEditingDescription] = useState(false);
+  const [title, setTitle] = useState(deck?.name ?? "");
+  const [description, setDescription] = useState(deck?.description ?? "");
 
   useEffect(() => {
     async function fetchDeck() {
       try {
-        const res = await fetch(
-          `${apiUrl}/decks/${params.id}`,
-          { cache: "no-store" }
-        );
-        if (!res.ok) {
-          setNotFound(true);
-          return;
-        }
-        const data = await res.json();
+        const data = await getDeck(params.id);
         setDeck(data);
       } catch {
         setNotFound(true);
@@ -58,18 +54,19 @@ export default function DeckPage({ params }: DeckPageProps) {
   }, [params.id]);
 
   useEffect(() => {
+    if (deck) {
+      setTitle(deck.name ?? "");
+      setDescription(deck.description ?? "");
+    }
+  }, [deck]);
+
+  useEffect(() => {
     if (!deck) return;
 
     async function fetchFlashcards() {
       try {
-        const res = await fetch(
-          `${apiUrl}/decks/${params.id}/flashcards`,
-          { cache: "no-store" }
-        );
-        if (res.ok) {
-          const data = await res.json();
-          setFlashcards(data);
-        }
+        const data = await getFlashcards(params.id);
+        setFlashcards(Array.isArray(data) ? data : []);
       } catch {
         // ignore
       }
@@ -82,26 +79,13 @@ export default function DeckPage({ params }: DeckPageProps) {
     if (!deck || generating) return;
     setGenerating(true);
     try {
-      const res = await fetch(`${apiUrl}/generate-flashcards`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        cache: "no-store",
-        body: JSON.stringify({
-          deck_id: deck.id,
-          topic: deck.name,
-          num_cards: 5,
-        }),
+      await generateFlashcards({
+        deck_id: deck.id,
+        topic: deck.name,
+        num_cards: 5,
       });
-      if (res.ok) {
-        const decksRes = await fetch(
-          `${apiUrl}/decks/${params.id}/flashcards`,
-          { cache: "no-store" }
-        );
-        if (decksRes.ok) {
-          const data = await decksRes.json();
-          setFlashcards(data);
-        }
-      }
+      const data = await getFlashcards(params.id);
+      setFlashcards(Array.isArray(data) ? data : []);
     } catch {
       // ignore
     } finally {
@@ -146,11 +130,73 @@ export default function DeckPage({ params }: DeckPageProps) {
         </Link>
 
         <Card>
-          <CardHeader>
-            <CardTitle>{deck.name}</CardTitle>
-            <CardDescription>
-              {deck.description || "No description"}
-            </CardDescription>
+          <CardHeader className="space-y-2">
+            {editingTitle ? (
+              <input
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                onBlur={async () => {
+                  if (deck) {
+                    try {
+                      await updateDeck(deck.id, { name: title });
+                      const data = await getDeck(params.id);
+                      setDeck(data);
+                    } catch {
+                      // ignore
+                    }
+                  }
+                  setEditingTitle(false);
+                }}
+                onKeyDown={async (e) => {
+                  if (e.key === "Enter" && deck) {
+                    try {
+                      await updateDeck(deck.id, { name: title });
+                      const data = await getDeck(params.id);
+                      setDeck(data);
+                    } catch {
+                      // ignore
+                    }
+                    setEditingTitle(false);
+                  }
+                }}
+                className="text-2xl font-semibold border rounded px-2 py-1 w-full"
+                autoFocus
+              />
+            ) : (
+              <h1
+                className="text-2xl font-semibold cursor-pointer"
+                onClick={() => setEditingTitle(true)}
+              >
+                {title}
+              </h1>
+            )}
+            {editingDescription ? (
+              <textarea
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                onBlur={async () => {
+                  if (deck) {
+                    try {
+                      await updateDeck(deck.id, { description });
+                      const data = await getDeck(params.id);
+                      setDeck(data);
+                    } catch {
+                      // ignore
+                    }
+                  }
+                  setEditingDescription(false);
+                }}
+                className="border rounded px-2 py-1 w-full min-h-[80px]"
+                autoFocus
+              />
+            ) : (
+              <p
+                className="text-muted-foreground cursor-pointer"
+                onClick={() => setEditingDescription(true)}
+              >
+                {description || "Click to add description"}
+              </p>
+            )}
           </CardHeader>
           <CardContent className="flex flex-wrap gap-3">
             <Link

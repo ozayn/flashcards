@@ -9,7 +9,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { apiUrl } from "@/lib/api";
+import { getUsers, getDecks } from "@/lib/api";
 import { getStoredUserId } from "@/components/user-selector";
 
 export type Deck = {
@@ -25,7 +25,8 @@ export type Deck = {
 
 export default function DecksPage() {
   const [decks, setDecks] = useState<Deck[]>([]);
-  const [userId, setUserId] = useState<string | null>(() => getStoredUserId());
+  const [userId, setUserId] = useState<string | null>(null);
+  const [decksError, setDecksError] = useState(false);
 
   useEffect(() => {
     async function resolveUserId() {
@@ -35,11 +36,9 @@ export default function DecksPage() {
         return;
       }
       try {
-        const usersRes = await fetch(`${apiUrl}/users`, { cache: "no-store" });
-        const users = await usersRes.json();
+        const users = await getUsers();
         if (Array.isArray(users) && users.length > 0) {
-          const firstId = users[0].id;
-          setUserId(firstId);
+          setUserId(users[0].id);
         }
       } catch {
         setUserId(null);
@@ -59,14 +58,16 @@ export default function DecksPage() {
       setDecks([]);
       return;
     }
+    const uid = userId;
     async function fetchDecks() {
       try {
-        const res = await fetch(`${apiUrl}/decks?user_id=${userId}`, { cache: "no-store" });
-        const data = await res.json();
+        setDecksError(false);
+        const data = await getDecks(uid);
         setDecks(Array.isArray(data) ? data : []);
       } catch (err) {
         console.error("Failed to load decks", err);
         setDecks([]);
+        setDecksError(true);
       }
     }
     fetchDecks();
@@ -90,7 +91,16 @@ export default function DecksPage() {
         </p>
 
         <div className="grid gap-4">
-          {decks.length === 0 ? (
+          {decksError ? (
+            <Card>
+              <CardHeader>
+                <CardTitle>Unable to load decks</CardTitle>
+                <CardDescription>
+                  The API may be unavailable. Ensure the backend is running at http://localhost:8000 and refresh the page.
+                </CardDescription>
+              </CardHeader>
+            </Card>
+          ) : decks.length === 0 ? (
             <Card>
               <CardHeader>
                 <CardTitle>Getting Started</CardTitle>

@@ -28,6 +28,12 @@ export function Nav() {
             >
               Create
             </Link>
+            <Link
+              href="/about"
+              className="text-muted-foreground hover:text-foreground transition-colors"
+            >
+              About
+            </Link>
             <UserSelector />
           </div>
         </div>

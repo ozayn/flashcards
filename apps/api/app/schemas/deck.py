@@ -6,6 +6,11 @@ from pydantic import BaseModel, Field
 from app.models.enums import SourceType
 
 
+class DeckUpdate(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=255)
+    description: Optional[str] = Field(None, max_length=500)
+
+
 class DeckCreate(BaseModel):
     user_id: str = Field(..., description="User ID")
     name: str = Field(..., min_length=1, max_length=255)

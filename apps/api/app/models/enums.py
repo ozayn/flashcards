@@ -18,8 +18,9 @@ class SourceType(str, enum.Enum):
 
 
 class ReviewRating(str, enum.Enum):
+    again = "again"
     hard = "hard"
-    medium = "medium"
+    good = "good"
     easy = "easy"
 
 

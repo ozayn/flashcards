@@ -12,7 +12,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { apiUrl } from "@/lib/api";
+import { getUsers, createDeck } from "@/lib/api";
 import { getStoredUserId } from "@/components/user-selector";
 
 export default function CreateDeckPage() {
@@ -23,10 +23,9 @@ export default function CreateDeckPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    let userId = getStoredUserId();
+    let userId: string | null = getStoredUserId();
     if (!userId) {
-      const usersRes = await fetch(`${apiUrl}/users`, { cache: "no-store" });
-      const users = await usersRes.json();
+      const users = await getUsers();
       if (Array.isArray(users) && users.length > 0) {
         userId = users[0].id;
       } else {
@@ -34,28 +33,17 @@ export default function CreateDeckPage() {
         return;
       }
     }
+    if (!userId) return;
 
     setLoading(true);
 
-    const res = await fetch(`${apiUrl}/decks`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        user_id: userId,
-        name,
-        description,
-        source_type: "topic",
-      }),
-    });
-
-    setLoading(false);
-
-    if (res.ok) {
+    try {
+      await createDeck({ user_id: userId, name, description });
       router.push("/decks");
-    } else {
+    } catch {
       alert("Failed to create deck");
+    } finally {
+      setLoading(false);
     }
   };
 

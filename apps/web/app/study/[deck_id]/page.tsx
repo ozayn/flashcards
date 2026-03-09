@@ -5,7 +5,8 @@ import Link from "next/link";
 import { useSwipeable } from "react-swipeable";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { apiUrl } from "@/lib/api";
+import { getFlashcards, submitReview } from "@/lib/api";
+import { getStoredUserId } from "@/components/user-selector";
 
 interface StudyPageProps {
   params: { deck_id: string };
@@ -27,14 +28,8 @@ export default function StudyPage({ params }: StudyPageProps) {
   useEffect(() => {
     async function fetchFlashcards() {
       try {
-        const res = await fetch(
-          `${apiUrl}/decks/${params.deck_id}/flashcards`,
-          { cache: "no-store" }
-        );
-        if (res.ok) {
-          const data = await res.json();
-          setFlashcards(Array.isArray(data) ? data : []);
-        }
+        const data = await getFlashcards(params.deck_id);
+        setFlashcards(Array.isArray(data) ? data : []);
       } catch {
         setFlashcards([]);
       } finally {
@@ -120,6 +115,18 @@ export default function StudyPage({ params }: StudyPageProps) {
   const isFirst = currentCardIndex === 0;
   const isLast = currentCardIndex === flashcards.length - 1;
 
+  const rateCard = async (rating: "again" | "hard" | "good" | "easy") => {
+    const userId = getStoredUserId();
+    if (userId) {
+      try {
+        await submitReview(card.id, rating, userId);
+      } catch {
+        // ignore
+      }
+    }
+    handleNext();
+  };
+
   return (
     <main className="h-[calc(100vh-80px)] flex flex-col px-6">
       <Link
@@ -163,6 +170,32 @@ export default function StudyPage({ params }: StudyPageProps) {
                       {card.answer_detailed}
                     </div>
                   )}
+                  <div className="flex gap-3 justify-center mt-8 flex-wrap">
+                    <Button
+                      variant="destructive"
+                      onClick={() => rateCard("again")}
+                    >
+                      Again
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      onClick={() => rateCard("hard")}
+                    >
+                      Hard
+                    </Button>
+                    <Button
+                      variant="default"
+                      onClick={() => rateCard("good")}
+                    >
+                      Good
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => rateCard("easy")}
+                    >
+                      Easy
+                    </Button>
+                  </div>
                 </div>
               )}
             </div>

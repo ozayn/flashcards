@@ -26,3 +26,128 @@ export async function fetchApi<T>(
 export async function healthCheck(): Promise<{ status: string }> {
   return fetchApi<{ status: string }>("/health");
 }
+
+export async function getUsers() {
+  const res = await fetch(`${apiUrl}/users`, { cache: "no-store" });
+  if (!res.ok) throw new Error("Failed to fetch users");
+  return res.json();
+}
+
+export async function getDecks(userId: string) {
+  const res = await fetch(`${apiUrl}/decks?user_id=${userId}`, { cache: "no-store" });
+  if (!res.ok) throw new Error("Failed to fetch decks");
+  return res.json();
+}
+
+export async function getDeck(deckId: string) {
+  const res = await fetch(`${apiUrl}/decks/${deckId}`, { cache: "no-store" });
+  if (!res.ok) throw new Error("Failed to fetch deck");
+  return res.json();
+}
+
+export async function createDeck(data: {
+  user_id: string;
+  name: string;
+  description?: string;
+}) {
+  const res = await fetch(`${apiUrl}/decks`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      ...data,
+      source_type: "topic",
+    }),
+  });
+
+  if (!res.ok) throw new Error("Failed to create deck");
+
+  return res.json();
+}
+
+export async function updateDeck(
+  deckId: string,
+  data: { name?: string; description?: string }
+) {
+  const res = await fetch(`${apiUrl}/decks/${deckId}`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(data),
+  });
+
+  if (!res.ok) throw new Error("Failed to update deck");
+
+  return res.json();
+}
+
+export async function getFlashcards(deckId: string) {
+  const res = await fetch(`${apiUrl}/decks/${deckId}/flashcards`, { cache: "no-store" });
+  if (!res.ok) throw new Error("Failed to fetch flashcards");
+  return res.json();
+}
+
+export async function createFlashcard(data: {
+  deck_id: string;
+  question: string;
+  answer_short: string;
+  answer_detailed?: string;
+  difficulty?: string;
+}) {
+  const res = await fetch(`${apiUrl}/flashcards`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(data),
+  });
+
+  if (!res.ok) throw new Error("Failed to create flashcard");
+
+  return res.json();
+}
+
+export async function generateFlashcards(data: {
+  deck_id: string;
+  topic: string;
+  num_cards?: number;
+}) {
+  const res = await fetch(`${apiUrl}/generate-flashcards`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      ...data,
+      num_cards: data.num_cards ?? 5,
+    }),
+  });
+
+  if (!res.ok) throw new Error("Failed to generate flashcards");
+
+  return res.json();
+}
+
+export async function submitReview(
+  flashcardId: string,
+  rating: "again" | "hard" | "good" | "easy",
+  userId: string
+) {
+  const res = await fetch(`${apiUrl}/reviews`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      flashcard_id: flashcardId,
+      rating,
+      user_id: userId,
+    }),
+  });
+
+  if (!res.ok) throw new Error("Failed to submit review");
+
+  return res.json();
+}

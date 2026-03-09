@@ -12,7 +12,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { apiUrl } from "@/lib/api";
+import { createFlashcard } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 interface AddCardPageProps {
@@ -34,26 +34,13 @@ export default function AddCardPage({ params }: AddCardPageProps) {
     setSubmitting(true);
 
     try {
-      const res = await fetch(
-        `${apiUrl}/flashcards`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          cache: "no-store",
-          body: JSON.stringify({
-            deck_id: params.id,
-            question,
-            answer_short: answerShort,
-            answer_detailed: answerDetailed || undefined,
-            difficulty,
-          }),
-        }
-      );
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.detail || `Failed to create flashcard (${res.status})`);
-      }
+      await createFlashcard({
+        deck_id: params.id,
+        question,
+        answer_short: answerShort,
+        answer_detailed: answerDetailed || undefined,
+        difficulty,
+      });
 
       router.push(`/decks/${params.id}`);
     } catch (err) {
