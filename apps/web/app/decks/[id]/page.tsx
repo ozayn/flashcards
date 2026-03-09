@@ -32,12 +32,14 @@ export default function DeckPage({ params }: DeckPageProps) {
   const [flashcards, setFlashcards] = useState<Flashcard[]>([]);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
+  const [generating, setGenerating] = useState(false);
 
   useEffect(() => {
     async function fetchDeck() {
       try {
         const res = await fetch(
-          `${apiUrl}/decks/${params.id}`
+          `${apiUrl}/decks/${params.id}`,
+          { cache: "no-store" }
         );
         if (!res.ok) {
           setNotFound(true);
@@ -61,7 +63,8 @@ export default function DeckPage({ params }: DeckPageProps) {
     async function fetchFlashcards() {
       try {
         const res = await fetch(
-          `${apiUrl}/decks/${params.id}/flashcards`
+          `${apiUrl}/decks/${params.id}/flashcards`,
+          { cache: "no-store" }
         );
         if (res.ok) {
           const data = await res.json();
@@ -74,6 +77,37 @@ export default function DeckPage({ params }: DeckPageProps) {
 
     fetchFlashcards();
   }, [deck, params.id]);
+
+  async function handleGenerate() {
+    if (!deck || generating) return;
+    setGenerating(true);
+    try {
+      const res = await fetch(`${apiUrl}/generate-flashcards`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+        body: JSON.stringify({
+          deck_id: deck.id,
+          topic: deck.name,
+          num_cards: 5,
+        }),
+      });
+      if (res.ok) {
+        const decksRes = await fetch(
+          `${apiUrl}/decks/${params.id}/flashcards`,
+          { cache: "no-store" }
+        );
+        if (decksRes.ok) {
+          const data = await decksRes.json();
+          setFlashcards(data);
+        }
+      }
+    } catch {
+      // ignore
+    } finally {
+      setGenerating(false);
+    }
+  }
 
   if (loading) {
     return (
@@ -131,6 +165,14 @@ export default function DeckPage({ params }: DeckPageProps) {
             >
               Add Card
             </Link>
+            <button
+              type="button"
+              onClick={handleGenerate}
+              disabled={generating}
+              className="inline-flex h-8 items-center justify-center rounded-lg border border-border bg-background px-2.5 text-sm font-medium hover:bg-muted disabled:opacity-50 disabled:pointer-events-none"
+            >
+              {generating ? "Generating..." : "Generate Flashcards"}
+            </button>
           </CardContent>
         </Card>
 

@@ -1,7 +1,22 @@
+from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import health, decks, users, flashcards
+from app.api import generation, health, decks, users, flashcards
+
+# Load .env from apps/api/ or apps/api/app/
+for env_path in [
+    Path(__file__).resolve().parent / ".env",
+    Path(__file__).resolve().parent.parent / ".env",
+]:
+    if env_path.exists():
+        try:
+            from dotenv import load_dotenv
+            load_dotenv(env_path)
+        except ImportError:
+            pass
+        break
 from app.core.database import engine, Base
 from app.core.init_db import init_db
 from app.models import User, Deck, Flashcard, Review  # noqa: F401 - register models
@@ -24,6 +39,7 @@ app.include_router(health.router)
 app.include_router(decks.router)
 app.include_router(users.router)
 app.include_router(flashcards.router)
+app.include_router(generation.router)
 
 
 @app.get("/")

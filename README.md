@@ -28,6 +28,38 @@ Full-stack monorepo for creating, managing, and studying flashcards. Supports us
 | GET | `/decks/{id}/flashcards` | List flashcards in deck |
 | POST | `/decks` | Create deck |
 | POST | `/flashcards` | Create flashcard |
+| POST | `/generate-flashcards` | Generate flashcards via LLM |
+
+## AI Flashcard Generation
+
+The system can automatically generate flashcards using an LLM.
+
+**Pipeline:**
+
+Topic → Groq LLM → JSON → Pydantic validation → Database → UI
+
+**Key components:**
+
+- Groq LLM (Llama 3.1)
+- Structured JSON outputs
+- Pydantic schema validation
+- FastAPI generation endpoint
+
+**Endpoint:**
+
+`POST /generate-flashcards`
+
+**Example request:**
+
+```json
+{
+  "deck_id": "...",
+  "topic": "Greek mythology",
+  "num_cards": 5
+}
+```
+
+The endpoint generates flashcards using the LLM and inserts them into the deck.
 
 ## Frontend Pages
 
@@ -35,7 +67,7 @@ Full-stack monorepo for creating, managing, and studying flashcards. Supports us
 |-------|-------------|
 | `/` | Home |
 | `/decks` | Deck list (API-backed, clickable cards) |
-| `/decks/[id]` | Deck details + flashcards section |
+| `/decks/[id]` | Deck details + flashcards + Generate button |
 | `/study` | Study session (placeholder) |
 | `/create-deck` | Create new deck |
 
@@ -63,7 +95,7 @@ cd apps/web && npm run dev
 
 ### Environment Variables
 
-**Backend:** `DATABASE_URL` (optional, defaults to SQLite), `OPENAI_API_KEY`  
+**Backend:** `DATABASE_URL` (optional, defaults to SQLite), `GROQ_API_KEY` (for AI generation)  
 **Frontend:** `NEXT_PUBLIC_API_URL` (e.g. http://localhost:8000)
 
 ## Deployment (Railway)
@@ -98,9 +130,7 @@ Configuration lives in `/infra`:
 
 ## Future Features
 
-- Add Card page (create flashcards from UI)
 - Study mode (flip cards, track progress)
-- LLM flashcard generation
 - Webpage parsing for deck creation
 - Spaced repetition (Reviews model)
 - User authentication

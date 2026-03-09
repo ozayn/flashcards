@@ -39,6 +39,7 @@ export default function AddCardPage({ params }: AddCardPageProps) {
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
+          cache: "no-store",
           body: JSON.stringify({
             deck_id: params.id,
             question,

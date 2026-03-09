@@ -28,14 +28,14 @@ export default function DecksPage() {
   useEffect(() => {
     async function fetchDecks() {
       try {
-        const usersRes = await fetch(`${apiUrl}/users`);
+        const usersRes = await fetch(`${apiUrl}/users`, { cache: "no-store" });
         const users = await usersRes.json();
         if (!Array.isArray(users) || users.length === 0) {
           setDecks([]);
           return;
         }
         const userId = users[0].id;
-        const decksRes = await fetch(`${apiUrl}/decks?user_id=${userId}`);
+        const decksRes = await fetch(`${apiUrl}/decks?user_id=${userId}`, { cache: "no-store" });
         const data = await decksRes.json();
         setDecks(Array.isArray(data) ? data : []);
       } catch (err) {

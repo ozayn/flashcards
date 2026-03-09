@@ -15,6 +15,7 @@ trap cleanup SIGINT SIGTERM
 
 echo "Starting backend..."
 cd apps/api
+if [ -d .venv ]; then source .venv/bin/activate; fi
 uvicorn main:app --reload --port 8000 &
 BACKEND_PID=$!
 cd "$SCRIPT_DIR"
