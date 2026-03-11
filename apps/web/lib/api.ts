@@ -33,6 +33,33 @@ export async function getUsers() {
   return res.json();
 }
 
+export async function createUser(data: {
+  email: string;
+  name: string;
+  role?: string;
+  plan?: string;
+}) {
+  const res = await fetch(`${apiUrl}/users`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      email: data.email,
+      name: data.name,
+      role: data.role ?? "user",
+      plan: data.plan ?? "free",
+    }),
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail ?? "Failed to create user");
+  }
+
+  return res.json();
+}
+
 export async function getDecks(userId: string, archived = false) {
   const res = await fetch(
     `${apiUrl}/decks?user_id=${userId}&archived=${archived}`,

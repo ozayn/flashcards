@@ -58,6 +58,7 @@ The API exposes `GET /health`. Railway uses this for health checks when configur
 
 ## Troubleshooting
 
+- **"Unable to load decks" / API calls to localhost:8000 in production**: The web app was built without `NEXT_PUBLIC_API_URL` set. Fix: Add `NEXT_PUBLIC_API_URL` = your production API URL (e.g. `https://your-api.up.railway.app`) in the web service Variables, then **redeploy** (rebuild). The variable is baked in at build time.
 - **API not connecting to DB**: Ensure `DATABASE_URL` is set and referenced from Postgres
 - **Web shows 404 for API calls**: Verify `NEXT_PUBLIC_API_URL` matches your API's public URL
 - **Build fails**: Run `npm run build` and `docker build` locally to reproduce

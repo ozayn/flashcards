@@ -11,13 +11,14 @@ logger = logging.getLogger(__name__)
 def _add_archived_column_if_missing(sync_conn):
     """Add archived column to decks table if it doesn't exist."""
     try:
-        sync_conn.execute(text("ALTER TABLE decks ADD COLUMN archived BOOLEAN DEFAULT 0"))
+        # PostgreSQL: use DEFAULT false; SQLite: use DEFAULT 0
+        sync_conn.execute(text("ALTER TABLE decks ADD COLUMN archived BOOLEAN DEFAULT false"))
         logger.info("Added archived column to decks table")
     except Exception as e:
         if "duplicate column" in str(e).lower() or "already exists" in str(e).lower():
             pass  # Column already exists
         else:
-            logger.debug("archived column migration skipped: %s", e)
+            logger.warning("archived column migration failed: %s", e)
 
 
 async def init_db() -> None:

@@ -11,7 +11,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { getUsers, getDecks, updateDeck } from "@/lib/api";
+import { getUsers, getDecks, updateDeck, apiUrl } from "@/lib/api";
 import { getStoredUserId } from "@/components/user-selector";
 
 export type Deck = {
@@ -121,7 +121,7 @@ export default function DecksPage() {
               <CardHeader>
                 <CardTitle>Unable to load decks</CardTitle>
                 <CardDescription>
-                  The API may be unavailable. Ensure the backend is running at http://localhost:8000 and refresh the page.
+                  The API may be unavailable. Ensure the backend is running and refresh the page. Configured API: {apiUrl}
                 </CardDescription>
               </CardHeader>
             </Card>

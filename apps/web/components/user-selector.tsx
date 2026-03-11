@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
-import { ChevronDown } from "lucide-react";
-import { getUsers } from "@/lib/api";
+import { ChevronDown, Plus } from "lucide-react";
+import { getUsers, createUser } from "@/lib/api";
 import { apiUrl } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -23,54 +23,80 @@ export function UserSelector() {
   const [loading, setLoading] = useState(true);
   const [apiError, setApiError] = useState(false);
   const [open, setOpen] = useState(false);
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [addEmail, setAddEmail] = useState("");
+  const [addName, setAddName] = useState("");
+  const [addError, setAddError] = useState<string | null>(null);
+  const [addLoading, setAddLoading] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    async function loadUsers() {
-      setApiError(false);
-      try {
-        const data = await getUsers();
-        const userList = Array.isArray(data) ? data : [];
-        setUsers(userList);
+  async function loadUsers() {
+    setApiError(false);
+    try {
+      const data = await getUsers();
+      const userList = Array.isArray(data) ? data : [];
+      setUsers(userList);
 
-        const stored = localStorage.getItem(STORAGE_KEY);
-        const validStored = userList.some((u: User) => u.id === stored);
-        const userId = validStored && stored ? stored : userList[0]?.id ?? null;
+      const stored = localStorage.getItem(STORAGE_KEY);
+      const validStored = userList.some((u: User) => u.id === stored);
+      const userId = validStored && stored ? stored : userList[0]?.id ?? null;
 
-        if (userId) {
-          setSelectedUserId(userId);
-          if (!validStored || !stored) {
-            localStorage.setItem(STORAGE_KEY, userId);
-          }
+      if (userId) {
+        setSelectedUserId(userId);
+        if (!validStored || !stored) {
+          localStorage.setItem(STORAGE_KEY, userId);
         }
-      } catch {
-        setUsers([]);
-        setApiError(true);
-      } finally {
-        setLoading(false);
       }
+    } catch {
+      setUsers([]);
+      setApiError(true);
+    } finally {
+      setLoading(false);
     }
+  }
+
+  useEffect(() => {
     loadUsers();
   }, []);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open && !(users.length === 0 && showAddForm)) return;
     function handleClickOutside(e: MouseEvent) {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
         setOpen(false);
+        if (users.length === 0) setShowAddForm(false);
       }
     }
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [open]);
+  }, [open, users.length, showAddForm]);
 
   const handleSelect = (userId: string) => {
     setSelectedUserId(userId);
     localStorage.setItem(STORAGE_KEY, userId);
     setOpen(false);
+    setShowAddForm(false);
     window.dispatchEvent(
       new CustomEvent("flashcard_user_changed", { detail: { userId } })
     );
+  };
+
+  const handleAddUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAddError(null);
+    setAddLoading(true);
+    try {
+      const newUser = await createUser({ email: addEmail.trim(), name: addName.trim() });
+      setUsers((prev) => [...prev, newUser]);
+      handleSelect(newUser.id);
+      setAddEmail("");
+      setAddName("");
+      setShowAddForm(false);
+    } catch (err) {
+      setAddError(err instanceof Error ? err.message : "Failed to create user");
+    } finally {
+      setAddLoading(false);
+    }
   };
 
   if (loading) return <span className="text-muted-foreground text-sm">Loading...</span>;
@@ -85,7 +111,55 @@ export function UserSelector() {
 
   if (users.length === 0) {
     return (
-      <span className="text-muted-foreground text-sm">No users</span>
+      <div ref={containerRef} className="relative">
+        <button
+          type="button"
+          onClick={() => setShowAddForm(true)}
+          className="flex h-8 items-center gap-1 rounded-md border border-dashed border-input bg-background px-2 text-sm text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+        >
+          <Plus className="size-4" />
+          Add user
+        </button>
+        {showAddForm && (
+          <div className="absolute right-0 top-full z-50 mt-1 w-64 rounded-md border border-border bg-popover p-3 shadow-lg">
+            <form onSubmit={handleAddUser} className="space-y-2">
+              <input
+                type="email"
+                placeholder="Email"
+                value={addEmail}
+                onChange={(e) => setAddEmail(e.target.value)}
+                required
+                className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm"
+              />
+              <input
+                type="text"
+                placeholder="Name"
+                value={addName}
+                onChange={(e) => setAddName(e.target.value)}
+                required
+                className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm"
+              />
+              {addError && <p className="text-xs text-destructive">{addError}</p>}
+              <div className="flex gap-2">
+                <button
+                  type="submit"
+                  disabled={addLoading}
+                  className="rounded-md bg-primary px-2 py-1.5 text-sm text-primary-foreground hover:bg-primary/80 disabled:opacity-50"
+                >
+                  {addLoading ? "Adding..." : "Add"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowAddForm(false)}
+                  className="rounded-md border border-input px-2 py-1.5 text-sm hover:bg-muted"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
+      </div>
     );
   }
 
@@ -123,6 +197,56 @@ export function UserSelector() {
               {user.name}
             </button>
           ))}
+          <div className="border-t border-border mt-1 pt-1">
+            {showAddForm ? (
+              <div className="p-2">
+                <form onSubmit={handleAddUser} className="space-y-2">
+                  <input
+                    type="email"
+                    placeholder="Email"
+                    value={addEmail}
+                    onChange={(e) => setAddEmail(e.target.value)}
+                    required
+                    className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm"
+                  />
+                  <input
+                    type="text"
+                    placeholder="Name"
+                    value={addName}
+                    onChange={(e) => setAddName(e.target.value)}
+                    required
+                    className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm"
+                  />
+                  {addError && <p className="text-xs text-destructive">{addError}</p>}
+                  <div className="flex gap-2">
+                    <button
+                      type="submit"
+                      disabled={addLoading}
+                      className="rounded-md bg-primary px-2 py-1.5 text-sm text-primary-foreground hover:bg-primary/80 disabled:opacity-50"
+                    >
+                      {addLoading ? "Adding..." : "Add"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setShowAddForm(false); setAddError(null); }}
+                      className="rounded-md border border-input px-2 py-1.5 text-sm hover:bg-muted"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setShowAddForm(true)}
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+              >
+                <Plus className="size-4" />
+                Add user
+              </button>
+            )}
+          </div>
         </div>
       )}
     </div>
