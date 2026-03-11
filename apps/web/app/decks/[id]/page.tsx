@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Trash2 } from "lucide-react";
+import { Archive, ArchiveRestore } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -17,8 +17,6 @@ import {
   getFlashcards,
   generateFlashcards,
   updateDeck,
-  deleteDeck,
-  deleteFlashcard,
 } from "@/lib/api";
 
 interface DeckPageProps {
@@ -105,27 +103,6 @@ export default function DeckPage({ params }: DeckPageProps) {
     }
   }
 
-  async function handleDeleteDeck() {
-    if (!deck) return;
-    if (!confirm("Delete this deck and all its cards?")) return;
-    try {
-      await deleteDeck(deck.id);
-      router.push("/decks");
-    } catch {
-      // ignore
-    }
-  }
-
-  async function handleDeleteCard(cardId: string) {
-    if (!confirm("Delete this card?")) return;
-    try {
-      await deleteFlashcard(cardId);
-      setFlashcards((f) => f.filter((c) => c.id !== cardId));
-    } catch {
-      // ignore
-    }
-  }
-
   if (loading) {
     return (
       <main className="min-h-screen p-6">
@@ -155,12 +132,34 @@ export default function DeckPage({ params }: DeckPageProps) {
   return (
     <main className="min-h-screen p-6">
       <div className="max-w-2xl mx-auto space-y-6">
-        <Link
-          href="/decks"
-          className="inline-flex h-7 items-center justify-center rounded-lg px-2.5 text-sm font-medium hover:bg-muted"
-        >
-          ← Back
-        </Link>
+        <div className="flex items-center justify-between">
+          <Link
+            href="/decks"
+            className="inline-flex h-7 items-center justify-center rounded-lg px-2.5 text-sm font-medium hover:bg-muted"
+          >
+            ← Back
+          </Link>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={async () => {
+              try {
+                await updateDeck(deck.id, { archived: !deck.archived });
+                router.push("/decks");
+              } catch {
+                // ignore
+              }
+            }}
+            className="text-muted-foreground hover:text-foreground"
+            aria-label={deck.archived ? "Unarchive deck" : "Archive deck"}
+          >
+            {deck.archived ? (
+              <ArchiveRestore className="size-4" />
+            ) : (
+              <Archive className="size-4" />
+            )}
+          </Button>
+        </div>
 
         <Card>
           <CardHeader className="space-y-2">
@@ -252,27 +251,6 @@ export default function DeckPage({ params }: DeckPageProps) {
             >
               {generating ? "Generating..." : "Generate Flashcards"}
             </button>
-            <Button
-              variant="ghost"
-              onClick={async () => {
-                try {
-                  await updateDeck(deck.id, { archived: !deck.archived });
-                  router.push("/decks");
-                } catch {
-                  // ignore
-                }
-              }}
-              className="w-full sm:w-auto"
-            >
-              {deck.archived ? "Unarchive" : "Archive"}
-            </Button>
-            <Button
-              variant="ghost"
-              onClick={handleDeleteDeck}
-              className="text-destructive hover:text-destructive hover:bg-destructive/10 w-full sm:w-auto"
-            >
-              Delete Deck
-            </Button>
           </CardContent>
         </Card>
 
@@ -284,20 +262,9 @@ export default function DeckPage({ params }: DeckPageProps) {
             <div className="space-y-3">
               {flashcards.map((card) => (
                 <Card key={card.id}>
-                  <CardHeader className="flex flex-row items-start justify-between gap-4">
-                    <div className="flex-1 min-w-0">
-                      <CardTitle className="text-base">{card.question}</CardTitle>
-                      <CardDescription>{card.answer_short}</CardDescription>
-                    </div>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => handleDeleteCard(card.id)}
-                      className="shrink-0 text-muted-foreground hover:text-destructive"
-                      aria-label="Delete card"
-                    >
-                      <Trash2 className="size-4" />
-                    </Button>
+                  <CardHeader>
+                    <CardTitle className="text-base">{card.question}</CardTitle>
+                    <CardDescription>{card.answer_short}</CardDescription>
                   </CardHeader>
                 </Card>
               ))}

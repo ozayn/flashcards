@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Archive, ArchiveRestore, Trash2 } from "lucide-react";
+import { Archive, ArchiveRestore } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -11,7 +11,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { getUsers, getDecks, deleteDeck, updateDeck } from "@/lib/api";
+import { getUsers, getDecks, updateDeck } from "@/lib/api";
 import { getStoredUserId } from "@/components/user-selector";
 
 export type Deck = {
@@ -76,18 +76,6 @@ export default function DecksPage() {
     }
     fetchDecks();
   }, [userId, showArchived]);
-
-  async function handleDeleteDeck(deckId: string, e: React.MouseEvent) {
-    e.preventDefault();
-    e.stopPropagation();
-    if (!confirm("Delete this deck and all its cards?")) return;
-    try {
-      await deleteDeck(deckId);
-      setDecks((d) => d.filter((deck) => deck.id !== deckId));
-    } catch {
-      // ignore
-    }
-  }
 
   async function handleArchiveDeck(deckId: string, archive: boolean, e: React.MouseEvent) {
     e.preventDefault();
@@ -168,32 +156,21 @@ export default function DecksPage() {
                     <CardTitle>{deck.name}</CardTitle>
                     <CardDescription>{deck.description}</CardDescription>
                   </Link>
-                  <div className="flex shrink-0 gap-1">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={(e) =>
-                        handleArchiveDeck(deck.id, !showArchived, e)
-                      }
-                      className="text-muted-foreground hover:text-foreground"
-                      aria-label={showArchived ? "Unarchive deck" : "Archive deck"}
-                    >
-                      {showArchived ? (
-                        <ArchiveRestore className="size-4" />
-                      ) : (
-                        <Archive className="size-4" />
-                      )}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={(e) => handleDeleteDeck(deck.id, e)}
-                      className="text-muted-foreground hover:text-destructive"
-                      aria-label="Delete deck"
-                    >
-                      <Trash2 className="size-4" />
-                    </Button>
-                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={(e) =>
+                      handleArchiveDeck(deck.id, !showArchived, e)
+                    }
+                    className="shrink-0 text-muted-foreground hover:text-foreground"
+                    aria-label={showArchived ? "Unarchive deck" : "Archive deck"}
+                  >
+                    {showArchived ? (
+                      <ArchiveRestore className="size-4" />
+                    ) : (
+                      <Archive className="size-4" />
+                    )}
+                  </Button>
                 </CardHeader>
               </Card>
             ))
