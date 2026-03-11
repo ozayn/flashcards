@@ -16,6 +16,13 @@ class FlashcardCreate(BaseModel):
     difficulty: Literal["easy", "medium", "hard"] = Field(default="medium")
 
 
+class FlashcardUpdate(BaseModel):
+    question: Optional[str] = Field(None, min_length=1)
+    answer_short: Optional[str] = Field(None, min_length=1, max_length=1000)
+    answer_detailed: Optional[str] = None
+    difficulty: Optional[Literal["easy", "medium", "hard"]] = None
+
+
 class FlashcardResponse(BaseModel):
     id: str
     deck_id: str

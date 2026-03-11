@@ -10,6 +10,22 @@
   }
 }
 
+/* Flashcard flip animation */
+.flashcard-inner {
+  transform-style: preserve-3d;
+  transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.flashcard-inner.flipped {
+  transform: rotateY(180deg);
+}
+.flashcard-face {
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+.flashcard-back {
+  transform: rotateY(180deg);
+}
+
 @layer base {
   :root {
     --background: oklch(1 0 0);

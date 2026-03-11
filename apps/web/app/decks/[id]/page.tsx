@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Archive, ArchiveRestore } from "lucide-react";
+import { Archive, ArchiveRestore, Pencil } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -262,9 +262,27 @@ export default function DeckPage({ params }: DeckPageProps) {
             <div className="space-y-3">
               {flashcards.map((card) => (
                 <Card key={card.id}>
-                  <CardHeader>
-                    <CardTitle className="text-base">{card.question}</CardTitle>
-                    <CardDescription>{card.answer_short}</CardDescription>
+                  <CardHeader className="flex flex-row items-start justify-between gap-4">
+                    <Link
+                      href={`/decks/${params.id}/edit-card/${card.id}`}
+                      className="flex-1 min-w-0"
+                    >
+                      <CardTitle className="text-base">{card.question}</CardTitle>
+                      <CardDescription>{card.answer_short}</CardDescription>
+                    </Link>
+                    <Link
+                      href={`/decks/${params.id}/edit-card/${card.id}`}
+                      className="shrink-0"
+                    >
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="text-muted-foreground hover:text-foreground"
+                        aria-label="Edit card"
+                      >
+                        <Pencil className="size-4" />
+                      </Button>
+                    </Link>
                   </CardHeader>
                 </Card>
               ))}

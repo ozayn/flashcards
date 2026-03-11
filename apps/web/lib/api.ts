@@ -117,6 +117,36 @@ export async function createFlashcard(data: {
   return res.json();
 }
 
+export async function getFlashcard(flashcardId: string) {
+  const res = await fetch(`${apiUrl}/flashcards/${flashcardId}`, {
+    cache: "no-store",
+  });
+  if (!res.ok) throw new Error("Failed to fetch flashcard");
+  return res.json();
+}
+
+export async function updateFlashcard(
+  flashcardId: string,
+  data: {
+    question?: string;
+    answer_short?: string;
+    answer_detailed?: string;
+    difficulty?: string;
+  }
+) {
+  const res = await fetch(`${apiUrl}/flashcards/${flashcardId}`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(data),
+  });
+
+  if (!res.ok) throw new Error("Failed to update flashcard");
+
+  return res.json();
+}
+
 export async function deleteFlashcard(flashcardId: string) {
   const res = await fetch(`${apiUrl}/flashcards/${flashcardId}`, {
     method: "DELETE",

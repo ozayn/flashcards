@@ -9,6 +9,13 @@ const config: Config = {
   ],
   theme: {
     extend: {
+      screens: {
+        "portrait": { raw: "(orientation: portrait)" },
+        "landscape": { raw: "(orientation: landscape)" },
+        "landscape-mobile": {
+          raw: "(orientation: landscape) and (max-height: 500px)",
+        },
+      },
       colors: {
         background: "var(--background)",
         foreground: "var(--foreground)",

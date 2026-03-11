@@ -18,7 +18,7 @@ export function Nav() {
   const [mobileOpen, setMobileOpen] = useState(false);
 
   return (
-    <nav className="h-14 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+    <nav className="relative z-50 h-14 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 landscape-mobile:hidden">
       <div className="max-w-2xl mx-auto h-full flex items-center justify-between px-10 md:px-12">
         {/* Left: Logo */}
         <Link
@@ -65,18 +65,20 @@ export function Nav() {
       {/* Mobile menu (slide down) */}
       {mobileOpen && (
         <div className="md:hidden border-t border-border bg-background">
-          <div className="max-w-2xl mx-auto px-10 md:px-12 py-4 flex flex-col gap-2">
-            {navLinks.map(({ href, label }) => (
-              <Link
-                key={href}
-                href={href}
-                onClick={() => setMobileOpen(false)}
-                className="py-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
-              >
-                {label}
-              </Link>
-            ))}
-            <div className="pt-2 border-t border-border">
+          <div className="max-w-2xl mx-auto px-10 md:px-12 py-4">
+            <div className="grid grid-cols-2 gap-2">
+              {navLinks.map(({ href, label }) => (
+                <Link
+                  key={href}
+                  href={href}
+                  onClick={() => setMobileOpen(false)}
+                  className="py-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  {label}
+                </Link>
+              ))}
+            </div>
+            <div className="pt-2 mt-2 border-t border-border">
               <UserSelector />
             </div>
           </div>
