@@ -193,7 +193,7 @@ export async function generateFlashcards(data: {
     },
     body: JSON.stringify({
       ...data,
-      num_cards: data.num_cards ?? 5,
+      num_cards: data.num_cards ?? 10,
     }),
   });
 

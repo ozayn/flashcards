@@ -92,7 +92,7 @@ export default function DeckPage({ params }: DeckPageProps) {
       await generateFlashcards({
         deck_id: deck.id,
         topic: deck.name,
-        num_cards: 5,
+        num_cards: 10,
       });
       const data = await getFlashcards(params.id);
       setFlashcards(Array.isArray(data) ? data : []);

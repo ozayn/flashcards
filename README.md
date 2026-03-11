@@ -95,7 +95,7 @@ The parser also accepts the simplified format `{"front": "...", "back": "..."}` 
 {
   "deck_id": "...",
   "topic": "Greek mythology",
-  "num_cards": 5
+  "num_cards": 10
 }
 ```
 

@@ -21,7 +21,7 @@ router = APIRouter(prefix="/generate-flashcards", tags=["generation"])
 class GenerateFlashcardsRequest(BaseModel):
     deck_id: UUID = Field(..., description="Deck ID")
     topic: str = Field(..., min_length=1, description="Topic for flashcard generation")
-    num_cards: int = Field(default=5, ge=1, le=50, description="Number of cards to generate")
+    num_cards: int = Field(default=10, ge=1, le=50, description="Number of cards to generate")
 
 
 class GenerateFlashcardsResponse(BaseModel):
