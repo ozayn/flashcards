@@ -9,6 +9,7 @@ from app.models.enums import SourceType
 class DeckUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=255)
     description: Optional[str] = Field(None, max_length=500)
+    archived: Optional[bool] = None
 
 
 class DeckCreate(BaseModel):
@@ -28,6 +29,7 @@ class DeckResponse(BaseModel):
     source_type: SourceType
     source_url: Optional[str] = None
     source_text: Optional[str] = None
+    archived: bool = False
     created_at: datetime
 
     model_config = {"from_attributes": True}

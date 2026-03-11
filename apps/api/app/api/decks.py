@@ -16,11 +16,14 @@ router = APIRouter(prefix="/decks", tags=["decks"])
 @router.get("", response_model=List[DeckResponse])
 async def get_decks(
     user_id: str = Query(..., description="User ID to filter decks"),
+    archived: bool = Query(False, description="If true, return only archived decks"),
     db: AsyncSession = Depends(get_db),
 ):
-    """Get all decks for a user."""
+    """Get all decks for a user. By default returns active (non-archived) decks."""
     result = await db.execute(
-        select(Deck).where(Deck.user_id == user_id).order_by(Deck.created_at.desc())
+        select(Deck)
+        .where(Deck.user_id == user_id, Deck.archived == archived)
+        .order_by(Deck.created_at.desc())
     )
     decks = result.scalars().all()
     return [DeckResponse.model_validate(d) for d in decks]
@@ -94,10 +97,27 @@ async def update_deck(
     if data.description is not None:
         deck.description = data.description
 
+    if data.archived is not None:
+        deck.archived = data.archived
+
     await db.flush()
     await db.refresh(deck)
 
     return DeckResponse.model_validate(deck)
+
+
+@router.delete("/{deck_id}", status_code=204)
+async def delete_deck(
+    deck_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete a deck and all its flashcards."""
+    result = await db.execute(select(Deck).where(Deck.id == deck_id))
+    deck = result.scalar_one_or_none()
+    if not deck:
+        raise HTTPException(status_code=404, detail="Deck not found")
+    await db.delete(deck)
+    await db.flush()
 
 
 @router.post("", response_model=DeckResponse, status_code=201)

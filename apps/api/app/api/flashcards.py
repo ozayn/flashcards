@@ -14,6 +14,20 @@ from app.schemas.flashcard import (
 router = APIRouter(prefix="/flashcards", tags=["flashcards"])
 
 
+@router.delete("/{flashcard_id}", status_code=204)
+async def delete_flashcard(
+    flashcard_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete a flashcard."""
+    result = await db.execute(select(Flashcard).where(Flashcard.id == flashcard_id))
+    flashcard = result.scalar_one_or_none()
+    if not flashcard:
+        raise HTTPException(status_code=404, detail="Flashcard not found")
+    await db.delete(flashcard)
+    await db.flush()
+
+
 @router.post("", response_model=FlashcardResponse, status_code=201)
 async def create_flashcard(
     payload: FlashcardCreate,

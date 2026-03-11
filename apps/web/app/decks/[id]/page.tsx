@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { Trash2 } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -9,7 +11,15 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { getDeck, getFlashcards, generateFlashcards, updateDeck } from "@/lib/api";
+import { Button } from "@/components/ui/button";
+import {
+  getDeck,
+  getFlashcards,
+  generateFlashcards,
+  updateDeck,
+  deleteDeck,
+  deleteFlashcard,
+} from "@/lib/api";
 
 interface DeckPageProps {
   params: { id: string };
@@ -19,6 +29,7 @@ interface Deck {
   id: string;
   name: string;
   description: string | null;
+  archived?: boolean;
 }
 
 interface Flashcard {
@@ -28,6 +39,7 @@ interface Flashcard {
 }
 
 export default function DeckPage({ params }: DeckPageProps) {
+  const router = useRouter();
   const [deck, setDeck] = useState<Deck | null>(null);
   const [flashcards, setFlashcards] = useState<Flashcard[]>([]);
   const [loading, setLoading] = useState(true);
@@ -90,6 +102,27 @@ export default function DeckPage({ params }: DeckPageProps) {
       // ignore
     } finally {
       setGenerating(false);
+    }
+  }
+
+  async function handleDeleteDeck() {
+    if (!deck) return;
+    if (!confirm("Delete this deck and all its cards?")) return;
+    try {
+      await deleteDeck(deck.id);
+      router.push("/decks");
+    } catch {
+      // ignore
+    }
+  }
+
+  async function handleDeleteCard(cardId: string) {
+    if (!confirm("Delete this card?")) return;
+    try {
+      await deleteFlashcard(cardId);
+      setFlashcards((f) => f.filter((c) => c.id !== cardId));
+    } catch {
+      // ignore
     }
   }
 
@@ -219,6 +252,27 @@ export default function DeckPage({ params }: DeckPageProps) {
             >
               {generating ? "Generating..." : "Generate Flashcards"}
             </button>
+            <Button
+              variant="ghost"
+              onClick={async () => {
+                try {
+                  await updateDeck(deck.id, { archived: !deck.archived });
+                  router.push("/decks");
+                } catch {
+                  // ignore
+                }
+              }}
+              className="w-full sm:w-auto"
+            >
+              {deck.archived ? "Unarchive" : "Archive"}
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={handleDeleteDeck}
+              className="text-destructive hover:text-destructive hover:bg-destructive/10 w-full sm:w-auto"
+            >
+              Delete Deck
+            </Button>
           </CardContent>
         </Card>
 
@@ -230,9 +284,20 @@ export default function DeckPage({ params }: DeckPageProps) {
             <div className="space-y-3">
               {flashcards.map((card) => (
                 <Card key={card.id}>
-                  <CardHeader>
-                    <CardTitle className="text-base">{card.question}</CardTitle>
-                    <CardDescription>{card.answer_short}</CardDescription>
+                  <CardHeader className="flex flex-row items-start justify-between gap-4">
+                    <div className="flex-1 min-w-0">
+                      <CardTitle className="text-base">{card.question}</CardTitle>
+                      <CardDescription>{card.answer_short}</CardDescription>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => handleDeleteCard(card.id)}
+                      className="shrink-0 text-muted-foreground hover:text-destructive"
+                      aria-label="Delete card"
+                    >
+                      <Trash2 className="size-4" />
+                    </Button>
                   </CardHeader>
                 </Card>
               ))}

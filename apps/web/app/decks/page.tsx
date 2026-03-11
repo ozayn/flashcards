@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { Archive, ArchiveRestore, Trash2 } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -9,7 +10,8 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { getUsers, getDecks } from "@/lib/api";
+import { Button } from "@/components/ui/button";
+import { getUsers, getDecks, deleteDeck, updateDeck } from "@/lib/api";
 import { getStoredUserId } from "@/components/user-selector";
 
 export type Deck = {
@@ -20,6 +22,7 @@ export type Deck = {
   source_type: string;
   source_url: string | null;
   source_text: string | null;
+  archived: boolean;
   created_at: string;
 };
 
@@ -27,6 +30,7 @@ export default function DecksPage() {
   const [decks, setDecks] = useState<Deck[]>([]);
   const [userId, setUserId] = useState<string | null>(null);
   const [decksError, setDecksError] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
 
   useEffect(() => {
     async function resolveUserId() {
@@ -62,7 +66,7 @@ export default function DecksPage() {
     async function fetchDecks() {
       try {
         setDecksError(false);
-        const data = await getDecks(uid);
+        const data = await getDecks(uid, showArchived);
         setDecks(Array.isArray(data) ? data : []);
       } catch (err) {
         console.error("Failed to load decks", err);
@@ -71,7 +75,30 @@ export default function DecksPage() {
       }
     }
     fetchDecks();
-  }, [userId]);
+  }, [userId, showArchived]);
+
+  async function handleDeleteDeck(deckId: string, e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!confirm("Delete this deck and all its cards?")) return;
+    try {
+      await deleteDeck(deckId);
+      setDecks((d) => d.filter((deck) => deck.id !== deckId));
+    } catch {
+      // ignore
+    }
+  }
+
+  async function handleArchiveDeck(deckId: string, archive: boolean, e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    try {
+      await updateDeck(deckId, { archived: archive });
+      setDecks((d) => d.filter((deck) => deck.id !== deckId));
+    } catch {
+      // ignore
+    }
+  }
 
   return (
     <main className="min-h-screen p-6">
@@ -90,6 +117,16 @@ export default function DecksPage() {
           Your flashcard decks will appear here.
         </p>
 
+        <label className="flex items-center gap-2 text-sm cursor-pointer">
+          <input
+            type="checkbox"
+            checked={showArchived}
+            onChange={(e) => setShowArchived(e.target.checked)}
+            className="rounded border-input"
+          />
+          Show archived decks
+        </label>
+
         <div className="grid gap-4">
           {decksError ? (
             <Card>
@@ -103,30 +140,62 @@ export default function DecksPage() {
           ) : decks.length === 0 ? (
             <Card>
               <CardHeader>
-                <CardTitle>Getting Started</CardTitle>
+                <CardTitle>
+                  {showArchived ? "No archived decks" : "Getting Started"}
+                </CardTitle>
                 <CardDescription>
-                  Create your first deck to get started
+                  {showArchived
+                    ? "Archived decks will appear here."
+                    : "Create your first deck to get started"}
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <Link
-                  href="/create-deck"
-                  className="inline-flex h-8 items-center justify-center rounded-lg border border-border bg-background px-2.5 text-sm font-medium hover:bg-muted"
-                >
-                  Create Deck
-                </Link>
+                {!showArchived && (
+                  <Link
+                    href="/create-deck"
+                    className="inline-flex h-8 items-center justify-center rounded-lg border border-border bg-background px-2.5 text-sm font-medium hover:bg-muted"
+                  >
+                    Create Deck
+                  </Link>
+                )}
               </CardContent>
             </Card>
           ) : (
             decks.map((deck) => (
-              <Link key={deck.id} href={`/decks/${deck.id}`}>
-                <Card className="hover:bg-muted cursor-pointer transition">
-                  <CardHeader>
+              <Card key={deck.id} className="hover:bg-muted transition">
+                <CardHeader className="flex flex-row items-start justify-between gap-4">
+                  <Link href={`/decks/${deck.id}`} className="flex-1 min-w-0">
                     <CardTitle>{deck.name}</CardTitle>
                     <CardDescription>{deck.description}</CardDescription>
-                  </CardHeader>
-                </Card>
-              </Link>
+                  </Link>
+                  <div className="flex shrink-0 gap-1">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={(e) =>
+                        handleArchiveDeck(deck.id, !showArchived, e)
+                      }
+                      className="text-muted-foreground hover:text-foreground"
+                      aria-label={showArchived ? "Unarchive deck" : "Archive deck"}
+                    >
+                      {showArchived ? (
+                        <ArchiveRestore className="size-4" />
+                      ) : (
+                        <Archive className="size-4" />
+                      )}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={(e) => handleDeleteDeck(deck.id, e)}
+                      className="text-muted-foreground hover:text-destructive"
+                      aria-label="Delete deck"
+                    >
+                      <Trash2 className="size-4" />
+                    </Button>
+                  </div>
+                </CardHeader>
+              </Card>
             ))
           )}
         </div>

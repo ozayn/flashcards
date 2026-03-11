@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 from uuid import uuid4
-from sqlalchemy import String, DateTime, Enum, ForeignKey, Text
+from sqlalchemy import Boolean, String, DateTime, Enum, ForeignKey, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -27,6 +27,7 @@ class Deck(Base):
     )
     source_url: Mapped[Optional[str]] = mapped_column(String(2048), nullable=True)
     source_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    archived: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, nullable=False
     )

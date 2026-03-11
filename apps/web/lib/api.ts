@@ -33,8 +33,11 @@ export async function getUsers() {
   return res.json();
 }
 
-export async function getDecks(userId: string) {
-  const res = await fetch(`${apiUrl}/decks?user_id=${userId}`, { cache: "no-store" });
+export async function getDecks(userId: string, archived = false) {
+  const res = await fetch(
+    `${apiUrl}/decks?user_id=${userId}&archived=${archived}`,
+    { cache: "no-store" }
+  );
   if (!res.ok) throw new Error("Failed to fetch decks");
   return res.json();
 }
@@ -68,7 +71,7 @@ export async function createDeck(data: {
 
 export async function updateDeck(
   deckId: string,
-  data: { name?: string; description?: string }
+  data: { name?: string; description?: string; archived?: boolean }
 ) {
   const res = await fetch(`${apiUrl}/decks/${deckId}`, {
     method: "PATCH",
@@ -81,6 +84,11 @@ export async function updateDeck(
   if (!res.ok) throw new Error("Failed to update deck");
 
   return res.json();
+}
+
+export async function deleteDeck(deckId: string) {
+  const res = await fetch(`${apiUrl}/decks/${deckId}`, { method: "DELETE" });
+  if (!res.ok) throw new Error("Failed to delete deck");
 }
 
 export async function getFlashcards(deckId: string) {
@@ -107,6 +115,13 @@ export async function createFlashcard(data: {
   if (!res.ok) throw new Error("Failed to create flashcard");
 
   return res.json();
+}
+
+export async function deleteFlashcard(flashcardId: string) {
+  const res = await fetch(`${apiUrl}/flashcards/${flashcardId}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) throw new Error("Failed to delete flashcard");
 }
 
 export async function generateFlashcards(data: {
