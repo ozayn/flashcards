@@ -18,8 +18,8 @@ export function Nav() {
   const [mobileOpen, setMobileOpen] = useState(false);
 
   return (
-    <nav className="h-14 px-4 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="max-w-4xl mx-auto h-full flex items-center justify-between">
+    <nav className="h-14 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+      <div className="max-w-2xl mx-auto h-full flex items-center justify-between px-10 md:px-12">
         {/* Left: Logo */}
         <Link
           href="/"
@@ -65,7 +65,7 @@ export function Nav() {
       {/* Mobile menu (slide down) */}
       {mobileOpen && (
         <div className="md:hidden border-t border-border bg-background">
-          <div className="px-4 py-4 flex flex-col gap-2">
+          <div className="max-w-2xl mx-auto px-10 md:px-12 py-4 flex flex-col gap-2">
             {navLinks.map(({ href, label }) => (
               <Link
                 key={href}

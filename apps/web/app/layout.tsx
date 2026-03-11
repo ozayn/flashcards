@@ -35,7 +35,7 @@ export default function RootLayout({
       <body className={cn(inter.className, "antialiased bg-background text-foreground")}>
         <ThemeScript />
         <Nav />
-        <div className="min-h-screen px-4 md:px-6">
+        <div className="min-h-screen max-w-2xl mx-auto px-4 md:px-6">
           {children}
         </div>
       </body>
