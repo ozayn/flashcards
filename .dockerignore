@@ -1,0 +1,12 @@
+node_modules
+.next
+.git
+.gitignore
+.env
+.env.*
+*.md
+apps/web/node_modules
+apps/web/.next
+apps/api/__pycache__
+apps/api/.venv
+*.pyc
