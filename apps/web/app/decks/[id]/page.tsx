@@ -49,18 +49,25 @@ export default function DeckPage({ params }: DeckPageProps) {
   const [description, setDescription] = useState(deck?.description ?? "");
 
   useEffect(() => {
-    async function fetchDeck() {
+    let cancelled = false;
+    async function fetchData() {
       try {
-        const data = await getDeck(params.id);
-        setDeck(data);
+        const [deckData, flashcardsData] = await Promise.all([
+          getDeck(params.id),
+          getFlashcards(params.id),
+        ]);
+        if (!cancelled) {
+          setDeck(deckData);
+          setFlashcards(Array.isArray(flashcardsData) ? flashcardsData : []);
+        }
       } catch {
-        setNotFound(true);
+        if (!cancelled) setNotFound(true);
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     }
-
-    fetchDeck();
+    fetchData();
+    return () => { cancelled = true; };
   }, [params.id]);
 
   useEffect(() => {
@@ -69,21 +76,6 @@ export default function DeckPage({ params }: DeckPageProps) {
       setDescription(deck.description ?? "");
     }
   }, [deck]);
-
-  useEffect(() => {
-    if (!deck) return;
-
-    async function fetchFlashcards() {
-      try {
-        const data = await getFlashcards(params.id);
-        setFlashcards(Array.isArray(data) ? data : []);
-      } catch {
-        // ignore
-      }
-    }
-
-    fetchFlashcards();
-  }, [deck, params.id]);
 
   async function handleGenerate() {
     if (!deck || generating) return;

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { Menu, X } from "lucide-react";
 import { UserSelector } from "@/components/user-selector";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -16,9 +17,12 @@ const navLinks = [
 
 export function Nav() {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const pathname = usePathname();
+
+  if (pathname?.startsWith("/study")) return null;
 
   return (
-    <nav className="relative z-50 h-14 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 landscape-mobile:hidden">
+    <nav className="relative z-50 h-14 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="max-w-2xl mx-auto h-full flex items-center justify-between px-10 md:px-12">
         {/* Left: Logo */}
         <Link

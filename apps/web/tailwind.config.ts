@@ -9,6 +9,9 @@ const config: Config = {
   ],
   theme: {
     extend: {
+      fontFamily: {
+        sans: ["var(--font-sans)", "system-ui", "sans-serif"],
+      },
       screens: {
         "portrait": { raw: "(orientation: portrait)" },
         "landscape": { raw: "(orientation: landscape)" },

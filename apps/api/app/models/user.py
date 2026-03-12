@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from uuid import uuid4
-from sqlalchemy import String, DateTime, Enum
+from sqlalchemy import String, DateTime, Enum, Boolean, Integer
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -23,6 +23,12 @@ class User(Base):
     )
     plan: Mapped[Plan] = mapped_column(
         Enum(Plan), default=Plan.free, nullable=False
+    )
+    think_delay_enabled: Mapped[bool] = mapped_column(
+        Boolean, default=True, nullable=False
+    )
+    think_delay_ms: Mapped[int] = mapped_column(
+        Integer, default=1500, nullable=False
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, nullable=False

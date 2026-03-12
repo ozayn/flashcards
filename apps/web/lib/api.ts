@@ -28,9 +28,20 @@ export async function healthCheck(): Promise<{ status: string }> {
 }
 
 export async function getUsers() {
-  const res = await fetch(`${apiUrl}/users`, { cache: "no-store" });
-  if (!res.ok) throw new Error("Failed to fetch users");
-  return res.json();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000);
+  try {
+    const res = await fetch(`${apiUrl}/users`, {
+      cache: "no-store",
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    if (!res.ok) throw new Error("Failed to fetch users");
+    return res.json();
+  } catch (e) {
+    clearTimeout(timeout);
+    throw e;
+  }
 }
 
 export async function createUser(data: {
@@ -221,5 +232,33 @@ export async function submitReview(
 
   if (!res.ok) throw new Error("Failed to submit review");
 
+  return res.json();
+}
+
+export interface UserSettings {
+  think_delay_enabled: boolean;
+  think_delay_ms: number;
+}
+
+export async function getUserSettings(userId: string): Promise<UserSettings> {
+  const res = await fetch(`${apiUrl}/users/${userId}/settings`, {
+    cache: "no-store",
+  });
+  if (!res.ok) throw new Error("Failed to fetch user settings");
+  return res.json();
+}
+
+export async function updateUserSettings(
+  userId: string,
+  data: Partial<UserSettings>
+): Promise<UserSettings> {
+  const res = await fetch(`${apiUrl}/users/${userId}/settings`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error("Failed to update user settings");
   return res.json();
 }

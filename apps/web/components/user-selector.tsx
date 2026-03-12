@@ -62,13 +62,22 @@ export function UserSelector() {
   useEffect(() => {
     if (!open && !(users.length === 0 && showAddForm)) return;
     function handleClickOutside(e: MouseEvent) {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+      const el = containerRef.current;
+      if (!el || !document.contains(el)) return;
+      if (!el.contains(e.target as Node)) {
         setOpen(false);
         if (users.length === 0) setShowAddForm(false);
       }
     }
+    function handleBlur() {
+      setOpen(false);
+    }
     document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
+    window.addEventListener("blur", handleBlur);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      window.removeEventListener("blur", handleBlur);
+    };
   }, [open, users.length, showAddForm]);
 
   const handleSelect = (userId: string) => {
@@ -99,7 +108,7 @@ export function UserSelector() {
     }
   };
 
-  if (loading) return <span className="text-muted-foreground text-sm">Loading...</span>;
+  if (loading) return <span className="text-muted-foreground text-sm animate-pulse">Loading users…</span>;
 
   if (apiError) {
     return (

@@ -21,3 +21,15 @@ class UserResponse(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class UserSettingsResponse(BaseModel):
+    think_delay_enabled: bool = True
+    think_delay_ms: int = Field(default=1500, ge=0, le=30000)
+
+    model_config = {"from_attributes": True}
+
+
+class UserSettingsUpdate(BaseModel):
+    think_delay_enabled: bool | None = None
+    think_delay_ms: int | None = Field(default=None, ge=0, le=30000)

@@ -2,9 +2,10 @@
 
 import { useEffect, useState, useRef, useCallback } from "react";
 import Link from "next/link";
-import { HelpCircle, ChevronLeft, ChevronRight } from "lucide-react";
+import { HelpCircle, ChevronLeft, ChevronRight, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { getFlashcards, submitReview } from "@/lib/api";
+import { Flashcard } from "@/components/study/Flashcard";
+import { getFlashcards, getUserSettings, submitReview, type UserSettings } from "@/lib/api";
 import { getStoredUserId } from "@/components/user-selector";
 
 interface StudyPageProps {
@@ -25,6 +26,11 @@ export default function StudyPage({ params }: StudyPageProps) {
   const [showAnswer, setShowAnswer] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const [sessionComplete, setSessionComplete] = useState(false);
+  const [userSettings, setUserSettings] = useState<UserSettings>({
+    think_delay_enabled: true,
+    think_delay_ms: 1500,
+  });
+  const [canFlip, setCanFlip] = useState(false);
   const touchStartX = useRef(0);
 
   useEffect(() => {
@@ -43,10 +49,30 @@ export default function StudyPage({ params }: StudyPageProps) {
   }, [params.deck_id]);
 
   useEffect(() => {
+    const userId = getStoredUserId();
+    if (userId) {
+      getUserSettings(userId)
+        .then(setUserSettings)
+        .catch(() => {});
+    }
+  }, []);
+
+  useEffect(() => {
     setCurrentCardIndex(0);
     setShowAnswer(false);
     setSessionComplete(false);
   }, [params.deck_id]);
+
+  useEffect(() => {
+    if (loading || flashcards.length === 0 || sessionComplete) return;
+    if (!userSettings.think_delay_enabled) {
+      setCanFlip(true);
+      return;
+    }
+    setCanFlip(false);
+    const t = setTimeout(() => setCanFlip(true), userSettings.think_delay_ms);
+    return () => clearTimeout(t);
+  }, [loading, flashcards.length, sessionComplete, currentCardIndex, userSettings.think_delay_enabled, userSettings.think_delay_ms]);
 
   const handleNext = useCallback(() => {
     setShowAnswer(false);
@@ -74,7 +100,7 @@ export default function StudyPage({ params }: StudyPageProps) {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.code === "Space") {
         e.preventDefault();
-        setShowAnswer((prev) => !prev);
+        if (canFlip) setShowAnswer((prev) => !prev);
       }
       if (e.code === "ArrowRight") {
         e.preventDefault();
@@ -87,11 +113,18 @@ export default function StudyPage({ params }: StudyPageProps) {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [loading, flashcards.length, handleNext, handlePrev]);
+  }, [loading, flashcards.length, canFlip, handleNext, handlePrev]);
 
   if (loading) {
     return (
-      <main className="min-h-screen flex items-center justify-center p-6">
+      <main className="min-h-screen flex items-center justify-center p-6 relative">
+        <Link
+          href={`/decks/${params.deck_id}`}
+          className="fixed bottom-4 right-4 z-50 inline-flex items-center gap-2 rounded-full bg-background/95 backdrop-blur border border-border shadow-lg px-4 py-2 text-sm font-medium hover:bg-muted transition-colors"
+        >
+          <X className="size-4" />
+          Exit Study
+        </Link>
         <p className="text-muted-foreground">Loading flashcards...</p>
       </main>
     );
@@ -99,7 +132,14 @@ export default function StudyPage({ params }: StudyPageProps) {
 
   if (flashcards.length === 0) {
     return (
-      <main className="min-h-screen flex flex-col items-center justify-center p-6">
+      <main className="min-h-screen flex flex-col items-center justify-center p-6 relative">
+        <Link
+          href={`/decks/${params.deck_id}`}
+          className="fixed bottom-4 right-4 z-50 inline-flex items-center gap-2 rounded-full bg-background/95 backdrop-blur border border-border shadow-lg px-4 py-2 text-sm font-medium hover:bg-muted transition-colors"
+        >
+          <X className="size-4" />
+          Exit Study
+        </Link>
         <Link
           href={`/decks/${params.deck_id}`}
           className="inline-flex h-7 items-center justify-center rounded-lg px-2.5 text-sm font-medium hover:bg-muted mb-4"
@@ -128,9 +168,10 @@ export default function StudyPage({ params }: StudyPageProps) {
       <main className="relative h-full min-h-[50vh] flex flex-col items-center justify-center px-4 py-8">
         <Link
           href={`/decks/${params.deck_id}`}
-          className="absolute left-4 top-4 z-10 inline-flex h-9 items-center justify-center rounded-lg px-3 text-sm font-medium hover:bg-muted py-2"
+          className="fixed bottom-4 right-4 z-50 inline-flex items-center gap-2 rounded-full bg-background/95 backdrop-blur border border-border shadow-lg px-4 py-2 text-sm font-medium hover:bg-muted transition-colors"
         >
-          ← Back
+          <X className="size-4" />
+          Exit Study
         </Link>
         <div className="text-center space-y-6 max-w-sm">
           <h2 className="text-2xl font-semibold">Session complete!</h2>
@@ -176,7 +217,14 @@ export default function StudyPage({ params }: StudyPageProps) {
   };
 
   return (
-    <main className="h-full min-h-0 flex flex-col items-center px-3 md:px-4 overflow-hidden">
+    <main className="h-full min-h-0 flex flex-col items-center px-3 md:px-4 overflow-hidden relative">
+      <Link
+        href={`/decks/${params.deck_id}`}
+        className="fixed bottom-4 right-4 z-50 inline-flex items-center gap-2 rounded-full bg-background/95 backdrop-blur border border-border shadow-lg px-4 py-2 text-sm font-medium hover:bg-muted transition-colors"
+      >
+        <X className="size-4" />
+        Exit Study
+      </Link>
       <div className="shrink-0 flex items-center justify-between w-full mb-0">
         <Link
           href={`/decks/${params.deck_id}`}
@@ -216,73 +264,67 @@ export default function StudyPage({ params }: StudyPageProps) {
           onTouchEnd={handleTouchEnd}
           className="h-full min-h-[180px] max-h-full max-w-full aspect-[2/3] md:aspect-[3/2] landscape:aspect-[3/2] w-auto flex items-center justify-center touch-pan-y [perspective:1000px] md:min-h-0 md:max-w-2xl md:w-full flex-1 min-w-0 min-h-0 order-1 landscape:order-2 landscape:self-stretch landscape:h-full overflow-hidden"
         >
-          <div
-            onClick={() => setShowAnswer((prev) => !prev)}
-            className={`flashcard-inner w-full h-full relative cursor-pointer ${showAnswer ? "flipped" : ""}`}
-            style={{ transformStyle: "preserve-3d" }}
-          >
-            {/* Front face - Question */}
-            <div
-              className="flashcard-face absolute inset-0 w-full h-full rounded-2xl bg-card border border-border shadow-lg shadow-black/10 flex flex-col items-stretch justify-center p-4 md:p-8"
-              style={{ backfaceVisibility: "hidden" }}
-            >
-              <div className="text-xl md:text-2xl leading-relaxed font-semibold text-left w-full">
-                {card.question}
-              </div>
-              {showHelp && (
-                <div className="mt-4 text-muted-foreground text-xs opacity-60 text-center w-full">
-                  Tap to flip
+          <Flashcard
+            front={
+              <>
+                <div className="text-xl md:text-2xl leading-relaxed font-semibold text-left w-full">
+                  {card.question}
                 </div>
-              )}
-            </div>
-
-            {/* Back face - Answer */}
-            <div
-              className="flashcard-face flashcard-back absolute inset-0 w-full h-full rounded-2xl bg-card border border-border shadow-lg shadow-black/10 flex flex-col items-stretch px-3 md:px-4 pt-3 pb-2 text-center"
-              style={{ backfaceVisibility: "hidden", transform: "rotateY(180deg)" }}
-            >
-              <div className="flex-1 min-h-0 flex flex-col items-stretch justify-start w-full text-left overflow-y-auto cursor-pointer">
-                <div className="text-xl md:text-2xl leading-relaxed font-medium">
-                  {card.answer_short}
-                </div>
-                {card.answer_detailed && (
-                  <div className="mt-4 text-muted-foreground text-base md:text-lg leading-relaxed">
-                    {card.answer_detailed}
+                {showHelp && (
+                  <div className="mt-4 text-muted-foreground text-xs opacity-60 text-center w-full">
+                    Tap to flip
                   </div>
                 )}
-              </div>
-              <div className="flex flex-row gap-2 justify-center flex-wrap shrink-0 w-full" onClick={(e) => e.stopPropagation()}>
-                <Button
-                  variant="destructive"
-                  onClick={() => rateCard("again")}
-                  className="shrink-0"
-                >
-                  Again
-                </Button>
-                <Button
-                  variant="secondary"
-                  onClick={() => rateCard("hard")}
-                  className="shrink-0"
-                >
-                  Hard
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => rateCard("good")}
-                  className="shrink-0 bg-muted/80 hover:bg-muted dark:bg-muted/50 dark:hover:bg-muted/70"
-                >
-                  Good
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => rateCard("easy")}
-                  className="shrink-0"
-                >
-                  Easy
-                </Button>
-              </div>
-            </div>
-          </div>
+              </>
+            }
+            back={
+              <>
+                <div className="flex-1 min-h-0 flex flex-col items-stretch justify-start w-full text-left overflow-y-auto cursor-pointer">
+                  <div className="text-xl md:text-2xl leading-relaxed font-medium">
+                    {card.answer_short}
+                  </div>
+                  {card.answer_detailed && (
+                    <div className="mt-4 text-muted-foreground text-base md:text-lg leading-relaxed">
+                      {card.answer_detailed}
+                    </div>
+                  )}
+                </div>
+                <div className="flex flex-row gap-2 justify-center flex-wrap shrink-0 w-full" onClick={(e) => e.stopPropagation()}>
+                  <Button
+                    variant="destructive"
+                    onClick={() => rateCard("again")}
+                    className="shrink-0"
+                  >
+                    Again
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    onClick={() => rateCard("hard")}
+                    className="shrink-0"
+                  >
+                    Hard
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => rateCard("good")}
+                    className="shrink-0 bg-muted/80 hover:bg-muted dark:bg-muted/50 dark:hover:bg-muted/70"
+                  >
+                    Good
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => rateCard("easy")}
+                    className="shrink-0"
+                  >
+                    Easy
+                  </Button>
+                </div>
+              </>
+            }
+            flipped={showAnswer}
+            onFlip={() => setShowAnswer((prev) => !prev)}
+            canFlip={canFlip}
+          />
         </div>
 
         {showHelp && (

@@ -24,10 +24,12 @@ cd "$PROJECT_ROOT"
 sleep 2
 
 echo "Starting frontend..."
+cd apps/web
+# Clear stale .next to avoid MODULE_NOT_FOUND / invalid hook call
+rm -rf .next
 echo ""
 echo "Flashcard app running!"
 echo "  Backend:  http://localhost:8000"
 echo "  Frontend: http://localhost:3000"
 echo ""
-cd apps/web
 npm run dev
