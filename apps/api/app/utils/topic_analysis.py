@@ -1,4 +1,5 @@
 """Analyze topic for flashcard generation: language detection and vocabulary/slang hints."""
+from __future__ import annotations
 
 import re
 

@@ -13,6 +13,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { getFlashcard, updateFlashcard } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import PageContainer from "@/components/layout/page-container";
 
 interface EditCardPageProps {
   params: { id: string; card_id: string };
@@ -68,33 +69,30 @@ export default function EditCardPage({ params }: EditCardPageProps) {
 
   if (loading) {
     return (
-      <main className="min-h-screen p-6">
-        <div className="max-w-2xl mx-auto">
-          <p className="text-muted-foreground">Loading...</p>
-        </div>
-      </main>
+      <PageContainer>
+        <p className="text-muted-foreground">Loading...</p>
+      </PageContainer>
     );
   }
 
   if (error && !question) {
     return (
-      <main className="min-h-screen p-6">
-        <div className="max-w-2xl mx-auto space-y-6">
+      <PageContainer>
+        <div className="flex items-center gap-4">
           <Link
             href={`/decks/${params.id}`}
             className="inline-flex h-7 items-center justify-center rounded-lg px-2.5 text-sm font-medium hover:bg-muted"
           >
             ← Back
           </Link>
-          <p className="text-destructive">{error}</p>
         </div>
-      </main>
+        <p className="text-destructive">{error}</p>
+      </PageContainer>
     );
   }
 
   return (
-    <main className="min-h-screen p-6">
-      <div className="max-w-2xl mx-auto space-y-6">
+    <PageContainer>
         <div className="flex items-center gap-4">
           <Link
             href={`/decks/${params.id}`}
@@ -184,7 +182,6 @@ export default function EditCardPage({ params }: EditCardPageProps) {
             </form>
           </CardContent>
         </Card>
-      </div>
-    </main>
+    </PageContainer>
   );
 }

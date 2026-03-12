@@ -13,17 +13,15 @@ router = APIRouter(prefix="/reviews", tags=["reviews"])
 
 def _next_review_delta(rating: str) -> timedelta:
     """Simple spaced repetition: again=10min, hard=1d, good=3d, easy=7d."""
-    match rating:
-        case "again":
-            return timedelta(minutes=10)
-        case "hard":
-            return timedelta(days=1)
-        case "good":
-            return timedelta(days=3)
-        case "easy":
-            return timedelta(days=7)
-        case _:
-            return timedelta(days=1)
+    if rating == "again":
+        return timedelta(minutes=10)
+    if rating == "hard":
+        return timedelta(days=1)
+    if rating == "good":
+        return timedelta(days=3)
+    if rating == "easy":
+        return timedelta(days=7)
+    return timedelta(days=1)
 
 
 @router.post("", response_model=ReviewResponse, status_code=201)

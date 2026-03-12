@@ -14,6 +14,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { getUsers, createDeck } from "@/lib/api";
 import { getStoredUserId } from "@/components/user-selector";
+import PageContainer from "@/components/layout/page-container";
 
 export default function CreateDeckPage() {
   const [name, setName] = useState("");
@@ -48,8 +49,7 @@ export default function CreateDeckPage() {
   };
 
   return (
-    <main className="min-h-screen p-6">
-      <div className="max-w-2xl mx-auto space-y-6">
+    <PageContainer>
         <div className="flex items-center gap-4">
           <Link
             href="/decks"
@@ -97,7 +97,6 @@ export default function CreateDeckPage() {
             </form>
           </CardContent>
         </Card>
-      </div>
-    </main>
+    </PageContainer>
   );
 }

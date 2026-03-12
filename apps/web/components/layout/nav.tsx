@@ -23,7 +23,7 @@ export function Nav() {
 
   return (
     <nav
-      className={`relative z-50 h-14 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 ${isDeckStudy ? "max-md:landscape:hidden" : ""}`}
+      className={`relative z-50 h-14 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 ${isDeckStudy ? "landscape-mobile:hidden" : ""}`}
     >
       <div className="max-w-2xl mx-auto h-full flex items-center justify-between px-10 md:px-12">
         {/* Left: Logo */}

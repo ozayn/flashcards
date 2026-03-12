@@ -258,7 +258,7 @@ export default function StudyPage({ params }: StudyPageProps) {
             ← Back
           </Link>
         <div className="flex items-center gap-2">
-          <div className="hidden max-md:landscape:flex items-center gap-2">
+          <div className="hidden landscape-mobile:flex items-center gap-2">
             <ThemeToggle className="size-8 text-muted-foreground hover:text-foreground" />
             <div ref={settingsRef} className="relative">
             <Button

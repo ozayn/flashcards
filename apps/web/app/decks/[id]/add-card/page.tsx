@@ -14,6 +14,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { createFlashcard } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import PageContainer from "@/components/layout/page-container";
 
 interface AddCardPageProps {
   params: { id: string };
@@ -51,8 +52,7 @@ export default function AddCardPage({ params }: AddCardPageProps) {
   };
 
   return (
-    <main className="min-h-screen p-6">
-      <div className="max-w-2xl mx-auto space-y-6">
+    <PageContainer>
         <div className="flex items-center gap-4">
           <Link
             href={`/decks/${params.id}`}
@@ -145,7 +145,6 @@ export default function AddCardPage({ params }: AddCardPageProps) {
             </form>
           </CardContent>
         </Card>
-      </div>
-    </main>
+    </PageContainer>
   );
 }

@@ -6,11 +6,11 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import PageContainer from "@/components/layout/page-container";
 
 export default function AboutPage() {
   return (
-    <main className="min-h-screen p-6">
-      <div className="max-w-3xl mx-auto space-y-6">
+    <PageContainer>
         <div className="flex items-center gap-4">
           <Link
             href="/decks"
@@ -115,7 +115,6 @@ export default function AboutPage() {
             </p>
           </CardContent>
         </Card>
-      </div>
-    </main>
+    </PageContainer>
   );
 }

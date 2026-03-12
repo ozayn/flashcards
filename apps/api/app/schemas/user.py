@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Optional
 
 from pydantic import BaseModel, Field
 
@@ -32,6 +33,6 @@ class UserSettingsResponse(BaseModel):
 
 
 class UserSettingsUpdate(BaseModel):
-    think_delay_enabled: bool | None = None
-    think_delay_ms: int | None = Field(default=None, ge=0, le=30000)
-    card_style: str | None = Field(default=None, pattern="^(paper|minimal|modern|anki)$")
+    think_delay_enabled: Optional[bool] = None
+    think_delay_ms: Optional[int] = Field(default=None, ge=0, le=30000)
+    card_style: Optional[str] = Field(default=None, pattern="^(paper|minimal|modern|anki)$")
