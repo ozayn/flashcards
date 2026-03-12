@@ -143,6 +143,13 @@ Run flashcard validator test:
 ./scripts/validator_test.sh
 ```
 
+Update `.env.example` from `.env` (redacts keys, tokens, secrets, passwords):
+
+```bash
+./scripts/update_env_example.sh              # uses apps/api/.env
+./scripts/update_env_example.sh apps/web     # uses apps/web/.env
+```
+
 ### Running Manually
 
 ```bash
