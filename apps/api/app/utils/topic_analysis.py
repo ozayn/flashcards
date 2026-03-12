@@ -14,17 +14,29 @@ VOCAB_KEYWORDS = (
 )
 
 
+def _is_mostly_latin(text: str) -> bool:
+    """Return True if the text is mostly Latin/ASCII characters."""
+    if not text:
+        return False
+    latin = sum(1 for c in text if c.isascii() and (c.isalpha() or c.isspace()))
+    return latin / len(text) >= 0.8
+
+
 def detect_language(topic: str) -> str | None:
     """Detect the language of the topic. Returns ISO 639-1 code or None if detection fails."""
     topic = (topic or "").strip()
-    if not topic or len(topic) < 3:
+    if not topic:
         return None
     try:
         from langdetect import DetectorFactory, detect
         DetectorFactory.seed = 0  # Deterministic results
         return detect(topic)
     except Exception:
-        return None
+        pass
+    # Fallback: if topic is mostly Latin characters, assume English
+    if len(topic) >= 2 and _is_mostly_latin(topic):
+        return "en"
+    return None
 
 
 def is_vocabulary_topic(topic: str) -> bool:
@@ -43,12 +55,41 @@ def is_vocabulary_topic(topic: str) -> bool:
     return False
 
 
-def build_language_instruction(topic: str) -> str:
-    """Build the language instruction for the LLM based on detected topic language."""
-    lang = detect_language(topic)
-    if lang:
-        return "The flashcards must be written in the same language as the topic."
-    return ""
+# RTL language codes - when detected, keep output in that language
+RTL_LANGS = {"ar", "fa", "he", "ur"}
+
+# Language names for explicit instructions (avoids LLM guessing wrong language)
+LANG_NAMES: dict[str, str] = {
+    "en": "English",
+    "fa": "Persian",
+    "ar": "Arabic",
+    "es": "Spanish",
+    "fr": "French",
+    "de": "German",
+    "he": "Hebrew",
+    "ur": "Urdu",
+}
+
+
+def build_language_instruction(topic: str, language_hint: str | None = None) -> str:
+    """Build explicit language instruction for the LLM.
+    If language_hint is provided (e.g. 'en'), use it. Otherwise detect from topic."""
+    lang = language_hint or detect_language(topic)
+    if not lang:
+        return "Generate flashcards in the same language as the topic."
+    lang = lang.lower()[:2]
+    lang_name = LANG_NAMES.get(lang, lang)
+    if lang == "en":
+        return (
+            "CRITICAL: Generate ALL questions and answers in English ONLY. "
+            "Do not use German, Persian, Arabic, Farsi, or any other language."
+        )
+    if lang in RTL_LANGS:
+        return (
+            f"Generate ALL flashcards in {lang_name}. "
+            "Use RTL text naturally. Do not translate into English."
+        )
+    return f"Generate ALL flashcards in {lang_name}."
 
 
 def build_vocab_instruction(topic: str) -> str:

@@ -1,6 +1,7 @@
 import json
 import logging
 import re
+from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -12,6 +13,7 @@ from app.core.database import get_db
 from app.llm.router import generate_flashcards as llm_generate_flashcards
 from app.models import Deck, Flashcard
 from app.schemas.flashcard import DIFFICULTY_TO_INT
+from app.utils.topic_analysis import build_language_instruction
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +24,7 @@ class GenerateFlashcardsRequest(BaseModel):
     deck_id: UUID = Field(..., description="Deck ID")
     topic: str = Field(..., min_length=1, description="Topic for flashcard generation")
     num_cards: int = Field(default=10, ge=1, le=50, description="Number of cards to generate")
+    language: Optional[str] = Field(default="en", description="Output language (ISO 639-1, e.g. en, de, fa)")
 
 
 class GenerateFlashcardsResponse(BaseModel):
@@ -42,12 +45,15 @@ def _extract_json(text: str) -> dict:
     return data if isinstance(data, dict) else {}
 
 
-def _extract_concepts(topic: str) -> list[str]:
+def _extract_concepts(topic: str, language_hint: Optional[str] = None) -> list:
     """Stage 1: Extract key concepts from the topic using LLM."""
+    lang_instruction = build_language_instruction(topic, language_hint)
     prompt = f"""You are identifying key learning concepts.
 
 Topic:
 {topic}
+
+{lang_instruction}
 
 Extract 5–10 important words, terms, or concepts related to the topic.
 
@@ -60,8 +66,7 @@ Return STRICT JSON:
 Rules:
 - Concepts must be specific terms
 - Avoid general descriptions
-- Use the same language as the topic
-- If the topic is Persian or Arabic, generate RTL text naturally. Do not translate into English."""
+- Concepts must be in the same language as the topic"""
 
     try:
         response_text = llm_generate_flashcards(prompt)
@@ -79,21 +84,22 @@ Rules:
     return []
 
 
-def _generate_flashcards_from_concepts(concepts: list[str]) -> str:
+def _generate_flashcards_from_concepts(concepts: list, topic: str, language_hint: Optional[str] = None) -> str:
     """Stage 2: Generate flashcards from concepts using LLM."""
     concept_list = "\n".join(f"- {c}" for c in concepts)
+    lang_instruction = build_language_instruction(topic, language_hint)
     prompt = f"""You are generating flashcards.
 
 Concepts:
 {concept_list}
+
+{lang_instruction}
 
 Generate one flashcard per concept.
 
 For each flashcard:
 - Question: Ask for the meaning or explanation of the concept.
 - Answer: Provide a clear definition.
-- Use the same language as the concepts.
-- If concepts are Persian or Arabic, generate RTL text naturally. Do not translate into English.
 
 Return STRICT JSON only.
 
@@ -129,26 +135,24 @@ async def generate_flashcards(
         raise HTTPException(status_code=404, detail="Deck not found")
 
     # Stage 1: Extract concepts from topic
-    concepts = _extract_concepts(payload.topic)
+    lang_hint = (payload.language or "").strip().lower()[:2] or None
+    concepts = _extract_concepts(payload.topic, lang_hint)
 
     # Stage 2: Generate flashcards from concepts (or fallback to topic if extraction failed)
     if concepts:
         try:
-            response_text = _generate_flashcards_from_concepts(concepts)
+            response_text = _generate_flashcards_from_concepts(concepts, payload.topic, lang_hint)
         except ValueError as e:
             raise HTTPException(status_code=503, detail=str(e))
     else:
         # Fallback: single-stage generation when concept extraction fails
+        lang_instruction = build_language_instruction(payload.topic, lang_hint)
         fallback_prompt = f"""You are an expert educator creating high-quality flashcards.
 
 Topic:
 {payload.topic}
 
-Language Rules:
-- Detect the language of the topic.
-- Generate the flashcards in the SAME language as the topic.
-- If the topic is Persian, Arabic, or another RTL language, keep the output in that language.
-- If the topic is Persian or Arabic, generate RTL text naturally. Do not translate into English.
+{lang_instruction}
 
 Flashcard Rules:
 - Each flashcard must focus on ONE concept.

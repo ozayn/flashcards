@@ -80,6 +80,7 @@ export default function DeckPage({ params }: DeckPageProps) {
         deck_id: deck.id,
         topic: deck.name,
         num_cards: 10,
+        language: "en",
       });
       const data = await getFlashcards(params.id);
       setFlashcards(Array.isArray(data) ? data : []);

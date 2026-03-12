@@ -97,20 +97,25 @@ export async function createDeck(data: {
   name: string;
   description?: string;
 }) {
-  const res = await fetch(`${apiUrl}/decks`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      ...data,
-      source_type: "topic",
-    }),
-  });
-
-  if (!res.ok) throw new Error("Failed to create deck");
-
-  return res.json();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
+  try {
+    const res = await fetch(`${apiUrl}/decks`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...data, source_type: "topic" }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    if (!res.ok) throw new Error("Failed to create deck");
+    return res.json();
+  } catch (e) {
+    clearTimeout(timeout);
+    if (e instanceof Error && e.name === "AbortError") {
+      throw new Error("Request timed out. Check if the API is running and reachable.");
+    }
+    throw e;
+  }
 }
 
 export async function updateDeck(
@@ -202,6 +207,7 @@ export async function generateFlashcards(data: {
   deck_id: string;
   topic: string;
   num_cards?: number;
+  language?: string;
 }) {
   const res = await fetch(`${apiUrl}/generate-flashcards`, {
     method: "POST",
@@ -211,6 +217,7 @@ export async function generateFlashcards(data: {
     body: JSON.stringify({
       ...data,
       num_cards: data.num_cards ?? 10,
+      language: data.language ?? "en",
     }),
   });
 
