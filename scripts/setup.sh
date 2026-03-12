@@ -1,25 +1,25 @@
 #!/bin/bash
+set -e
 
 echo "Setting up Flashcards development environment..."
 echo ""
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # --------------------------------
 # Check Python
 # --------------------------------
-if ! command -v python3 &> /dev/null
-then
-    echo "Python3 is required but not installed."
+if ! command -v python3 &> /dev/null; then
+    echo "Error: Python3 is required but not installed."
     exit 1
 fi
 
 # --------------------------------
 # Check Node
 # --------------------------------
-if ! command -v node &> /dev/null
-then
-    echo "Node.js is required but not installed."
+if ! command -v node &> /dev/null; then
+    echo "Error: Node.js is required but not installed."
     exit 1
 fi
 
@@ -41,6 +41,10 @@ echo "Installing backend dependencies..."
 pip install --upgrade pip
 pip install -r requirements.txt
 
+# Verify API setup
+echo "Verifying API setup..."
+python -c "import fastapi, uvicorn; print('  OK')" || { echo "Error: API dependencies failed to install."; exit 1; }
+
 # --------------------------------
 # Setup Web environment
 # --------------------------------
@@ -51,6 +55,15 @@ cd "$ROOT_DIR/apps/web"
 
 echo "Installing frontend dependencies..."
 npm install
+
+# Verify web setup
+echo "Verifying web setup..."
+if [ -d "node_modules/next" ]; then
+    echo "  OK"
+else
+    echo "  Warning: Could not verify Next.js installation."
+    exit 1
+fi
 
 cd "$ROOT_DIR"
 
