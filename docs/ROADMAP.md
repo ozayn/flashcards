@@ -64,6 +64,33 @@
 
 ---
 
+## Personalized Flashcards
+
+Future versions of the platform will generate flashcards that adapt to the user's background and interests.
+
+User profile attributes may include:
+
+- profession
+- expertise level
+- interests
+- learning goals
+
+Flashcard generation will incorporate this information when building LLM prompts.
+
+Example:
+
+Topic: Machine Learning
+
+User profile:
+Profession: Data Scientist
+Focus: Applied ML
+
+The generated flashcards will emphasize practical applications and real-world examples.
+
+This will allow the platform to generate more relevant and engaging study material.
+
+---
+
 ## LLM Architecture & Model Routing
 
 The platform uses a pluggable LLM router that allows switching between different model providers without changing application logic.
