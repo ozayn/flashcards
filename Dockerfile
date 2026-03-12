@@ -1,18 +1,20 @@
 # Root Dockerfile - builds the web app when deploying from project root.
-# For Railway: set Root Directory to apps/api or apps/web to use app-specific Dockerfiles.
-#
-# This file builds the Next.js web app for platforms that expect a root Dockerfile.
+# BUILD_CONTEXT: "apps/web" when base dir is repo root (default). Use "." when base dir is apps/web.
+# Pass --build-arg BUILD_CONTEXT=. when your platform uses apps/web as the build context.
+ARG BUILD_CONTEXT=apps/web
 FROM node:20-alpine AS base
 
 FROM base AS deps
+ARG BUILD_CONTEXT
 WORKDIR /app
-COPY apps/web/package.json apps/web/package-lock.json* ./
+COPY ${BUILD_CONTEXT}/package.json ${BUILD_CONTEXT}/package-lock.json* ./
 RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi
 
 FROM base AS builder
+ARG BUILD_CONTEXT
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
-COPY apps/web .
+COPY ${BUILD_CONTEXT} .
 
 ENV NEXT_TELEMETRY_DISABLED=1
 
