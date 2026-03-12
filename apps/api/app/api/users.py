@@ -53,7 +53,7 @@ async def get_user_settings(
     return UserSettingsResponse(
         think_delay_enabled=user.think_delay_enabled,
         think_delay_ms=user.think_delay_ms,
-        study_card_style=getattr(user, "study_card_style", "classic"),
+        card_style=getattr(user, "card_style", "paper"),
     )
 
 
@@ -72,12 +72,12 @@ async def update_user_settings(
         user.think_delay_enabled = payload.think_delay_enabled
     if payload.think_delay_ms is not None:
         user.think_delay_ms = payload.think_delay_ms
-    if payload.study_card_style is not None:
-        user.study_card_style = payload.study_card_style
+    if payload.card_style is not None:
+        user.card_style = payload.card_style
     await db.flush()
     await db.refresh(user)
     return UserSettingsResponse(
         think_delay_enabled=user.think_delay_enabled,
         think_delay_ms=user.think_delay_ms,
-        study_card_style=getattr(user, "study_card_style", "classic"),
+        card_style=getattr(user, "card_style", "paper"),
     )

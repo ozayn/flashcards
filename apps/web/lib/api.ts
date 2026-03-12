@@ -244,7 +244,7 @@ export async function submitReview(
 export interface UserSettings {
   think_delay_enabled: boolean;
   think_delay_ms: number;
-  study_card_style: "classic" | "paper";
+  card_style: "paper" | "minimal" | "modern" | "anki";
 }
 
 export async function getUserSettings(userId: string): Promise<UserSettings> {

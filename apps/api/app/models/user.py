@@ -30,8 +30,9 @@ class User(Base):
     think_delay_ms: Mapped[int] = mapped_column(
         Integer, default=1500, nullable=False
     )
-    study_card_style: Mapped[str] = mapped_column(
-        String(32), default="classic", nullable=False
+    # Flashcard UI style preference (paper, minimal, modern, anki)
+    card_style: Mapped[str] = mapped_column(
+        String(32), default="paper", nullable=False
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, nullable=False

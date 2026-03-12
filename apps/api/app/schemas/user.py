@@ -26,7 +26,7 @@ class UserResponse(BaseModel):
 class UserSettingsResponse(BaseModel):
     think_delay_enabled: bool = True
     think_delay_ms: int = Field(default=1500, ge=0, le=30000)
-    study_card_style: str = "classic"
+    card_style: str = "paper"
 
     model_config = {"from_attributes": True}
 
@@ -34,4 +34,4 @@ class UserSettingsResponse(BaseModel):
 class UserSettingsUpdate(BaseModel):
     think_delay_enabled: bool | None = None
     think_delay_ms: int | None = Field(default=None, ge=0, le=30000)
-    study_card_style: str | None = Field(default=None, pattern="^(classic|paper)$")
+    card_style: str | None = Field(default=None, pattern="^(paper|minimal|modern|anki)$")

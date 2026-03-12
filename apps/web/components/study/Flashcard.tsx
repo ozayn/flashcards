@@ -4,8 +4,12 @@ import { ReactNode } from "react";
 
 const faceBase = "flashcard-face absolute inset-0 w-full h-full flex flex-col items-stretch";
 
-const classicFace = "rounded-xl bg-white border border-neutral-200 shadow-sm dark:bg-neutral-900 dark:border-neutral-700";
-const paperFace = "rounded-2xl border border-neutral-200 shadow-lg flashcard-paper dark:border-neutral-700";
+const styleMap = {
+  paper: "rounded-2xl border border-neutral-200 shadow-lg flashcard-paper dark:border-neutral-700",
+  minimal: "rounded-xl bg-white border border-neutral-200 shadow-sm dark:bg-neutral-900 dark:border-neutral-700",
+  modern: "rounded-2xl flashcard-modern dark:border-neutral-700",
+  anki: "rounded-lg flashcard-anki",
+} as const;
 
 export interface FlashcardProps {
   front: ReactNode;
@@ -13,11 +17,11 @@ export interface FlashcardProps {
   flipped: boolean;
   onFlip: () => void;
   canFlip: boolean;
-  cardStyle?: "classic" | "paper";
+  cardStyle?: "paper" | "minimal" | "modern" | "anki";
 }
 
-export function Flashcard({ front, back, flipped, onFlip, canFlip, cardStyle = "classic" }: FlashcardProps) {
-  const faceClass = cardStyle === "paper" ? paperFace : classicFace;
+export function Flashcard({ front, back, flipped, onFlip, canFlip, cardStyle = "paper" }: FlashcardProps) {
+  const faceClass = styleMap[cardStyle] ?? styleMap.paper;
   return (
     <div
       onClick={() => canFlip && onFlip()}

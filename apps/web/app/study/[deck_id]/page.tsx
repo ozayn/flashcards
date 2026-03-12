@@ -30,7 +30,7 @@ export default function StudyPage({ params }: StudyPageProps) {
   const [userSettings, setUserSettings] = useState<UserSettings>({
     think_delay_enabled: true,
     think_delay_ms: 1500,
-    study_card_style: "classic",
+    card_style: "paper",
   });
   const [canFlip, setCanFlip] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
@@ -274,37 +274,26 @@ export default function StudyPage({ params }: StudyPageProps) {
               <Settings className="size-4" />
             </Button>
             {showSettings && (
-              <div className="absolute right-0 top-full z-50 mt-1 w-40 rounded-lg border border-border bg-popover p-2 shadow-lg">
+              <div className="absolute right-0 top-full z-50 mt-1 w-44 rounded-lg border border-border bg-popover p-2 shadow-lg">
                 <p className="text-xs font-medium text-muted-foreground mb-1.5">Style</p>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      const userId = getStoredUserId();
-                      if (userId) {
-                        const updated = await updateUserSettings(userId, { study_card_style: "classic" });
-                        setUserSettings(updated);
-                        setShowSettings(false);
-                      }
-                    }}
-                    className={`flex-1 px-2 py-1 rounded text-xs font-medium ${userSettings.study_card_style === "classic" ? "bg-accent" : "hover:bg-muted"}`}
-                  >
-                    Classic
-                  </button>
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      const userId = getStoredUserId();
-                      if (userId) {
-                        const updated = await updateUserSettings(userId, { study_card_style: "paper" });
-                        setUserSettings(updated);
-                        setShowSettings(false);
-                      }
-                    }}
-                    className={`flex-1 px-2 py-1 rounded text-xs font-medium ${userSettings.study_card_style === "paper" ? "bg-accent" : "hover:bg-muted"}`}
-                  >
-                    Paper
-                  </button>
+                <div className="grid grid-cols-2 gap-1">
+                  {(["paper", "minimal", "modern", "anki"] as const).map((style) => (
+                    <button
+                      key={style}
+                      type="button"
+                      onClick={async () => {
+                        const userId = getStoredUserId();
+                        if (userId) {
+                          const updated = await updateUserSettings(userId, { card_style: style });
+                          setUserSettings(updated);
+                          setShowSettings(false);
+                        }
+                      }}
+                      className={`px-2 py-1 rounded text-xs font-medium capitalize ${userSettings.card_style === style ? "bg-accent" : "hover:bg-muted"}`}
+                    >
+                      {style}
+                    </button>
+                  ))}
                 </div>
               </div>
             )}
@@ -338,7 +327,7 @@ export default function StudyPage({ params }: StudyPageProps) {
           className="h-full min-h-[180px] max-h-full max-w-full aspect-[2/3] md:aspect-[3/2] landscape:aspect-[3/2] w-auto flex items-center justify-center touch-pan-y [perspective:1000px] md:min-h-0 md:max-w-2xl md:w-full flex-1 min-w-0 min-h-0 order-1 landscape:order-2 landscape:self-stretch landscape:h-full overflow-hidden"
         >
           <Flashcard
-            cardStyle={userSettings.study_card_style}
+            cardStyle={userSettings.card_style}
             front={
               <>
                 <div className="mt-20 md:mt-24">

@@ -47,11 +47,11 @@ export function UserSettings() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [open]);
 
-  const handleStyleChange = async (style: "classic" | "paper") => {
+  const handleStyleChange = async (style: "paper" | "minimal" | "modern" | "anki") => {
     const userId = getStoredUserId();
     if (!userId || !settings) return;
     try {
-      const updated = await updateUserSettings(userId, { study_card_style: style });
+      const updated = await updateUserSettings(userId, { card_style: style });
       setSettings(updated);
       window.dispatchEvent(new CustomEvent("flashcard_settings_changed", { detail: { settings: updated } }));
     } catch {
@@ -77,32 +77,24 @@ export function UserSettings() {
         <div className="absolute right-0 top-full z-50 mt-1 w-56 rounded-lg border border-border bg-popover p-3 shadow-lg">
           <p className="text-sm font-medium mb-2">Flashcard Style</p>
           <div className="flex flex-col gap-1">
-            <label className={cn(
-              "flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer text-sm",
-              settings.study_card_style === "classic" && "bg-accent"
-            )}>
-              <input
-                type="radio"
-                name="card-style"
-                checked={settings.study_card_style === "classic"}
-                onChange={() => handleStyleChange("classic")}
-                className="rounded-full"
-              />
-              Classic
-            </label>
-            <label className={cn(
-              "flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer text-sm",
-              settings.study_card_style === "paper" && "bg-accent"
-            )}>
-              <input
-                type="radio"
-                name="card-style"
-                checked={settings.study_card_style === "paper"}
-                onChange={() => handleStyleChange("paper")}
-                className="rounded-full"
-              />
-              Paper
-            </label>
+            {(["paper", "minimal", "modern", "anki"] as const).map((style) => (
+              <label
+                key={style}
+                className={cn(
+                  "flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer text-sm",
+                  settings.card_style === style && "bg-accent"
+                )}
+              >
+                <input
+                  type="radio"
+                  name="card-style"
+                  checked={settings.card_style === style}
+                  onChange={() => handleStyleChange(style)}
+                  className="rounded-full"
+                />
+                {style.charAt(0).toUpperCase() + style.slice(1)}
+              </label>
+            ))}
           </div>
         </div>
       )}
