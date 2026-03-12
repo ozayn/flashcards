@@ -4,23 +4,21 @@
 
 This monorepo has two Dockerfiles for the web app. **The build context must match the Dockerfile.**
 
-### Option A: Build from repo root (recommended)
+### Option A: Build from repo root (recommended for Coolify, Metal, etc.)
 
-- **Base Directory**: `.` or empty (repository root)
+- **Base Directory**: `.` or empty (repository root) — **do not use `apps/web`**
 - **Dockerfile Path**: `Dockerfile`
 
-The root `Dockerfile` copies `apps/web` into the image.
+The root `Dockerfile` copies `apps/web` into the image. This is the correct setup when the platform expects a single Dockerfile at the repo root.
 
 ### Option B: Build from apps/web
 
 - **Base Directory**: `apps/web`
-- **Dockerfile Path**: `Dockerfile`
+- **Dockerfile Path**: `Dockerfile` (must resolve to `apps/web/Dockerfile`, not the root one)
 
 Use `apps/web/Dockerfile`, which expects the build context to be the web app directory.
 
-### Common error
+### Common errors
 
-If you see `"/apps/web": not found` during build, the platform is using the **root** Dockerfile with **apps/web** as the base directory. Fix by either:
-
-1. Set Base Directory to the repo root (`.`), or
-2. Set Base Directory to `apps/web` and ensure the platform uses `apps/web/Dockerfile`
+- **`"/apps/web"` or `"/apps/web/package.json"` not found**: The platform is using the **root** Dockerfile with **apps/web** as the base directory. **Fix: Set Base Directory to the repository root (`.`), not `apps/web`.**
+- If Base Directory must stay as `apps/web`, ensure the Dockerfile path explicitly points to `apps/web/Dockerfile` so the platform does not pick up the root `Dockerfile`.
