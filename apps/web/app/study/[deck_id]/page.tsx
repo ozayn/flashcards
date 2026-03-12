@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef, useCallback } from "react";
 import Link from "next/link";
-import { HelpCircle, ChevronLeft, ChevronRight, X, Settings } from "lucide-react";
+import { ChevronLeft, ChevronRight, X, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -26,7 +26,6 @@ export default function StudyPage({ params }: StudyPageProps) {
   const [loading, setLoading] = useState(true);
   const [currentCardIndex, setCurrentCardIndex] = useState(0);
   const [showAnswer, setShowAnswer] = useState(false);
-  const [showHelp, setShowHelp] = useState(false);
   const [sessionComplete, setSessionComplete] = useState(false);
   const [userSettings, setUserSettings] = useState<UserSettings>({
     think_delay_enabled: true,
@@ -141,44 +140,40 @@ export default function StudyPage({ params }: StudyPageProps) {
 
   if (loading) {
     return (
-      <main className="min-h-screen flex items-center justify-center p-6 relative">
-        <Link
-          href={`/decks/${params.deck_id}`}
-          className="fixed bottom-4 right-4 z-50 inline-flex items-center gap-2 rounded-full bg-background/95 backdrop-blur border border-border shadow-lg px-4 py-2 text-sm font-medium hover:bg-muted transition-colors"
-        >
-          <X className="size-4" />
-          Exit Study
-        </Link>
-        <p className="text-muted-foreground">Loading flashcards...</p>
+      <main className="min-h-screen flex flex-col pt-6 pb-8" data-study>
+        <div className="max-w-2xl mx-auto w-full px-10 md:px-12 flex flex-col flex-1 justify-center gap-4">
+          <Link
+            href={`/decks/${params.deck_id}`}
+            className="inline-flex h-7 items-center justify-center rounded-lg px-2.5 text-sm font-medium hover:bg-muted w-fit"
+          >
+            ← Back
+          </Link>
+          <p className="text-muted-foreground">Loading flashcards...</p>
+        </div>
       </main>
     );
   }
 
   if (flashcards.length === 0) {
     return (
-      <main className="min-h-screen flex flex-col items-center justify-center p-6 relative">
-        <Link
-          href={`/decks/${params.deck_id}`}
-          className="fixed bottom-4 right-4 z-50 inline-flex items-center gap-2 rounded-full bg-background/95 backdrop-blur border border-border shadow-lg px-4 py-2 text-sm font-medium hover:bg-muted transition-colors"
-        >
-          <X className="size-4" />
-          Exit Study
-        </Link>
-        <Link
-          href={`/decks/${params.deck_id}`}
-          className="inline-flex h-7 items-center justify-center rounded-lg px-2.5 text-sm font-medium hover:bg-muted mb-4"
-        >
-          ← Back
-        </Link>
-        <p className="text-muted-foreground text-center">
-          No flashcards in this deck yet.
-        </p>
-        <Link
-          href={`/decks/${params.deck_id}/add-card`}
-          className="mt-4 inline-flex h-10 items-center justify-center rounded-lg bg-primary px-6 text-sm font-medium text-primary-foreground hover:bg-primary/80"
-        >
-          Add Cards
-        </Link>
+      <main className="min-h-screen flex flex-col pt-6 pb-8" data-study>
+        <div className="max-w-2xl mx-auto w-full px-10 md:px-12 flex flex-col flex-1 justify-center gap-4">
+          <Link
+            href={`/decks/${params.deck_id}`}
+            className="inline-flex h-7 items-center justify-center rounded-lg px-2.5 text-sm font-medium hover:bg-muted w-fit"
+          >
+            ← Back
+          </Link>
+          <p className="text-muted-foreground text-center">
+            No flashcards in this deck yet.
+          </p>
+          <Link
+            href={`/decks/${params.deck_id}/add-card`}
+            className="inline-flex h-10 items-center justify-center rounded-lg bg-primary px-6 text-sm font-medium text-primary-foreground hover:bg-primary/80 w-fit"
+          >
+            Add Cards
+          </Link>
+        </div>
       </main>
     );
   }
@@ -189,15 +184,15 @@ export default function StudyPage({ params }: StudyPageProps) {
 
   if (sessionComplete) {
     return (
-      <main className="relative h-full min-h-[50vh] flex flex-col items-center justify-center px-4 py-8">
-        <Link
-          href={`/decks/${params.deck_id}`}
-          className="fixed bottom-4 right-4 z-50 inline-flex items-center gap-2 rounded-full bg-background/95 backdrop-blur border border-border shadow-lg px-4 py-2 text-sm font-medium hover:bg-muted transition-colors"
-        >
-          <X className="size-4" />
-          Exit Study
-        </Link>
-        <Card className="max-w-sm">
+      <main className="h-full min-h-[50vh] flex flex-col pt-6 pb-8" data-study>
+        <div className="max-w-2xl mx-auto w-full px-10 md:px-12 flex flex-col flex-1 justify-center gap-6">
+          <Link
+            href={`/decks/${params.deck_id}`}
+            className="inline-flex h-7 items-center justify-center rounded-lg px-2.5 text-sm font-medium hover:bg-muted w-fit"
+          >
+            ← Back
+          </Link>
+          <Card className="max-w-sm">
           <CardHeader>
             <CardTitle className="text-2xl">Session complete!</CardTitle>
           </CardHeader>
@@ -224,6 +219,7 @@ export default function StudyPage({ params }: StudyPageProps) {
             </div>
           </CardContent>
         </Card>
+        </div>
       </main>
     );
   }
@@ -245,24 +241,22 @@ export default function StudyPage({ params }: StudyPageProps) {
   };
 
   return (
-    <main className="h-full min-h-0 flex flex-col items-center px-10 md:px-12 overflow-hidden relative">
+    <main className="h-full min-h-0 flex flex-col items-center overflow-hidden relative" data-study>
       <Link
         href={`/decks/${params.deck_id}`}
-        className="fixed bottom-4 right-4 z-50 inline-flex items-center gap-2 rounded-full bg-background/95 backdrop-blur border border-border shadow-lg px-4 py-2 text-sm font-medium hover:bg-muted transition-colors"
+        className="fixed bottom-8 right-[calc(50%-18rem)] z-50 inline-flex items-center gap-2 rounded-full bg-background/95 backdrop-blur border border-border shadow-lg px-4 py-2 text-sm font-medium hover:bg-muted transition-colors"
       >
         <X className="size-4" />
         Exit Study
       </Link>
-      <div className="absolute top-6 right-6 text-sm text-muted-foreground">
-        {currentCardIndex + 1} / {flashcards.length}
-      </div>
-      <div className="shrink-0 flex items-center justify-between w-full mb-0">
-        <Link
-          href={`/decks/${params.deck_id}`}
-          className="inline-flex h-9 items-center justify-center rounded-lg px-3 text-sm font-medium hover:bg-muted py-2"
-        >
-          ← Back
-        </Link>
+      <div className="pt-6 shrink-0 w-full">
+        <div className="max-w-2xl mx-auto w-full px-10 md:px-12 flex items-center justify-between">
+          <Link
+            href={`/decks/${params.deck_id}`}
+            className="inline-flex h-7 items-center justify-center rounded-lg px-2.5 text-sm font-medium hover:bg-muted"
+          >
+            ← Back
+          </Link>
         <div className="flex items-center gap-2">
           <div className="hidden max-md:landscape:flex items-center gap-2">
             <ThemeToggle className="size-8 text-muted-foreground hover:text-foreground" />
@@ -302,15 +296,7 @@ export default function StudyPage({ params }: StudyPageProps) {
             )}
             </div>
           </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setShowHelp((h) => !h)}
-            className="size-8 text-muted-foreground hover:text-foreground"
-            aria-label={showHelp ? "Hide help" : "Show help"}
-          >
-            <HelpCircle className="size-4" />
-          </Button>
+        </div>
         </div>
       </div>
 
@@ -330,21 +316,19 @@ export default function StudyPage({ params }: StudyPageProps) {
             onTouchStart={handleTouchStart}
             onTouchEnd={handleTouchEnd}
             dir="auto"
-            className="flashcard bg-white dark:bg-neutral-900 rounded-2xl shadow-md p-10 w-full max-w-xl text-center flex items-center justify-center min-h-[200px] flex-1 min-w-0 order-1 landscape:order-2 touch-pan-y overflow-hidden"
+            className="flashcard relative rounded-2xl w-full max-w-xl aspect-[3/4] min-h-[200px] max-h-[70vh] flex-1 min-w-0 order-1 landscape:order-2 touch-pan-y overflow-hidden flex flex-col"
           >
+            <div className="absolute top-6 right-6 text-sm text-muted-foreground z-10">
+              {currentCardIndex + 1} / {flashcards.length}
+            </div>
             <Flashcard
               cardStyle={userSettings.card_style}
               front={
                 <>
-                  <div className="w-full">
+                  <div className="flex-1 min-h-0 w-full overflow-y-auto">
                     <p dir="auto" className="text-2xl font-medium leading-relaxed">
                       {card.question}
                     </p>
-                    {showHelp && (
-                      <div className="mt-4 text-muted-foreground text-xs opacity-60">
-                        Tap to flip
-                      </div>
-                    )}
                   </div>
                 </>
               }
@@ -398,11 +382,6 @@ export default function StudyPage({ params }: StudyPageProps) {
           />
         </div>
 
-        {showHelp && (
-          <div className="absolute bottom-2 left-1/2 -translate-x-1/2 text-xs text-muted-foreground opacity-60 bg-background/80 px-2 py-1 rounded border border-border">
-            Tap to flip • Swipe to go
-          </div>
-        )}
         <Button
           variant="outline"
           size="icon"
