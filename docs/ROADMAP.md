@@ -91,6 +91,36 @@ This will allow the platform to generate more relevant and engaging study materi
 
 ---
 
+## Flashcards From Anything
+
+The platform will support generating flashcards from multiple types of input.
+
+Supported input types will include:
+
+- topic
+- raw text or notes
+- web URLs
+- Wikipedia pages
+- PDFs
+- lecture transcripts
+- YouTube videos (future)
+
+Workflow:
+
+User provides input content
+↓
+The system extracts key concepts
+↓
+AI generates flashcards
+↓
+User reviews and edits the cards
+↓
+Cards are saved to a deck
+
+This feature will allow users to quickly convert learning material into structured flashcards.
+
+---
+
 ## LLM Architecture & Model Routing
 
 The platform uses a pluggable LLM router that allows switching between different model providers without changing application logic.
