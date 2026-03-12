@@ -1,127 +1,164 @@
 # Project Roadmap
 
-## Completed
+## Product Vision
 
-- [x] Project scaffolding (Next.js + FastAPI monorepo)
-- [x] Database models (Users, Decks, Flashcards, Reviews)
-- [x] SQLite support for local development
-- [x] User CRUD (create, list)
-- [x] Deck CRUD (create, list, get by ID)
-- [x] Flashcard creation and listing
-- [x] Deck dashboard with API integration
-- [x] Deck detail page with flashcards section
-- [x] Clickable deck cards linking to detail page
-- [x] Development scripts (dev.sh, restart.sh)
+An AI-powered flashcard creation platform that converts knowledge from any source into structured learning material.
 
-## In Progress
+The product focuses on:
 
-- [ ] Add Card page (create flashcards from UI)
-- [ ] Study mode implementation
+- AI-generated flashcards
+- knowledge extraction
+- structured learning
+- personalization
+- experimentation with different LLMs
 
-## Planned
-
-- [ ] LLM-powered flashcard generation
-- [ ] Webpage parsing for deck creation
-- [ ] Spaced repetition (Reviews model)
-- [ ] User authentication
-- [ ] Study tutor / AI assistance
+It is not primarily a gamified study app, but a **knowledge generation and learning platform**.
 
 ---
 
-## Product & Growth Features
+## Phase 1 — Core Platform (MVP)
 
-### Google Authentication
+Establish the foundational product.
 
-- Implement Google OAuth login using NextAuth/Auth.js
-- Replace manual user selection with real authentication
-- Automatically create user records on first login
-- Associate decks with authenticated users
+**Completed:**
 
-### Admin Dashboard
-
-- Admin-only interface for viewing platform statistics
-- Metrics:
-  - total users
-  - active users
-  - decks created
-  - flashcards generated
-  - study activity
-  - AI usage
-- Useful for monitoring growth and debugging
-
-### Monetization
-
-- Introduce Free and Pro plans
-- Integrate Stripe for payments
-- Limit AI generation for free users
-- Unlimited decks and AI features for Pro users
-
-### AI Usage Tracking
-
-- Add table to track AI generation usage per user
-- Store tokens used and cards generated
-- Use this for cost monitoring and plan limits
+- Project scaffolding (Next.js + FastAPI monorepo)
+- Database models (Users, Decks, Flashcards, Reviews)
+- Deck CRUD
+- Flashcard CRUD
+- Study interface (flip, swipe, ratings)
+- AI flashcard generation
+- Dark mode
+- Mobile-friendly UI
+- Production deployment
 
 ---
 
-## Personalized Flashcards
+## Phase 2 — Knowledge Organization
 
-Future versions of the platform will generate flashcards that adapt to the user's background and interests.
+Help users manage large knowledge bases.
 
-User profile attributes may include:
+**Features:**
+
+- Tags for flashcards
+- Deck folders / collections
+- Deck categorization
+- Search across decks
+- Filter cards by tag or category
+
+**Example structure:**
+
+```
+Machine Learning
+  ├ Regression
+  ├ Neural Networks
+  └ Optimization
+```
+
+---
+
+## Phase 3 — Flashcards From Anything
+
+Generate flashcards from multiple types of input.
+
+**Supported inputs:**
+
+- topic
+- raw text / notes
+- URLs
+- Wikipedia pages
+- PDFs
+- lecture transcripts
+- YouTube videos (future)
+
+**Workflow:**
+
+```
+User provides content
+↓
+System extracts concepts
+↓
+AI generates flashcards
+↓
+User edits cards
+↓
+Cards saved to deck
+```
+
+**Source tracking:**
+
+- source_type
+- source_url
+- source_text
+
+---
+
+## Phase 4 — Personalization
+
+Generate flashcards that adapt to the user's background and interests.
+
+**User profile attributes:**
 
 - profession
 - expertise level
 - interests
 - learning goals
 
-Flashcard generation will incorporate this information when building LLM prompts.
-
-Example:
-
-Topic: Machine Learning
-
-User profile:
-Profession: Data Scientist
-Focus: Applied ML
-
-The generated flashcards will emphasize practical applications and real-world examples.
-
-This will allow the platform to generate more relevant and engaging study material.
+These attributes influence LLM prompts to produce more relevant study material.
 
 ---
 
-## Flashcards From Anything
+## Phase 5 — Platform Infrastructure
 
-The platform will support generating flashcards from multiple types of input.
+Enable monitoring, debugging, and cost tracking.
 
-Supported input types will include:
+**Purpose:**
 
-- topic
-- raw text or notes
-- web URLs
-- Wikipedia pages
-- PDFs
-- lecture transcripts
-- YouTube videos (future)
+- Monitoring platform growth
+- Debugging
+- Cost tracking
 
-Workflow:
+**Features:**
 
-User provides input content
-↓
-The system extracts key concepts
-↓
-AI generates flashcards
-↓
-User reviews and edits the cards
-↓
-Cards are saved to a deck
-
-This feature will allow users to quickly convert learning material into structured flashcards.
+- Google Authentication
+- Admin Dashboard
+- AI usage tracking
+- Analytics
 
 ---
 
-## LLM Architecture & Model Routing
+## Phase 6 — Monetization
+
+Introduce plans and payments.
+
+**Features:**
+
+- Free plan
+- Pro plan
+- Stripe payments
+- AI generation limits for free users
+- Unlimited decks for Pro users
+
+---
+
+## Phase 7 — Advanced Learning
+
+Transform the app into an adaptive learning system.
+
+**Features:**
+
+- Spaced repetition
+- Daily review queue
+- Learning analytics
+- AI tutor mode
+
+---
+
+## Phase 8 — AI Experiments
+
+Technical architecture for LLM experimentation.
+
+### LLM Architecture & Model Routing
 
 The platform uses a pluggable LLM router that allows switching between different model providers without changing application logic.
 
@@ -160,13 +197,11 @@ Providers:
 - OpenAI (future)
 - Local models via Ollama (future)
 
----
-
-## AI Reliability Improvements
+### AI Reliability Improvements
 
 To ensure flashcard generation is robust and production-ready, the platform will implement several reliability improvements.
 
-### Structured JSON Generation
+**Structured JSON Generation**
 
 All LLM providers must return flashcards in strict JSON format.
 
@@ -187,11 +222,11 @@ Example schema:
 
 The backend will validate responses before inserting cards into the database.
 
-### Automatic JSON Validation
+**Automatic JSON Validation**
 
 Responses will be validated against a schema before processing. Invalid responses will be rejected and logged.
 
-### Automatic Retry on Failure
+**Automatic Retry on Failure**
 
 If JSON validation fails:
 
@@ -199,29 +234,18 @@ If JSON validation fails:
 2. Attempt regeneration with the same model
 3. Optionally fall back to another LLM provider
 
-### LLM Fallback Routing
+**LLM Fallback Routing**
 
 If a provider fails or returns invalid output:
 
 - Retry with the same provider
 - Optionally route to another provider (OpenAI, local model)
 
-This will be enabled by the LLM router architecture.
+**Logging & Debugging**
 
-### Logging & Debugging
+All generation failures should log: topic, model used, raw LLM response, validation errors.
 
-All generation failures should log:
-
-- topic
-- model used
-- raw LLM response
-- validation errors
-
-This will make debugging and improving prompts easier.
-
----
-
-## Future AI Experiments
+### Future AI Experiments
 
 Planned experiments enabled by the LLM router:
 
@@ -231,9 +255,7 @@ Planned experiments enabled by the LLM router:
 - Cost-aware routing (local model vs API model)
 - Adaptive model selection based on task difficulty
 
----
-
-## Local LLM Support (Future)
+### Local LLM Support (Future)
 
 The platform will eventually support running open-source language models locally instead of relying only on external APIs.
 
@@ -243,21 +265,6 @@ The platform will eventually support running open-source language models locally
 - Allow offline experimentation
 - Enable full control of AI generation
 - Support AI research and model comparisons
-
-**Planned architecture:**
-
-```
-Frontend
-   ↓
-FastAPI Backend
-   ↓
-LLM Router
-   ↓
-Providers:
-   - Groq (current production)
-   - OpenAI (future)
-   - Local models via Ollama (future)
-```
 
 **Possible local models:**
 
@@ -272,87 +279,42 @@ Providers:
 2. Dedicated GPU server (RunPod, Lambda Labs, Vast.ai)
 3. Self-hosted AI infrastructure
 
-The LLM router already implemented in the backend allows switching providers via:
+The LLM router allows switching providers via `LLM_PROVIDER=groq`, `openai`, or `local`.
+
+---
+
+## Phase 9 — AI Course Builder
+
+Allow users to paste any knowledge source and generate a structured learning course.
+
+**Goal:**
+
+Turn the platform into a knowledge-to-learning pipeline.
+
+**Example workflow:**
+
+User pastes:
+
+- article
+- book chapter
+- lecture transcript
+- long document
+
+AI produces:
+
+- structured topics
+- decks per topic
+- flashcards per concept
+- difficulty levels
+
+**Example output:**
 
 ```
-LLM_PROVIDER=groq
-LLM_PROVIDER=openai
-LLM_PROVIDER=local
+Machine Learning Course
+
+Module 1 — Linear Models
+Module 2 — Optimization
+Module 3 — Neural Networks
 ```
 
-This will make experimentation and model benchmarking possible.
-
----
-
-## Long-Term Goal
-
-Turn the flashcard platform into an **AI learning laboratory**, where different models can be evaluated for:
-
-- learning efficiency
-- explanation quality
-- flashcard usefulness
-- spaced-repetition optimization
-
----
-
-## Future Learning Features
-
-### Spaced Repetition Engine
-Implement adaptive scheduling of flashcards using a spaced repetition algorithm.
-
-Planned capabilities:
-
-• Card difficulty rating (Again / Hard / Good / Easy)  
-• Review scheduling with next_review timestamps  
-• Due-card study mode (only show cards due today)  
-• Review history tracking per user  
-• Adaptive interval calculation (similar to SM-2 / Anki)
-
-Benefits:
-
-• Improves long-term retention
-• Enables personalized learning
-• Supports learning analytics
-
----
-
-### Daily Review Queue
-
-Add a system showing how many cards are due each day.
-
-Examples:
-
-• "12 cards due today"
-• Review streak tracking
-• Daily learning reminders
-
----
-
-### Learning Analytics
-
-Provide statistics on learning progress.
-
-Possible metrics:
-
-• Retention rate
-• Cards mastered
-• Average recall difficulty
-• Study time per deck
-
----
-
-### AI Tutor Mode
-
-Integrate LLM assistance for difficult flashcards.
-
-Features:
-
-• Explain a card
-• Generate examples
-• Provide mnemonics
-• Ask follow-up questions
-
-Goal:
-Transform the app from a flashcard viewer into an adaptive AI learning platform.
-
----
+Each module contains flashcards automatically generated.
