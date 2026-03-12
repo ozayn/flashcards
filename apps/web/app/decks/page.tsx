@@ -115,7 +115,7 @@ export default function DecksPage() {
           Show archived decks
         </label>
 
-        <div className="grid gap-4">
+        <div className="space-y-3">
           {decksError ? (
             <Card>
               <CardHeader>
@@ -150,29 +150,36 @@ export default function DecksPage() {
             </Card>
           ) : (
             decks.map((deck) => (
-              <Card key={deck.id} className="hover:bg-muted transition">
-                <CardHeader className="flex flex-row items-start justify-between gap-4">
-                  <Link href={`/decks/${deck.id}`} className="flex-1 min-w-0">
-                    <CardTitle>{deck.name}</CardTitle>
-                    <CardDescription>{deck.description}</CardDescription>
-                  </Link>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={(e) =>
-                      handleArchiveDeck(deck.id, !showArchived, e)
-                    }
-                    className="shrink-0 text-muted-foreground hover:text-foreground"
-                    aria-label={showArchived ? "Unarchive deck" : "Archive deck"}
-                  >
-                    {showArchived ? (
-                      <ArchiveRestore className="size-4" />
-                    ) : (
-                      <Archive className="size-4" />
-                    )}
-                  </Button>
-                </CardHeader>
-              </Card>
+              <div
+                key={deck.id}
+                className="rounded-xl border border-neutral-200 px-4 py-3 flex items-start justify-between gap-3 bg-white hover:bg-muted transition dark:bg-neutral-900 dark:border-neutral-700"
+              >
+                <Link href={`/decks/${deck.id}`} className="flex-1 min-w-0">
+                  <div className="flex flex-col gap-1">
+                    <div className="font-medium text-base leading-snug">
+                      {deck.name}
+                    </div>
+                    <div className="text-sm text-neutral-500 leading-snug dark:text-neutral-400">
+                      {deck.description || ""}
+                    </div>
+                  </div>
+                </Link>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={(e) =>
+                    handleArchiveDeck(deck.id, !showArchived, e)
+                  }
+                  className="flex-shrink-0 mt-1 text-muted-foreground hover:text-foreground"
+                  aria-label={showArchived ? "Unarchive deck" : "Archive deck"}
+                >
+                  {showArchived ? (
+                    <ArchiveRestore className="size-4" />
+                  ) : (
+                    <Archive className="size-4" />
+                  )}
+                </Button>
+              </div>
             ))
           )}
         </div>

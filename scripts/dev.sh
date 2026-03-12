@@ -23,10 +23,16 @@ cd "$PROJECT_ROOT"
 # Give backend a moment to start
 sleep 2
 
+# Clear build caches in development to avoid stale Turbopack/Webpack artifacts
+if [ "${NODE_ENV:-development}" != "production" ]; then
+  echo "Clearing Next.js cache..."
+  rm -rf apps/web/.next
+  rm -rf node_modules/.cache
+  rm -rf apps/web/node_modules/.cache
+fi
+
 echo "Starting frontend..."
 cd apps/web
-# Clear stale .next to avoid MODULE_NOT_FOUND / invalid hook call
-rm -rf .next
 echo ""
 echo "Flashcard app running!"
 echo "  Backend:  http://localhost:8000"

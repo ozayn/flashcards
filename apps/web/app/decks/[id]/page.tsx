@@ -4,13 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Archive, ArchiveRestore, Pencil } from "lucide-react";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
   getDeck,
@@ -154,96 +148,99 @@ export default function DeckPage({ params }: DeckPageProps) {
         </div>
 
         <Card>
-          <CardHeader className="space-y-2">
-            {editingTitle ? (
-              <input
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                onBlur={async () => {
-                  if (deck) {
-                    try {
-                      await updateDeck(deck.id, { name: title });
-                      const data = await getDeck(params.id);
-                      setDeck(data);
-                    } catch {
-                      // ignore
-                    }
-                  }
-                  setEditingTitle(false);
-                }}
-                onKeyDown={async (e) => {
-                  if (e.key === "Enter" && deck) {
-                    try {
-                      await updateDeck(deck.id, { name: title });
-                      const data = await getDeck(params.id);
-                      setDeck(data);
-                    } catch {
-                      // ignore
+          <div className="px-4 pt-4 pb-4">
+            <div className="flex flex-col gap-2 mb-4">
+              {editingTitle ? (
+                <input
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  onBlur={async () => {
+                    if (deck) {
+                      try {
+                        await updateDeck(deck.id, { name: title });
+                        const data = await getDeck(params.id);
+                        setDeck(data);
+                      } catch {
+                        // ignore
+                      }
                     }
                     setEditingTitle(false);
-                  }
-                }}
-                className="text-2xl font-semibold border rounded px-2 py-1 w-full"
-                autoFocus
-              />
-            ) : (
-              <h1
-                className="text-2xl font-semibold cursor-pointer"
-                onClick={() => setEditingTitle(true)}
-              >
-                {title}
-              </h1>
-            )}
-            {editingDescription ? (
-              <textarea
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                onBlur={async () => {
-                  if (deck) {
-                    try {
-                      await updateDeck(deck.id, { description });
-                      const data = await getDeck(params.id);
-                      setDeck(data);
-                    } catch {
-                      // ignore
+                  }}
+                  onKeyDown={async (e) => {
+                    if (e.key === "Enter" && deck) {
+                      try {
+                        await updateDeck(deck.id, { name: title });
+                        const data = await getDeck(params.id);
+                        setDeck(data);
+                      } catch {
+                        // ignore
+                      }
+                      setEditingTitle(false);
                     }
-                  }
-                  setEditingDescription(false);
-                }}
-                className="border rounded px-2 py-1 w-full min-h-[80px]"
-                autoFocus
-              />
-            ) : (
-              <p
-                className="text-muted-foreground cursor-pointer"
-                onClick={() => setEditingDescription(true)}
+                  }}
+                  className="text-2xl font-semibold border rounded px-2 py-1 w-full"
+                  autoFocus
+                />
+              ) : (
+                <h1
+                  className="text-2xl font-semibold cursor-pointer"
+                  onClick={() => setEditingTitle(true)}
+                >
+                  {title}
+                </h1>
+              )}
+              {editingDescription ? (
+                <textarea
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  onBlur={async () => {
+                    if (deck) {
+                      try {
+                        await updateDeck(deck.id, { description });
+                        const data = await getDeck(params.id);
+                        setDeck(data);
+                      } catch {
+                        // ignore
+                      }
+                    }
+                    setEditingDescription(false);
+                  }}
+                  className="border rounded px-2 py-1 w-full min-h-[80px] text-sm text-neutral-500 mb-3"
+                  autoFocus
+                />
+              ) : (
+                <p
+                  className="text-sm text-neutral-500 mb-3 cursor-pointer dark:text-neutral-400"
+                  onClick={() => setEditingDescription(true)}
+                >
+                  {description || "Click to add description"}
+                </p>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Link
+                href={`/study/${deck.id}`}
+                className="inline-flex h-10 items-center justify-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/80 w-full sm:w-auto"
               >
-                {description || "Click to add description"}
-              </p>
-            )}
-          </CardHeader>
-          <CardContent className="flex flex-col sm:flex-row flex-wrap gap-3">
-            <Link
-              href={`/study/${deck.id}`}
-              className="inline-flex h-10 items-center justify-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/80 w-full sm:w-auto"
-            >
-              Study
-            </Link>
-            <Link
-              href={`/decks/${deck.id}/add-card`}
-              className="inline-flex h-10 items-center justify-center rounded-lg border border-border bg-background px-4 text-sm font-medium hover:bg-muted w-full sm:w-auto"
-            >
-              Add Card
-            </Link>
-            <button
-              type="button"
-              onClick={handleGenerate}
-              disabled={generating}
-              className="inline-flex h-10 items-center justify-center rounded-lg border border-border bg-background px-4 text-sm font-medium hover:bg-muted disabled:opacity-50 disabled:pointer-events-none w-full sm:w-auto"
-            >
-              {generating ? "Generating..." : "Generate Flashcards"}
-            </button>
-          </CardContent>
+                Study
+              </Link>
+              <Link
+                href={`/decks/${deck.id}/add-card`}
+                className="inline-flex h-10 items-center justify-center rounded-lg border border-border bg-background px-4 text-sm font-medium hover:bg-muted w-full sm:w-auto"
+              >
+                Add Card
+              </Link>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleGenerate}
+                disabled={generating}
+                className="w-full sm:w-auto"
+              >
+                {generating ? "Generating..." : "Generate Flashcards"}
+              </Button>
+            </div>
+          </div>
         </Card>
 
         <section className="space-y-4">
@@ -253,30 +250,37 @@ export default function DeckPage({ params }: DeckPageProps) {
           ) : (
             <div className="space-y-3">
               {flashcards.map((card) => (
-                <Card key={card.id}>
-                  <CardHeader className="flex flex-row items-start justify-between gap-4">
-                    <Link
-                      href={`/decks/${params.id}/edit-card/${card.id}`}
-                      className="flex-1 min-w-0"
+                <div
+                  key={card.id}
+                  className="rounded-xl border border-neutral-200 px-4 py-3 flex items-start justify-between gap-3 bg-white dark:bg-neutral-900 dark:border-neutral-700"
+                >
+                  <Link
+                    href={`/decks/${params.id}/edit-card/${card.id}`}
+                    className="flex-1 min-w-0"
+                  >
+                    <div className="flex flex-col gap-1">
+                      <div className="font-medium text-base leading-snug">
+                        {card.question}
+                      </div>
+                      <div className="text-sm text-neutral-500 leading-snug dark:text-neutral-400">
+                        {card.answer_short}
+                      </div>
+                    </div>
+                  </Link>
+                  <Link
+                    href={`/decks/${params.id}/edit-card/${card.id}`}
+                    className="flex-shrink-0 mt-1"
+                  >
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="text-muted-foreground hover:text-foreground"
+                      aria-label="Edit card"
                     >
-                      <CardTitle className="text-base">{card.question}</CardTitle>
-                      <CardDescription>{card.answer_short}</CardDescription>
-                    </Link>
-                    <Link
-                      href={`/decks/${params.id}/edit-card/${card.id}`}
-                      className="shrink-0"
-                    >
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="text-muted-foreground hover:text-foreground"
-                        aria-label="Edit card"
-                      >
-                        <Pencil className="size-4" />
-                      </Button>
-                    </Link>
-                  </CardHeader>
-                </Card>
+                      <Pencil className="size-4" />
+                    </Button>
+                  </Link>
+                </div>
               ))}
             </div>
           )}

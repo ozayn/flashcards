@@ -4,6 +4,7 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import Link from "next/link";
 import { HelpCircle, ChevronLeft, ChevronRight, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Flashcard } from "@/components/study/Flashcard";
 import { getFlashcards, getUserSettings, submitReview, type UserSettings } from "@/lib/api";
 import { getStoredUserId } from "@/components/user-selector";
@@ -173,29 +174,33 @@ export default function StudyPage({ params }: StudyPageProps) {
           <X className="size-4" />
           Exit Study
         </Link>
-        <div className="text-center space-y-6 max-w-sm">
-          <h2 className="text-2xl font-semibold">Session complete!</h2>
-          <p className="text-muted-foreground">
-            You&apos;ve gone through all {flashcards.length} cards. Great work!
-          </p>
-          <div className="flex flex-col sm:flex-row gap-3 justify-center">
-            <Button
-              onClick={() => {
-                setSessionComplete(false);
-                setCurrentCardIndex(0);
-                setShowAnswer(false);
-              }}
-            >
-              Study again
-            </Button>
-            <Link
-              href={`/decks/${params.deck_id}`}
-              className="inline-flex h-10 items-center justify-center rounded-lg border border-input bg-background px-4 text-sm font-medium hover:bg-muted hover:text-foreground"
-            >
-              Back to deck
-            </Link>
-          </div>
-        </div>
+        <Card className="max-w-sm">
+          <CardHeader>
+            <CardTitle className="text-2xl">Session complete!</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <p className="text-muted-foreground">
+              You&apos;ve gone through all {flashcards.length} cards. Great work!
+            </p>
+            <div className="flex flex-col sm:flex-row gap-3 justify-center">
+              <Button
+                onClick={() => {
+                  setSessionComplete(false);
+                  setCurrentCardIndex(0);
+                  setShowAnswer(false);
+                }}
+              >
+                Study again
+              </Button>
+              <Link
+                href={`/decks/${params.deck_id}`}
+                className="inline-flex h-10 items-center justify-center rounded-md border border-neutral-300 bg-white px-4 text-sm font-medium hover:bg-neutral-50 dark:border-neutral-600 dark:bg-neutral-900 dark:hover:bg-neutral-800"
+              >
+                Back to deck
+              </Link>
+            </div>
+          </CardContent>
+        </Card>
       </main>
     );
   }
