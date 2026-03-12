@@ -12,6 +12,7 @@ import {
   generateFlashcards,
   updateDeck,
 } from "@/lib/api";
+import PageContainer from "@/components/layout/page-container";
 
 interface DeckPageProps {
   params: { id: string };
@@ -91,18 +92,15 @@ export default function DeckPage({ params }: DeckPageProps) {
 
   if (loading) {
     return (
-      <main className="min-h-screen p-6">
-        <div className="max-w-2xl mx-auto">
-          <p className="text-muted-foreground">Loading deck...</p>
-        </div>
-      </main>
+      <PageContainer>
+        <p className="text-muted-foreground">Loading deck...</p>
+      </PageContainer>
     );
   }
 
   if (notFound || !deck) {
     return (
-      <main className="min-h-screen p-6">
-        <div className="max-w-2xl mx-auto space-y-6">
+      <PageContainer>
           <Link
             href="/decks"
             className="inline-flex h-7 items-center justify-center rounded-lg px-2.5 text-sm font-medium hover:bg-muted"
@@ -110,14 +108,12 @@ export default function DeckPage({ params }: DeckPageProps) {
             ← Back
           </Link>
           <p className="text-muted-foreground">Deck not found.</p>
-        </div>
-      </main>
+      </PageContainer>
     );
   }
 
   return (
-    <main className="min-h-screen p-6">
-      <div className="max-w-2xl mx-auto space-y-6">
+    <PageContainer>
         <div className="flex items-center justify-between">
           <Link
             href="/decks"
@@ -285,7 +281,6 @@ export default function DeckPage({ params }: DeckPageProps) {
             </div>
           )}
         </section>
-      </div>
-    </main>
+    </PageContainer>
   );
 }

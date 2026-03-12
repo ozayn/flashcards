@@ -14,6 +14,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { getUsers, getDecks, updateDeck, apiUrl } from "@/lib/api";
 import { getStoredUserId } from "@/components/user-selector";
+import PageContainer from "@/components/layout/page-container";
 
 export type Deck = {
   id: string;
@@ -91,8 +92,7 @@ export default function DecksPage() {
   }
 
   return (
-    <main className="min-h-screen">
-      <div className="mx-auto w-full max-w-3xl px-4 py-8 space-y-6">
+    <PageContainer>
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-2xl font-semibold tracking-tight">Decks</h1>
           <Link
@@ -195,7 +195,6 @@ export default function DecksPage() {
             ))
           )}
         </div>
-      </div>
-    </main>
+    </PageContainer>
   );
 }

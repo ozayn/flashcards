@@ -10,14 +10,14 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import PageContainer from "@/components/layout/page-container";
 
 function StudyContent() {
   const searchParams = useSearchParams();
   const deckId = searchParams.get("deck");
 
   return (
-    <main className="min-h-screen p-6">
-      <div className="max-w-2xl mx-auto space-y-6">
+    <PageContainer>
         <div className="flex items-center gap-4">
           <Link
             href={deckId ? `/decks/${deckId}` : "/decks"}
@@ -49,14 +49,13 @@ function StudyContent() {
             )}
           </CardContent>
         </Card>
-      </div>
-    </main>
+    </PageContainer>
   );
 }
 
 export default function StudyPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen p-6 flex items-center justify-center">Loading...</div>}>
+    <Suspense fallback={<PageContainer><div className="flex items-center justify-center">Loading...</div></PageContainer>}>
       <StudyContent />
     </Suspense>
   );

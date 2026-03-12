@@ -7,7 +7,6 @@ import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -107,9 +106,6 @@ export default function EditCardPage({ params }: EditCardPageProps) {
         <Card>
           <CardHeader>
             <CardTitle>Edit Card</CardTitle>
-            <CardDescription>
-              Update this flashcard
-            </CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">

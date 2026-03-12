@@ -2,7 +2,7 @@
 
 import { ReactNode } from "react";
 
-const faceBase = "flashcard-face absolute inset-0 w-full h-full flex flex-col items-stretch";
+const faceBase = "flashcard-face flashcard-front absolute inset-0 w-full h-full flex flex-col items-stretch";
 
 const styleMap = {
   paper: "rounded-2xl border border-neutral-200 shadow-lg flashcard-paper dark:border-neutral-700",
@@ -38,7 +38,7 @@ export function Flashcard({ front, back, flipped, onFlip, canFlip, cardStyle = "
 
       {/* Back face */}
       <div
-        className={`${faceBase} flashcard-back px-3 md:px-4 pt-3 pb-2 text-start ${faceClass}`}
+        className={`flashcard-face flashcard-back absolute inset-0 w-full h-full flex flex-col items-stretch px-3 md:px-4 pt-3 pb-2 text-start ${faceClass}`}
         style={{ backfaceVisibility: "hidden", transform: "rotateY(180deg)" }}
       >
         {back}

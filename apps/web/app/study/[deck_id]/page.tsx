@@ -4,6 +4,7 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import Link from "next/link";
 import { HelpCircle, ChevronLeft, ChevronRight, X, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Flashcard } from "@/components/study/Flashcard";
 import { getFlashcards, getUserSettings, updateUserSettings, submitReview, type UserSettings } from "@/lib/api";
@@ -13,7 +14,7 @@ interface StudyPageProps {
   params: { deck_id: string };
 }
 
-interface Flashcard {
+interface StudyFlashcard {
   id: string;
   question: string;
   answer_short: string;
@@ -21,7 +22,7 @@ interface Flashcard {
 }
 
 export default function StudyPage({ params }: StudyPageProps) {
-  const [flashcards, setFlashcards] = useState<Flashcard[]>([]);
+  const [flashcards, setFlashcards] = useState<StudyFlashcard[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentCardIndex, setCurrentCardIndex] = useState(0);
   const [showAnswer, setShowAnswer] = useState(false);
@@ -244,7 +245,7 @@ export default function StudyPage({ params }: StudyPageProps) {
   };
 
   return (
-    <main className="h-full min-h-0 flex flex-col items-center px-3 md:px-4 overflow-hidden relative">
+    <main className="h-full min-h-0 flex flex-col items-center px-10 md:px-12 overflow-hidden relative">
       <Link
         href={`/decks/${params.deck_id}`}
         className="fixed bottom-4 right-4 z-50 inline-flex items-center gap-2 rounded-full bg-background/95 backdrop-blur border border-border shadow-lg px-4 py-2 text-sm font-medium hover:bg-muted transition-colors"
@@ -252,6 +253,9 @@ export default function StudyPage({ params }: StudyPageProps) {
         <X className="size-4" />
         Exit Study
       </Link>
+      <div className="absolute top-6 right-6 text-sm text-muted-foreground">
+        {currentCardIndex + 1} / {flashcards.length}
+      </div>
       <div className="shrink-0 flex items-center justify-between w-full mb-0">
         <Link
           href={`/decks/${params.deck_id}`}
@@ -260,10 +264,9 @@ export default function StudyPage({ params }: StudyPageProps) {
           ← Back
         </Link>
         <div className="flex items-center gap-2">
-          <span className="text-sm text-muted-foreground">
-            {currentCardIndex + 1} / {flashcards.length}
-          </span>
-          <div ref={settingsRef} className="relative">
+          <div className="hidden max-md:landscape:flex items-center gap-2">
+            <ThemeToggle className="size-8 text-muted-foreground hover:text-foreground" />
+            <div ref={settingsRef} className="relative">
             <Button
               variant="ghost"
               size="icon"
@@ -297,6 +300,7 @@ export default function StudyPage({ params }: StudyPageProps) {
                 </div>
               </div>
             )}
+            </div>
           </div>
           <Button
             variant="ghost"
@@ -310,51 +314,53 @@ export default function StudyPage({ params }: StudyPageProps) {
         </div>
       </div>
 
-      <div className="flex-1 min-h-0 min-h-[200px] flex flex-col landscape:flex-row landscape:items-stretch landscape:min-h-0 justify-center gap-2 w-full max-w-4xl mx-auto relative overflow-hidden [perspective:1000px]">
-        <Button
-          variant="outline"
-          size="icon"
-          onClick={handlePrev}
-          disabled={isFirst}
-          className="hidden landscape:flex h-10 w-10 shrink-0 order-2 landscape:order-1"
-          aria-label="Previous card"
-        >
-          <ChevronLeft className="size-5" />
-        </Button>
-        <div
-          onTouchStart={handleTouchStart}
-          onTouchEnd={handleTouchEnd}
-          className="h-full min-h-[180px] max-h-full max-w-full aspect-[2/3] md:aspect-[3/2] landscape:aspect-[3/2] w-auto flex items-center justify-center touch-pan-y [perspective:1000px] md:min-h-0 md:max-w-2xl md:w-full flex-1 min-w-0 min-h-0 order-1 landscape:order-2 landscape:self-stretch landscape:h-full overflow-hidden"
-        >
-          <Flashcard
-            cardStyle={userSettings.card_style}
-            front={
-              <>
-                <div className="mt-20 md:mt-24 text-start">
-                  <div dir="auto" className="text-xl md:text-2xl leading-relaxed font-semibold w-full">
-                    {card.question}
+      <div className="flex flex-col items-center justify-center min-h-[75vh] flex-1 min-h-0 w-full">
+        <div className="flex-1 min-h-0 min-h-[200px] flex flex-col landscape:flex-row landscape:items-stretch landscape:min-h-0 justify-center gap-2 w-full max-w-4xl mx-auto relative overflow-hidden [perspective:1000px]">
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={handlePrev}
+            disabled={isFirst}
+            className="hidden landscape:flex h-10 w-10 shrink-0 order-2 landscape:order-1"
+            aria-label="Previous card"
+          >
+            <ChevronLeft className="size-5" />
+          </Button>
+          <div
+            onTouchStart={handleTouchStart}
+            onTouchEnd={handleTouchEnd}
+            dir="auto"
+            className="flashcard bg-white dark:bg-neutral-900 rounded-2xl shadow-md p-10 w-full max-w-xl text-center flex items-center justify-center min-h-[200px] flex-1 min-w-0 order-1 landscape:order-2 touch-pan-y overflow-hidden"
+          >
+            <Flashcard
+              cardStyle={userSettings.card_style}
+              front={
+                <>
+                  <div className="w-full">
+                    <p dir="auto" className="text-2xl font-medium leading-relaxed">
+                      {card.question}
+                    </p>
+                    {showHelp && (
+                      <div className="mt-4 text-muted-foreground text-xs opacity-60">
+                        Tap to flip
+                      </div>
+                    )}
                   </div>
-                  {showHelp && (
-                    <div className="mt-4 text-muted-foreground text-xs opacity-60 text-center w-full">
-                      Tap to flip
-                    </div>
-                  )}
-                </div>
-              </>
-            }
-            back={
-              <>
-                <div className="flex-1 min-h-0 flex flex-col items-stretch justify-start w-full text-start overflow-y-auto cursor-pointer">
-                  <div dir="auto" className="text-xl md:text-2xl leading-relaxed font-medium">
-                    {card.answer_short}
+                </>
+              }
+              back={
+                <>
+                  <div className="flex-1 min-h-0 flex flex-col items-stretch justify-start w-full overflow-y-auto cursor-pointer">
+                    <p dir="auto" className="text-xl leading-relaxed mt-6">
+                      {card.answer_short}
+                    </p>
+                    {card.answer_detailed && (
+                      <p dir="auto" className="text-xl leading-relaxed mt-4 text-muted-foreground">
+                        {card.answer_detailed}
+                      </p>
+                    )}
                   </div>
-                  {card.answer_detailed && (
-                    <div dir="auto" className="mt-4 text-muted-foreground text-base md:text-lg leading-relaxed">
-                      {card.answer_detailed}
-                    </div>
-                  )}
-                </div>
-                <div className="flex flex-row gap-2 justify-center flex-wrap shrink-0 w-full" onClick={(e) => e.stopPropagation()}>
+                  <div className="flex flex-row gap-2 justify-center flex-wrap shrink-0 w-full" onClick={(e) => e.stopPropagation()}>
                   <Button
                     variant="destructive"
                     onClick={() => rateCard("again")}
@@ -430,6 +436,7 @@ export default function StudyPage({ params }: StudyPageProps) {
         >
           <ChevronRight className="size-5 lg:size-6" />
         </Button>
+      </div>
       </div>
     </main>
   );

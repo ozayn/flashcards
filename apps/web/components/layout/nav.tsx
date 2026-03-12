@@ -19,11 +19,12 @@ const navLinks = [
 export function Nav() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const pathname = usePathname();
-
-  if (pathname?.startsWith("/study")) return null;
+  const isDeckStudy = pathname?.startsWith("/study/") ?? false;
 
   return (
-    <nav className="relative z-50 h-14 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+    <nav
+      className={`relative z-50 h-14 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 ${isDeckStudy ? "max-md:landscape:hidden" : ""}`}
+    >
       <div className="max-w-2xl mx-auto h-full flex items-center justify-between px-10 md:px-12">
         {/* Left: Logo */}
         <Link
@@ -53,10 +54,9 @@ export function Nav() {
           <UserSelector />
         </div>
 
-        {/* Mobile: Hamburger + Theme + Settings */}
+        {/* Mobile: Hamburger + Theme (Settings in expanded menu) */}
         <div className="flex md:hidden items-center gap-2">
           <ThemeToggle />
-          <UserSettings />
           <Button
             variant="ghost"
             size="icon"
