@@ -1,0 +1,21 @@
+{
+  "name": "Flashcard AI",
+  "short_name": "Flashcard AI",
+  "description": "AI-powered flashcard learning platform",
+  "start_url": "/",
+  "display": "standalone",
+  "icons": [
+    {
+      "src": "/icon.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

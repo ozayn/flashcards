@@ -8,6 +8,17 @@ import { ErrorBoundary } from "@/components/error-boundary";
 export const metadata: Metadata = {
   title: "Flashcard AI",
   description: "AI-powered flashcard learning platform",
+  manifest: "/manifest.json",
+  icons: {
+    icon: [
+      { url: "/icon.png", type: "image/png", sizes: "192x192" },
+      { url: "/icon.png", type: "image/png", sizes: "512x512" },
+    ],
+    apple: [
+      { url: "/apple-icon.png", type: "image/png", sizes: "180x180" },
+      { url: "/apple-icon.png", type: "image/png", sizes: "512x512" },
+    ],
+  },
 };
 
 const themeScript = `
