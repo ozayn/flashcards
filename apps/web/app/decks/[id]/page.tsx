@@ -258,11 +258,11 @@ export default function DeckPage({ params }: DeckPageProps) {
                     href={`/decks/${params.id}/edit-card/${card.id}`}
                     className="flex-1 min-w-0"
                   >
-                    <div className="flex flex-col gap-1">
-                      <div className="font-medium text-base leading-snug">
+                    <div className="flex flex-col gap-1 text-start">
+                      <div dir="auto" className="font-medium text-base leading-snug">
                         {card.question}
                       </div>
-                      <div className="text-sm text-neutral-500 leading-snug dark:text-neutral-400">
+                      <div dir="auto" className="text-sm text-neutral-500 leading-snug dark:text-neutral-400">
                         {card.answer_short}
                       </div>
                     </div>

@@ -76,13 +76,14 @@ export default function AddCardPage({ params }: AddCardPageProps) {
                 </label>
                 <textarea
                   id="question"
+                  dir="auto"
                   required
                   value={question}
                   onChange={(e) => setQuestion(e.target.value)}
                   placeholder="e.g. What is the capital of France?"
                   rows={3}
                   className={cn(
-                    "w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-1.5 text-base transition-colors outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50 md:text-sm"
+                    "w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-1.5 text-base text-start transition-colors outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50 md:text-sm"
                   )}
                 />
               </div>
@@ -92,10 +93,12 @@ export default function AddCardPage({ params }: AddCardPageProps) {
                 </label>
                 <Input
                   id="answerShort"
+                  dir="auto"
                   required
                   value={answerShort}
                   onChange={(e) => setAnswerShort(e.target.value)}
                   placeholder="e.g. Paris"
+                  className="text-start"
                 />
               </div>
               <div className="space-y-2">
@@ -104,12 +107,13 @@ export default function AddCardPage({ params }: AddCardPageProps) {
                 </label>
                 <textarea
                   id="answerDetailed"
+                  dir="auto"
                   value={answerDetailed}
                   onChange={(e) => setAnswerDetailed(e.target.value)}
                   placeholder="Additional context or explanation..."
                   rows={3}
                   className={cn(
-                    "w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-1.5 text-base transition-colors outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50 md:text-sm"
+                    "w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-1.5 text-base text-start transition-colors outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50 md:text-sm"
                   )}
                 />
               </div>

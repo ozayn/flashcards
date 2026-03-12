@@ -42,6 +42,80 @@ def _extract_json(text: str) -> dict:
     return data if isinstance(data, dict) else {}
 
 
+def _extract_concepts(topic: str) -> list[str]:
+    """Stage 1: Extract key concepts from the topic using LLM."""
+    prompt = f"""You are identifying key learning concepts.
+
+Topic:
+{topic}
+
+Extract 5–10 important words, terms, or concepts related to the topic.
+
+Return STRICT JSON:
+
+{{
+  "concepts": ["...", "...", "..."]
+}}
+
+Rules:
+- Concepts must be specific terms
+- Avoid general descriptions
+- Use the same language as the topic
+- If the topic is Persian or Arabic, generate RTL text naturally. Do not translate into English."""
+
+    try:
+        response_text = llm_generate_flashcards(prompt)
+    except ValueError as e:
+        logger.warning("Concept extraction failed, falling back to topic: %s", e)
+        return []
+
+    try:
+        parsed = _extract_json(response_text)
+        concepts = parsed.get("concepts", [])
+        if isinstance(concepts, list) and all(isinstance(c, str) for c in concepts):
+            return concepts[:10]
+    except (json.JSONDecodeError, TypeError):
+        pass
+    return []
+
+
+def _generate_flashcards_from_concepts(concepts: list[str]) -> str:
+    """Stage 2: Generate flashcards from concepts using LLM."""
+    concept_list = "\n".join(f"- {c}" for c in concepts)
+    prompt = f"""You are generating flashcards.
+
+Concepts:
+{concept_list}
+
+Generate one flashcard per concept.
+
+For each flashcard:
+- Question: Ask for the meaning or explanation of the concept.
+- Answer: Provide a clear definition.
+- Use the same language as the concepts.
+- If concepts are Persian or Arabic, generate RTL text naturally. Do not translate into English.
+
+Return STRICT JSON only.
+
+{{
+  "flashcards": [
+    {{
+      "question": "...",
+      "answer_short": "...",
+      "answer_detailed": "...",
+      "difficulty": "easy"
+    }}
+  ]
+}}
+
+Rules:
+- One flashcard per concept.
+- Do not include explanations outside JSON.
+- Ensure answers are correct and educational."""
+
+    return llm_generate_flashcards(prompt)
+
+
 @router.post("", response_model=GenerateFlashcardsResponse)
 async def generate_flashcards(
     payload: GenerateFlashcardsRequest,
@@ -54,27 +128,42 @@ async def generate_flashcards(
     if not deck:
         raise HTTPException(status_code=404, detail="Deck not found")
 
-    prompt = f"""You are an expert educator creating high-quality flashcards.
+    # Stage 1: Extract concepts from topic
+    concepts = _extract_concepts(payload.topic)
 
-Generate {payload.num_cards} flashcards about the following topic:
+    # Stage 2: Generate flashcards from concepts (or fallback to topic if extraction failed)
+    if concepts:
+        try:
+            response_text = _generate_flashcards_from_concepts(concepts)
+        except ValueError as e:
+            raise HTTPException(status_code=503, detail=str(e))
+    else:
+        # Fallback: single-stage generation when concept extraction fails
+        fallback_prompt = f"""You are an expert educator creating high-quality flashcards.
 
+Topic:
 {payload.topic}
 
-Each flashcard must contain:
-- question
-- answer_short
-- answer_detailed
-- difficulty (easy, medium, hard)
+Language Rules:
+- Detect the language of the topic.
+- Generate the flashcards in the SAME language as the topic.
+- If the topic is Persian, Arabic, or another RTL language, keep the output in that language.
+- If the topic is Persian or Arabic, generate RTL text naturally. Do not translate into English.
 
-Rules:
-- Questions must be clear and concise.
-- answer_short must be a short direct answer.
-- answer_detailed should briefly explain the concept.
-- Difficulty should reflect how challenging the card is.
+Flashcard Rules:
+- Each flashcard must focus on ONE concept.
+- Questions should be clear and concise.
+- Answers should be short and easy to memorize.
+- Avoid vague or philosophical questions.
 
-Return ONLY valid JSON.
+Vocabulary Topics:
+If the topic appears to be vocabulary, slang, or terminology:
+- Each flashcard should explain a specific word or phrase.
+- The question should ask for the meaning of the word.
+- The answer should define it clearly.
 
-Format:
+Output Format:
+Return STRICT JSON only.
 
 {{
   "flashcards": [
@@ -85,12 +174,17 @@ Format:
       "difficulty": "easy"
     }}
   ]
-}}"""
+}}
 
-    try:
-        response_text = llm_generate_flashcards(prompt)
-    except ValueError as e:
-        raise HTTPException(status_code=503, detail=str(e))
+Additional Rules:
+- Generate between 5 and 10 flashcards.
+- Do not include explanations outside JSON.
+- Ensure answers are correct and educational."""
+
+        try:
+            response_text = llm_generate_flashcards(fallback_prompt)
+        except ValueError as e:
+            raise HTTPException(status_code=503, detail=str(e))
 
     try:
         parsed_json = _extract_json(response_text)

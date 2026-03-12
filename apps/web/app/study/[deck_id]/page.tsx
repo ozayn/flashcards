@@ -330,8 +330,8 @@ export default function StudyPage({ params }: StudyPageProps) {
             cardStyle={userSettings.card_style}
             front={
               <>
-                <div className="mt-20 md:mt-24">
-                  <div className="text-xl md:text-2xl leading-relaxed font-semibold text-left w-full">
+                <div className="mt-20 md:mt-24 text-start">
+                  <div dir="auto" className="text-xl md:text-2xl leading-relaxed font-semibold w-full">
                     {card.question}
                   </div>
                   {showHelp && (
@@ -344,12 +344,12 @@ export default function StudyPage({ params }: StudyPageProps) {
             }
             back={
               <>
-                <div className="flex-1 min-h-0 flex flex-col items-stretch justify-start w-full text-left overflow-y-auto cursor-pointer">
-                  <div className="text-xl md:text-2xl leading-relaxed font-medium">
+                <div className="flex-1 min-h-0 flex flex-col items-stretch justify-start w-full text-start overflow-y-auto cursor-pointer">
+                  <div dir="auto" className="text-xl md:text-2xl leading-relaxed font-medium">
                     {card.answer_short}
                   </div>
                   {card.answer_detailed && (
-                    <div className="mt-4 text-muted-foreground text-base md:text-lg leading-relaxed">
+                    <div dir="auto" className="mt-4 text-muted-foreground text-base md:text-lg leading-relaxed">
                       {card.answer_detailed}
                     </div>
                   )}
