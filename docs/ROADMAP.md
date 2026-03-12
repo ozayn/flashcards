@@ -26,6 +26,44 @@
 - [ ] User authentication
 - [ ] Study tutor / AI assistance
 
+---
+
+## Product & Growth Features
+
+### Google Authentication
+
+- Implement Google OAuth login using NextAuth/Auth.js
+- Replace manual user selection with real authentication
+- Automatically create user records on first login
+- Associate decks with authenticated users
+
+### Admin Dashboard
+
+- Admin-only interface for viewing platform statistics
+- Metrics:
+  - total users
+  - active users
+  - decks created
+  - flashcards generated
+  - study activity
+  - AI usage
+- Useful for monitoring growth and debugging
+
+### Monetization
+
+- Introduce Free and Pro plans
+- Integrate Stripe for payments
+- Limit AI generation for free users
+- Unlimited decks and AI features for Pro users
+
+### AI Usage Tracking
+
+- Add table to track AI generation usage per user
+- Store tokens used and cards generated
+- Use this for cost monitoring and plan limits
+
+---
+
 ## LLM Architecture & Model Routing
 
 The platform uses a pluggable LLM router that allows switching between different model providers without changing application logic.
