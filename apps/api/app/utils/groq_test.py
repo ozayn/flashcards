@@ -1,11 +1,13 @@
 """
 Test utility for Groq API.
 
-Run from apps/api:
-  python app/utils/groq_test.py
-  ./run_groq_test.sh
+Run from project root:
+  ./scripts/groq_test.sh
 
-Requires GROQ_API_KEY in environment or apps/api/app/.env.
+Or from apps/api:
+  python app/utils/groq_test.py
+
+Requires GROQ_API_KEY in environment or apps/api/.env.
 """
 import os
 import subprocess
@@ -52,7 +54,7 @@ def main():
         print(
             "Error: groq not installed. Activate the venv and install:\n"
             "  cd apps/api && source .venv/bin/activate && pip install groq\n"
-            "Or run: ./run_groq_test.sh",
+            "Or run: ./scripts/groq_test.sh",
             file=sys.stderr,
         )
         sys.exit(1)

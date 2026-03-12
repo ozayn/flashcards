@@ -1,9 +1,11 @@
 """
 Test the FlashcardGenerationResponse schema validation.
 
-Run from apps/api:
+Run from project root:
+  ./scripts/validator_test.sh
+
+Or from apps/api:
   python app/utils/test_flashcard_validator.py
-  ./run_flashcard_validator_test.sh
 """
 import importlib.util
 import subprocess

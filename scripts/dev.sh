@@ -1,8 +1,8 @@
 #!/bin/bash
 
-# Get the directory where the script is located (project root)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$PROJECT_ROOT"
 
 # Cleanup function: kill backend when script exits
 cleanup() {
@@ -18,7 +18,7 @@ cd apps/api
 if [ -d .venv313 ]; then source .venv313/bin/activate; elif [ -d .venv ]; then source .venv/bin/activate; fi
 uvicorn main:app --reload --port 8000 &
 BACKEND_PID=$!
-cd "$SCRIPT_DIR"
+cd "$PROJECT_ROOT"
 
 # Give backend a moment to start
 sleep 2

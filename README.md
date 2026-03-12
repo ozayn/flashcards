@@ -111,17 +111,40 @@ The endpoint generates flashcards using the LLM and inserts them into the deck.
 | `/study` | Study session (placeholder) |
 | `/create-deck` | Create new deck |
 
-## Development
+## Development Commands
 
-### Running Locally
+Prepare the development environment (first time or after clone):
 
-**One command:**
 ```bash
-./dev.sh       # Start backend + frontend
-./restart.sh   # Restart (kill existing, then start)
+./scripts/setup.sh
 ```
 
-**Manual:**
+Start the development environment:
+
+```bash
+./scripts/dev.sh
+```
+
+Restart the environment:
+
+```bash
+./scripts/restart.sh
+```
+
+Run Groq test:
+
+```bash
+./scripts/groq_test.sh
+```
+
+Run flashcard validator test:
+
+```bash
+./scripts/validator_test.sh
+```
+
+### Running Manually
+
 ```bash
 # Backend
 cd apps/api && uvicorn main:app --reload --port 8000
