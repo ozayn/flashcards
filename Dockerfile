@@ -7,7 +7,7 @@ FROM node:20-alpine AS base
 FROM base AS deps
 WORKDIR /app
 COPY apps/web/package.json apps/web/package-lock.json* ./
-RUN npm ci
+RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi
 
 FROM base AS builder
 WORKDIR /app
