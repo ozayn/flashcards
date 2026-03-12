@@ -244,7 +244,7 @@ export default function StudyPage({ params }: StudyPageProps) {
     <main className="h-full min-h-0 flex flex-col items-center overflow-hidden relative" data-study>
       <Link
         href={`/decks/${params.deck_id}`}
-        className="fixed bottom-8 right-[calc(50%-18rem)] z-50 inline-flex items-center gap-2 rounded-full bg-background/95 backdrop-blur border border-border shadow-lg px-4 py-2 text-sm font-medium hover:bg-muted transition-colors"
+        className="fixed bottom-8 right-[max(0.5rem,calc(50vw-min(50vw,18rem)))] z-50 inline-flex items-center gap-2 rounded-full bg-background/95 backdrop-blur border border-border shadow-lg px-4 py-2 text-sm font-medium hover:bg-muted transition-colors"
       >
         <X className="size-4" />
         Exit Study
