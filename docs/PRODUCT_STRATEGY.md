@@ -93,6 +93,55 @@ Turn the platform into an **AI learning laboratory**.
 
 ---
 
+## Knowledge Graph Learning
+
+The platform can extract concept relationships before generating flashcards.
+
+**Example pipeline:**
+
+```
+Knowledge input
+↓
+Concept extraction
+↓
+Knowledge graph
+↓
+Flashcard generation
+↓
+Structured decks
+```
+
+This allows the system to organize learning material automatically.
+
+**Example output:**
+
+```
+Machine Learning
+
+Supervised Learning
+• Linear Regression
+• Logistic Regression
+
+Unsupervised Learning
+• Clustering
+• Dimensionality Reduction
+```
+
+**How this is different from traditional flashcard apps:**
+
+Traditional apps generate isolated cards.
+
+This platform generates structured knowledge systems.
+
+**This enables:**
+
+- topic navigation
+- concept grouping
+- improved flashcard quality
+- scalable decks for complex subjects
+
+---
+
 ## Future Differentiators
 
 **Potential features:**

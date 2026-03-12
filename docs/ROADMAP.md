@@ -281,6 +281,54 @@ The platform will eventually support running open-source language models locally
 
 The LLM router allows switching providers via `LLM_PROVIDER=groq`, `openai`, or `local`.
 
+### Knowledge Graph Flashcard Generation
+
+Instead of generating flashcards directly from text, the system will first extract a concept graph representing relationships between ideas.
+
+**Workflow:**
+
+```
+User provides input content
+• topic
+• article
+• lecture notes
+• long document
+↓
+AI extracts key concepts and relationships.
+↓
+A structured concept graph is created.
+↓
+Flashcards are generated per concept.
+↓
+Cards are grouped by topic and subtopic.
+```
+
+**Example:**
+
+```
+Machine Learning
+- Supervised Learning
+    - Linear Regression
+    - Logistic Regression
+- Unsupervised Learning
+    - Clustering
+    - PCA
+```
+
+Each concept then produces flashcards such as:
+
+**Q:** What is linear regression?  
+**A:** A statistical model used to predict continuous values using a linear relationship.
+
+**Advantages:**
+
+- Flashcards become structured instead of random
+- Decks scale better for large topics
+- Learners understand relationships between ideas
+- Navigation across topics becomes easier
+
+This feature enables hierarchical decks and topic-based studying.
+
 ---
 
 ## Phase 9 — AI Course Builder
