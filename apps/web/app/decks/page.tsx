@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Archive, ArchiveRestore } from "lucide-react";
 import {
   Card,
@@ -27,6 +28,7 @@ export type Deck = {
 };
 
 export default function DecksPage() {
+  const router = useRouter();
   const [decks, setDecks] = useState<Deck[]>([]);
   const [userId, setUserId] = useState<string | null>(null);
   const [decksError, setDecksError] = useState(false);
@@ -89,13 +91,13 @@ export default function DecksPage() {
   }
 
   return (
-    <main className="min-h-screen p-6">
-      <div className="max-w-2xl mx-auto space-y-6">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+    <main className="min-h-screen">
+      <div className="mx-auto w-full max-w-3xl px-4 py-8 space-y-6">
+        <div className="flex items-center justify-between mb-6">
           <h1 className="text-2xl font-semibold tracking-tight">Decks</h1>
           <Link
             href="/create-deck"
-            className="inline-flex h-10 items-center justify-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/80 w-full sm:w-auto"
+            className="inline-flex h-10 items-center justify-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/80"
           >
             Create Deck
           </Link>
@@ -152,9 +154,18 @@ export default function DecksPage() {
             decks.map((deck) => (
               <div
                 key={deck.id}
-                className="rounded-xl border border-neutral-200 px-4 py-3 flex items-start justify-between gap-3 bg-white hover:bg-muted transition dark:bg-neutral-900 dark:border-neutral-700"
+                role="link"
+                tabIndex={0}
+                onClick={() => router.push(`/decks/${deck.id}`)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    router.push(`/decks/${deck.id}`);
+                  }
+                }}
+                className="rounded-xl border border-neutral-200 px-4 py-3 flex items-start justify-between gap-3 bg-white hover:bg-muted transition dark:bg-neutral-900 dark:border-neutral-700 cursor-pointer"
               >
-                <Link href={`/decks/${deck.id}`} className="flex-1 min-w-0">
+                <div className="flex-1 min-w-0">
                   <div className="flex flex-col gap-1">
                     <div className="font-medium text-base leading-snug">
                       {deck.name}
@@ -163,13 +174,14 @@ export default function DecksPage() {
                       {deck.description || ""}
                     </div>
                   </div>
-                </Link>
+                </div>
                 <Button
                   variant="ghost"
                   size="icon"
-                  onClick={(e) =>
-                    handleArchiveDeck(deck.id, !showArchived, e)
-                  }
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleArchiveDeck(deck.id, !showArchived, e);
+                  }}
                   className="flex-shrink-0 mt-1 text-muted-foreground hover:text-foreground"
                   aria-label={showArchived ? "Unarchive deck" : "Archive deck"}
                 >

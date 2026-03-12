@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Menu, X } from "lucide-react";
 import { UserSelector } from "@/components/user-selector";
+import { UserSettings } from "@/components/user-settings";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 
@@ -45,15 +46,17 @@ export function Nav() {
           ))}
         </div>
 
-        {/* Right: Theme + User (desktop) */}
+        {/* Right: Theme + Settings + User (desktop) */}
         <div className="hidden md:flex items-center gap-2">
           <ThemeToggle />
+          <UserSettings />
           <UserSelector />
         </div>
 
-        {/* Mobile: Hamburger + Theme */}
+        {/* Mobile: Hamburger + Theme + Settings */}
         <div className="flex md:hidden items-center gap-2">
           <ThemeToggle />
+          <UserSettings />
           <Button
             variant="ghost"
             size="icon"
@@ -82,7 +85,8 @@ export function Nav() {
                 </Link>
               ))}
             </div>
-            <div className="pt-2 mt-2 border-t border-border">
+            <div className="pt-2 mt-2 border-t border-border space-y-2">
+              <UserSettings />
               <UserSelector />
             </div>
           </div>

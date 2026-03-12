@@ -2,11 +2,11 @@
 
 import { useEffect, useState, useRef, useCallback } from "react";
 import Link from "next/link";
-import { HelpCircle, ChevronLeft, ChevronRight, X } from "lucide-react";
+import { HelpCircle, ChevronLeft, ChevronRight, X, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Flashcard } from "@/components/study/Flashcard";
-import { getFlashcards, getUserSettings, submitReview, type UserSettings } from "@/lib/api";
+import { getFlashcards, getUserSettings, updateUserSettings, submitReview, type UserSettings } from "@/lib/api";
 import { getStoredUserId } from "@/components/user-selector";
 
 interface StudyPageProps {
@@ -30,9 +30,12 @@ export default function StudyPage({ params }: StudyPageProps) {
   const [userSettings, setUserSettings] = useState<UserSettings>({
     think_delay_enabled: true,
     think_delay_ms: 1500,
+    study_card_style: "classic",
   });
   const [canFlip, setCanFlip] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const touchStartX = useRef(0);
+  const settingsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     async function fetchFlashcards() {
@@ -56,6 +59,14 @@ export default function StudyPage({ params }: StudyPageProps) {
         .then(setUserSettings)
         .catch(() => {});
     }
+  }, []);
+
+  useEffect(() => {
+    const handleSettingsChanged = (e: CustomEvent<{ settings: UserSettings }>) => {
+      if (e.detail?.settings) setUserSettings(e.detail.settings);
+    };
+    window.addEventListener("flashcard_settings_changed", handleSettingsChanged as EventListener);
+    return () => window.removeEventListener("flashcard_settings_changed", handleSettingsChanged as EventListener);
   }, []);
 
   useEffect(() => {
@@ -95,6 +106,17 @@ export default function StudyPage({ params }: StudyPageProps) {
     if (diff < -60) handleNext();
   }
 
+
+  useEffect(() => {
+    if (!showSettings) return;
+    function handleClickOutside(e: MouseEvent) {
+      if (settingsRef.current && !settingsRef.current.contains(e.target as Node)) {
+        setShowSettings(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [showSettings]);
 
   useEffect(() => {
     if (loading || flashcards.length === 0) return;
@@ -241,6 +263,52 @@ export default function StudyPage({ params }: StudyPageProps) {
           <span className="text-sm text-muted-foreground">
             {currentCardIndex + 1} / {flashcards.length}
           </span>
+          <div ref={settingsRef} className="relative">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setShowSettings((s) => !s)}
+              className="size-8 text-muted-foreground hover:text-foreground"
+              aria-label="Flashcard style"
+            >
+              <Settings className="size-4" />
+            </Button>
+            {showSettings && (
+              <div className="absolute right-0 top-full z-50 mt-1 w-40 rounded-lg border border-border bg-popover p-2 shadow-lg">
+                <p className="text-xs font-medium text-muted-foreground mb-1.5">Style</p>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const userId = getStoredUserId();
+                      if (userId) {
+                        const updated = await updateUserSettings(userId, { study_card_style: "classic" });
+                        setUserSettings(updated);
+                        setShowSettings(false);
+                      }
+                    }}
+                    className={`flex-1 px-2 py-1 rounded text-xs font-medium ${userSettings.study_card_style === "classic" ? "bg-accent" : "hover:bg-muted"}`}
+                  >
+                    Classic
+                  </button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const userId = getStoredUserId();
+                      if (userId) {
+                        const updated = await updateUserSettings(userId, { study_card_style: "paper" });
+                        setUserSettings(updated);
+                        setShowSettings(false);
+                      }
+                    }}
+                    className={`flex-1 px-2 py-1 rounded text-xs font-medium ${userSettings.study_card_style === "paper" ? "bg-accent" : "hover:bg-muted"}`}
+                  >
+                    Paper
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
           <Button
             variant="ghost"
             size="icon"
@@ -270,16 +338,19 @@ export default function StudyPage({ params }: StudyPageProps) {
           className="h-full min-h-[180px] max-h-full max-w-full aspect-[2/3] md:aspect-[3/2] landscape:aspect-[3/2] w-auto flex items-center justify-center touch-pan-y [perspective:1000px] md:min-h-0 md:max-w-2xl md:w-full flex-1 min-w-0 min-h-0 order-1 landscape:order-2 landscape:self-stretch landscape:h-full overflow-hidden"
         >
           <Flashcard
+            cardStyle={userSettings.study_card_style}
             front={
               <>
-                <div className="text-xl md:text-2xl leading-relaxed font-semibold text-left w-full">
-                  {card.question}
-                </div>
-                {showHelp && (
-                  <div className="mt-4 text-muted-foreground text-xs opacity-60 text-center w-full">
-                    Tap to flip
+                <div className="mt-20 md:mt-24">
+                  <div className="text-xl md:text-2xl leading-relaxed font-semibold text-left w-full">
+                    {card.question}
                   </div>
-                )}
+                  {showHelp && (
+                    <div className="mt-4 text-muted-foreground text-xs opacity-60 text-center w-full">
+                      Tap to flip
+                    </div>
+                  )}
+                </div>
               </>
             }
             back={

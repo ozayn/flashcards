@@ -22,10 +22,11 @@ def _add_archived_column_if_missing(sync_conn):
 
 
 def _add_user_settings_columns_if_missing(sync_conn):
-    """Add think_delay_enabled and think_delay_ms columns to users table if missing."""
+    """Add think_delay_enabled, think_delay_ms, study_card_style columns to users table if missing."""
     for col, sql in [
         ("think_delay_enabled", "ALTER TABLE users ADD COLUMN think_delay_enabled BOOLEAN DEFAULT true"),
         ("think_delay_ms", "ALTER TABLE users ADD COLUMN think_delay_ms INTEGER DEFAULT 1500"),
+        ("study_card_style", "ALTER TABLE users ADD COLUMN study_card_style TEXT DEFAULT 'classic'"),
     ]:
         try:
             sync_conn.execute(text(sql))
