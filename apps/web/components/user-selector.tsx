@@ -2,8 +2,7 @@
 
 import { useEffect, useState, useRef } from "react";
 import { ChevronDown, Plus } from "lucide-react";
-import { getUsers, createUser } from "@/lib/api";
-import { apiUrl } from "@/lib/api";
+import { getUsers, createUser, checkApiAvailability, apiUrl } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 const STORAGE_KEY = "flashcard_user_id";
@@ -33,6 +32,13 @@ export function UserSelector() {
   async function loadUsers() {
     setApiError(false);
     try {
+      const available = await checkApiAvailability();
+      if (!available) {
+        setApiError(true);
+        setUsers([]);
+        return;
+      }
+
       const data = await getUsers();
       const userList = Array.isArray(data) ? data : [];
       setUsers(userList);

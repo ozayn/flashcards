@@ -23,8 +23,14 @@ export async function fetchApi<T>(
   return response.json();
 }
 
-export async function healthCheck(): Promise<{ status: string }> {
-  return fetchApi<{ status: string }>("/health");
+/** Lightweight API availability check using GET /. */
+export async function checkApiAvailability(): Promise<boolean> {
+  try {
+    const res = await fetch(`${apiUrl}/`);
+    return res.ok;
+  } catch {
+    return false;
+  }
 }
 
 export async function getUsers() {
