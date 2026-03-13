@@ -96,6 +96,7 @@ export async function createDeck(data: {
   user_id: string;
   name: string;
   description?: string;
+  source_type?: string;
 }) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 15000);
@@ -103,7 +104,7 @@ export async function createDeck(data: {
     const res = await fetch(`${apiUrl}/decks`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...data, source_type: "topic" }),
+      body: JSON.stringify({ ...data, source_type: data.source_type ?? "topic" }),
       signal: controller.signal,
     });
     clearTimeout(timeout);
@@ -238,7 +239,8 @@ export async function deleteFlashcard(flashcardId: string) {
 
 export async function generateFlashcards(data: {
   deck_id: string;
-  topic: string;
+  topic?: string;
+  text?: string;
   num_cards?: number;
   language?: string;
 }) {

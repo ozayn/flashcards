@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { Archive, ArchiveRestore, Pencil, Trash2 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   getDeck,
   getFlashcards,
@@ -46,6 +47,9 @@ export default function DeckPage({ params }: DeckPageProps) {
   const [description, setDescription] = useState(deck?.description ?? "");
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [deckDeleteConfirm, setDeckDeleteConfirm] = useState(false);
+  const [genTopic, setGenTopic] = useState("");
+  const [genText, setGenText] = useState("");
+  const GEN_TEXT_MAX_LENGTH = 10000;
 
   useEffect(() => {
     let cancelled = false;
@@ -78,14 +82,30 @@ export default function DeckPage({ params }: DeckPageProps) {
 
   async function handleGenerate() {
     if (!deck || generating) return;
+    const topicTrimmed = genTopic.trim();
+    const textTrimmed = genText.trim();
+    const topicToUse = topicTrimmed || deck.name || "";
+    if (!topicToUse && !textTrimmed) return;
     setGenerating(true);
     try {
-      await generateFlashcards({
-        deck_id: deck.id,
-        topic: deck.name,
-        num_cards: 10,
-        language: "en",
-      });
+      if (topicToUse) {
+        await generateFlashcards({
+          deck_id: deck.id,
+          topic: topicToUse,
+          num_cards: 10,
+          language: "en",
+        });
+      }
+      if (textTrimmed) {
+        await generateFlashcards({
+          deck_id: deck.id,
+          text: textTrimmed,
+          num_cards: 10,
+          language: "en",
+        });
+      }
+      setGenTopic("");
+      setGenText("");
       const data = await getFlashcards(params.id);
       setFlashcards(Array.isArray(data) ? data : []);
     } catch {
@@ -254,14 +274,46 @@ export default function DeckPage({ params }: DeckPageProps) {
               >
                 Add Card
               </Link>
+            </div>
+            <div className="mt-4 pt-4 border-t border-border space-y-3">
+              <p className="text-sm font-medium">Generate flashcards</p>
+              <p className="text-xs text-muted-foreground">
+                Add AI-generated cards from topic, text, or both.
+              </p>
+              <div className="space-y-2">
+                <Input
+                  placeholder="Topic (e.g. Spanish vocabulary)"
+                  value={genTopic}
+                  onChange={(e) => setGenTopic(e.target.value)}
+                  className="w-full"
+                />
+                <textarea
+                  placeholder="Or paste text to generate from..."
+                  value={genText}
+                  onChange={(e) => setGenText(e.target.value)}
+                  maxLength={GEN_TEXT_MAX_LENGTH}
+                  className="w-full min-h-[100px] rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                />
+                <div className="flex justify-between items-center">
+                  <span className="text-xs text-muted-foreground">
+                    {genText.length} / {GEN_TEXT_MAX_LENGTH} characters
+                  </span>
+                  {genText.length >= GEN_TEXT_MAX_LENGTH && (
+                    <span className="text-xs text-destructive">Text is too long</span>
+                  )}
+                </div>
+              </div>
               <Button
                 type="button"
                 variant="outline"
                 onClick={handleGenerate}
-                disabled={generating}
+                disabled={
+                  generating ||
+                  genText.length > GEN_TEXT_MAX_LENGTH
+                }
                 className="w-full sm:w-auto"
               >
-                {generating ? "Generating..." : "Generate Flashcards"}
+                {generating ? "Generating..." : "Generate"}
               </Button>
             </div>
           </div>
