@@ -56,21 +56,22 @@ function CreateDeckForm() {
       });
       const deckId = (deck as { id: string }).id;
 
-      const topicToUse = topic.trim() || name;
+      const topicTrimmed = topic.trim();
       const textTrimmed = text.trim();
 
-      if (topicToUse) {
-        await generateFlashcards({
-          deck_id: deckId,
-          topic: topicToUse,
-          num_cards: 10,
-          language: "en",
-        });
-      }
+      // Text mode takes precedence: when user pastes text, generate only from that text.
+      // Do not use deck name as topic fallback—that would inject generic cards.
       if (textTrimmed) {
         await generateFlashcards({
           deck_id: deckId,
           text: textTrimmed,
+          num_cards: 10,
+          language: "en",
+        });
+      } else if (topicTrimmed || name) {
+        await generateFlashcards({
+          deck_id: deckId,
+          topic: topicTrimmed || name,
           num_cards: 10,
           language: "en",
         });

@@ -84,18 +84,11 @@ export default function DeckPage({ params }: DeckPageProps) {
     if (!deck || generating) return;
     const topicTrimmed = genTopic.trim();
     const textTrimmed = genText.trim();
-    const topicToUse = topicTrimmed || deck.name || "";
-    if (!topicToUse && !textTrimmed) return;
+    if (!topicTrimmed && !textTrimmed) return;
     setGenerating(true);
     try {
-      if (topicToUse) {
-        await generateFlashcards({
-          deck_id: deck.id,
-          topic: topicToUse,
-          num_cards: 10,
-          language: "en",
-        });
-      }
+      // Text mode takes precedence: when user pastes text, generate only from that text.
+      // Do not use deck name or topic as fallback—that would inject generic cards (e.g. "notes" → note-taking).
       if (textTrimmed) {
         await generateFlashcards({
           deck_id: deck.id,
@@ -103,6 +96,16 @@ export default function DeckPage({ params }: DeckPageProps) {
           num_cards: 10,
           language: "en",
         });
+      } else {
+        const topicToUse = topicTrimmed || deck.name || "";
+        if (topicToUse) {
+          await generateFlashcards({
+            deck_id: deck.id,
+            topic: topicToUse,
+            num_cards: 10,
+            language: "en",
+          });
+        }
       }
       setGenTopic("");
       setGenText("");
