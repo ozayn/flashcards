@@ -57,6 +57,267 @@ Machine Learning
 
 ---
 
+## Flashcards from Any Source
+
+*Core product capability.*
+
+The system should allow users to generate flashcards from multiple types of inputs, not just a typed topic. This transforms the product from a simple flashcard generator into a learning ingestion tool.
+
+### Supported Sources (Initial Roadmap)
+
+**1. URL / Webpage**
+
+User pastes a URL (e.g. Wikipedia, article, blog post).
+
+Pipeline:
+
+- Fetch page content
+- Extract main readable text
+- Summarize key concepts
+- Generate flashcards
+
+**2. Notes / Text**
+
+User pastes notes, lecture text, or study material.
+
+Pipeline:
+
+- Chunk text
+- Extract concepts
+- Generate flashcards
+
+**3. Wikipedia Topic**
+
+User enters a concept (e.g. "Neural Networks"). System fetches Wikipedia content automatically and generates flashcards.
+
+**4. YouTube Video**
+
+User pastes a YouTube URL. System retrieves transcript and generates flashcards. See **YouTube → Flashcards** below.
+
+**5. File Upload (Future)**
+
+- PDF
+- Markdown
+- Text files
+- Lecture slides
+
+Pipeline:
+
+- Parse document
+- Extract key sections
+- Generate flashcards
+
+### Proposed Pipeline
+
+```
+Input Source
+    ↓
+Content Extraction
+    ↓
+Text Cleaning
+    ↓
+Concept Extraction
+    ↓
+Flashcard Generation
+    ↓
+Deck Creation
+```
+
+### Backend Architecture
+
+New module:
+
+```
+apps/api/app/content_sources/
+```
+
+Possible files:
+
+- `url_loader.py`
+- `text_loader.py`
+- `wikipedia_loader.py`
+- `youtube_loader.py`
+- `pdf_loader.py` (future)
+
+Each loader returns:
+
+```json
+{
+  "text": "... cleaned content ..."
+}
+```
+
+This text is then passed into the existing concept extraction pipeline.
+
+### API Additions
+
+- `POST /generate-from-url`
+- `POST /generate-from-text`
+- `POST /generate-from-wikipedia`
+- `POST /generate-from-youtube`
+
+Each endpoint returns generated flashcards.
+
+### UI Changes
+
+Create a new generation page with input modes:
+
+```
+Generate Flashcards
+
+[ ] Topic
+[ ] URL
+[ ] Paste Notes
+[ ] Wikipedia
+[ ] YouTube
+```
+
+User selects source → system generates deck.
+
+### Future Improvements
+
+- Automatic summarization of long sources
+- Source citation inside flashcards
+
+Example: `answer_detailed` may include reference to paragraph source.
+
+### Strategic Advantage
+
+Most flashcard tools require manual input.
+
+This feature allows users to transform **any** learning material into flashcards automatically.
+
+Examples:
+
+- Wikipedia article
+- Lecture notes
+- Blog post
+- Documentation
+- Textbook excerpt
+
+This differentiates the product from traditional flashcard apps.
+
+### YouTube → Flashcards
+
+Users should be able to generate flashcards directly from YouTube educational videos.
+
+**User flow:**
+
+```
+User pastes a YouTube URL
+    ↓
+System retrieves the video transcript
+    ↓
+Transcript is cleaned and chunked
+    ↓
+Key learning concepts are extracted
+    ↓
+Flashcards are generated
+```
+
+**Example use cases:**
+
+- Lecture videos
+- Programming tutorials
+- History documentaries
+- Language lessons
+- University classes
+
+**Example input:**
+
+```
+https://www.youtube.com/watch?v=XXXXX
+```
+
+**Example output:**
+
+Deck: "Neural Networks – Lecture"
+
+Flashcards generated from the lecture concepts.
+
+#### Transcript Retrieval
+
+**Preferred approach:** Use the `youtube-transcript-api` Python package.
+
+**Example implementation location:** `apps/api/app/content_sources/youtube_loader.py`
+
+**Example logic:**
+
+1. Extract video ID from URL
+2. Retrieve transcript
+3. Concatenate transcript segments
+4. Return cleaned text
+
+**Example output:**
+
+```json
+{
+  "text": "Full lecture transcript text..."
+}
+```
+
+#### Pipeline
+
+```
+YouTube URL
+    ↓
+Transcript Retrieval
+    ↓
+Text Cleaning
+    ↓
+Concept Extraction
+    ↓
+Flashcard Generation
+    ↓
+Deck Creation
+```
+
+#### API Endpoint
+
+`POST /generate-from-youtube`
+
+**Request body example:**
+
+```json
+{
+  "url": "https://www.youtube.com/watch?v=XXXX"
+}
+```
+
+**Response:**
+
+```json
+{
+  "deck_title": "Video Title",
+  "flashcards": [...]
+}
+```
+
+#### Future Improvements
+
+**Timestamp linking**
+
+Flashcards can include timestamp references so users can jump back to the exact moment in the video.
+
+Example: `answer_detailed` may include:
+
+> "Backpropagation is explained at 12:34 in the lecture."
+
+#### Strategic Value
+
+Educational video content is one of the most common learning formats today.
+
+Allowing users to convert YouTube lectures into flashcards makes the tool extremely useful for:
+
+- Students
+- Self-learners
+- Programmers
+- Language learners
+
+This feature significantly expands the product beyond traditional flashcard generation.
+
+---
+
 ## Phase 3 — Flashcards From Anything
 
 Generate flashcards from multiple types of input.
