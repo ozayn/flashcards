@@ -1,13 +1,18 @@
-/** Base API URL, normalized (no trailing slash) to avoid double slashes. */
+/**
+ * Client-side: call same-origin Next.js API proxy. Server-side proxy uses
+ * API_INTERNAL_URL (Railway private networking) when available.
+ */
+const API_BASE = "/api/proxy";
+
+/** For display only (e.g. error messages). Public URL, not used for requests. */
 export const apiUrl =
   (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/$/, "");
-const API_URL = apiUrl;
 
 export async function fetchApi<T>(
   endpoint: string,
   options?: RequestInit
 ): Promise<T> {
-  const url = `${API_URL}${endpoint}`;
+  const url = `${API_BASE}${endpoint}`;
   const response = await fetch(url, {
     ...options,
     headers: {
@@ -28,7 +33,7 @@ export async function checkApiAvailability(): Promise<boolean> {
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 3000);
-    const res = await fetch(`${apiUrl}/`, { signal: controller.signal });
+    const res = await fetch(`${API_BASE}/`, { signal: controller.signal });
     clearTimeout(timeout);
     return res.ok;
   } catch {
@@ -40,7 +45,7 @@ export async function getUsers() {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 8000);
   try {
-    const res = await fetch(`${apiUrl}/users`, {
+    const res = await fetch(`${API_BASE}/users`, {
       cache: "no-store",
       signal: controller.signal,
     });
@@ -59,7 +64,7 @@ export async function createUser(data: {
   role?: string;
   plan?: string;
 }) {
-  const res = await fetch(`${apiUrl}/users`, {
+    const res = await fetch(`${API_BASE}/users`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -82,7 +87,7 @@ export async function createUser(data: {
 
 export async function getDecks(userId: string, archived = false) {
   const res = await fetch(
-    `${apiUrl}/decks?user_id=${userId}&archived=${archived}`,
+    `${API_BASE}/decks?user_id=${userId}&archived=${archived}`,
     { cache: "no-store" }
   );
   if (!res.ok) throw new Error("Failed to fetch decks");
@@ -90,7 +95,7 @@ export async function getDecks(userId: string, archived = false) {
 }
 
 export async function getDeck(deckId: string) {
-  const res = await fetch(`${apiUrl}/decks/${deckId}`, { cache: "no-store" });
+  const res = await fetch(`${API_BASE}/decks/${deckId}`, { cache: "no-store" });
   if (!res.ok) throw new Error("Failed to fetch deck");
   return res.json();
 }
@@ -104,7 +109,7 @@ export async function createDeck(data: {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 15000);
   try {
-    const res = await fetch(`${apiUrl}/decks`, {
+    const res = await fetch(`${API_BASE}/decks`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ...data, source_type: data.source_type ?? "topic" }),
@@ -126,7 +131,7 @@ export async function updateDeck(
   deckId: string,
   data: { name?: string; description?: string; archived?: boolean; category_id?: string | null }
 ) {
-  const res = await fetch(`${apiUrl}/decks/${deckId}`, {
+  const res = await fetch(`${API_BASE}/decks/${deckId}`, {
     method: "PATCH",
     headers: {
       "Content-Type": "application/json",
@@ -140,12 +145,12 @@ export async function updateDeck(
 }
 
 export async function deleteDeck(deckId: string) {
-  const res = await fetch(`${apiUrl}/decks/${deckId}`, { method: "DELETE" });
+  const res = await fetch(`${API_BASE}/decks/${deckId}`, { method: "DELETE" });
   if (!res.ok) throw new Error("Failed to delete deck");
 }
 
 export async function getCategories(userId: string) {
-  const res = await fetch(`${apiUrl}/categories?user_id=${userId}`, {
+  const res = await fetch(`${API_BASE}/categories?user_id=${userId}`, {
     cache: "no-store",
   });
   if (!res.ok) throw new Error("Failed to fetch categories");
@@ -153,7 +158,7 @@ export async function getCategories(userId: string) {
 }
 
 export async function createCategory(data: { name: string; user_id: string }) {
-  const res = await fetch(`${apiUrl}/categories`, {
+  const res = await fetch(`${API_BASE}/categories`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
@@ -167,7 +172,7 @@ export async function updateCategory(
   data: { name: string },
   userId: string
 ) {
-  const res = await fetch(`${apiUrl}/categories/${id}?user_id=${userId}`, {
+  const res = await fetch(`${API_BASE}/categories/${id}?user_id=${userId}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
@@ -177,14 +182,14 @@ export async function updateCategory(
 }
 
 export async function deleteCategory(id: string, userId: string) {
-  const res = await fetch(`${apiUrl}/categories/${id}?user_id=${userId}`, {
+  const res = await fetch(`${API_BASE}/categories/${id}?user_id=${userId}`, {
     method: "DELETE",
   });
   if (!res.ok) throw new Error("Failed to delete category");
 }
 
 export async function getFlashcards(deckId: string) {
-  const res = await fetch(`${apiUrl}/decks/${deckId}/flashcards`, { cache: "no-store" });
+  const res = await fetch(`${API_BASE}/decks/${deckId}/flashcards`, { cache: "no-store" });
   if (!res.ok) throw new Error("Failed to fetch flashcards");
   return res.json();
 }
@@ -196,7 +201,7 @@ export async function createFlashcard(data: {
   answer_detailed?: string;
   difficulty?: string;
 }) {
-  const res = await fetch(`${apiUrl}/flashcards`, {
+  const res = await fetch(`${API_BASE}/flashcards`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -210,7 +215,7 @@ export async function createFlashcard(data: {
 }
 
 export async function getFlashcard(flashcardId: string) {
-  const res = await fetch(`${apiUrl}/flashcards/${flashcardId}`, {
+  const res = await fetch(`${API_BASE}/flashcards/${flashcardId}`, {
     cache: "no-store",
   });
   if (!res.ok) throw new Error("Failed to fetch flashcard");
@@ -226,7 +231,7 @@ export async function updateFlashcard(
     difficulty?: string;
   }
 ) {
-  const res = await fetch(`${apiUrl}/flashcards/${flashcardId}`, {
+  const res = await fetch(`${API_BASE}/flashcards/${flashcardId}`, {
     method: "PATCH",
     headers: {
       "Content-Type": "application/json",
@@ -240,7 +245,7 @@ export async function updateFlashcard(
 }
 
 export async function deleteFlashcard(flashcardId: string) {
-  const res = await fetch(`${apiUrl}/flashcards/${flashcardId}`, {
+  const res = await fetch(`${API_BASE}/flashcards/${flashcardId}`, {
     method: "DELETE",
   });
   if (!res.ok) throw new Error("Failed to delete flashcard");
@@ -253,7 +258,7 @@ export async function generateFlashcards(data: {
   num_cards?: number;
   language?: string;
 }) {
-  const res = await fetch(`${apiUrl}/generate-flashcards`, {
+  const res = await fetch(`${API_BASE}/generate-flashcards`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -275,7 +280,7 @@ export async function submitReview(
   rating: "again" | "hard" | "good" | "easy",
   userId: string
 ) {
-  const res = await fetch(`${apiUrl}/reviews`, {
+  const res = await fetch(`${API_BASE}/reviews`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -299,7 +304,7 @@ export interface UserSettings {
 }
 
 export async function getUserSettings(userId: string): Promise<UserSettings> {
-  const res = await fetch(`${apiUrl}/users/${userId}/settings`, {
+  const res = await fetch(`${API_BASE}/users/${userId}/settings`, {
     cache: "no-store",
   });
   if (!res.ok) throw new Error("Failed to fetch user settings");
@@ -310,7 +315,7 @@ export async function updateUserSettings(
   userId: string,
   data: Partial<UserSettings>
 ): Promise<UserSettings> {
-  const res = await fetch(`${apiUrl}/users/${userId}/settings`, {
+  const res = await fetch(`${API_BASE}/users/${userId}/settings`, {
     method: "PATCH",
     headers: {
       "Content-Type": "application/json",
