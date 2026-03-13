@@ -6,19 +6,27 @@ import { DevErrorHandler } from "@/components/dev-error-handler";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
+const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+
 export const metadata: Metadata = {
+  metadataBase: new URL(baseUrl),
   title: "Flashcard AI",
   description: "AI-powered flashcard learning platform",
   manifest: "/manifest.json",
   icons: {
     icon: [
-      { url: "/icon.png", type: "image/png", sizes: "192x192" },
-      { url: "/icon.png", type: "image/png", sizes: "512x512" },
+      { url: "/logo/brain_stack_512.png", type: "image/png", sizes: "192x192" },
+      { url: "/logo/brain_stack_512.png", type: "image/png", sizes: "512x512" },
     ],
     apple: [
-      { url: "/apple-icon.png", type: "image/png", sizes: "180x180" },
-      { url: "/apple-icon.png", type: "image/png", sizes: "512x512" },
+      { url: "/logo/brain_stack_512.png", type: "image/png", sizes: "180x180" },
+      { url: "/logo/brain_stack_512.png", type: "image/png", sizes: "512x512" },
     ],
+  },
+  openGraph: {
+    title: "Flashcard AI",
+    description: "AI-powered flashcard learning platform",
+    images: ["/logo/brain_stack_512.png"],
   },
 };
 

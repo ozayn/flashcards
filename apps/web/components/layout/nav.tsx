@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Menu, X } from "lucide-react";
+import { Logo } from "@/components/Logo";
 import { UserSelector } from "@/components/user-selector";
 import { UserSettings } from "@/components/user-settings";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -26,12 +27,15 @@ export function Nav() {
       className={`relative z-50 h-14 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 ${isDeckStudy ? "landscape-mobile:hidden" : ""}`}
     >
       <div className="max-w-2xl mx-auto h-full flex items-center justify-between px-10 md:px-12">
-        {/* Left: Logo */}
+        {/* Left: Logo + App Name */}
         <Link
           href="/"
-          className="font-semibold text-lg text-foreground shrink-0"
+          className="flex items-center gap-2 shrink-0 min-w-0"
         >
-          Flashcard AI
+          <Logo size="md" className="shrink-0" />
+          <span className="font-semibold text-lg text-foreground truncate">
+            Flashcard AI
+          </span>
         </Link>
 
         {/* Center: Desktop nav (hidden on mobile) */}

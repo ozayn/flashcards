@@ -1,12 +1,16 @@
 import Link from "next/link";
+import { Logo } from "@/components/Logo";
 
 export default function HomePage() {
   return (
     <main className="min-h-screen flex flex-col items-center justify-center p-6">
       <div className="max-w-md w-full text-center space-y-8">
-        <h1 className="text-3xl font-semibold tracking-tight">
-          Flashcard AI
-        </h1>
+        <div className="flex flex-col items-center gap-4">
+          <Logo size="lg" />
+          <h1 className="text-3xl font-semibold tracking-tight">
+            Flashcard AI
+          </h1>
+        </div>
         <p className="text-muted-foreground">
           Learn smarter with AI-powered flashcards
         </p>
