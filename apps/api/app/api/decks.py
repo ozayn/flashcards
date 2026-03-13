@@ -6,7 +6,7 @@ from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.models import Deck, Flashcard, Review
+from app.models import Category, Deck, Flashcard, Review
 from app.schemas.deck import DeckCreate, DeckResponse, DeckUpdate
 from app.schemas.flashcard import FlashcardResponse
 
@@ -117,7 +117,20 @@ async def update_deck(
         deck.archived = data.archived
 
     if "category_id" in (data.model_dump(exclude_unset=True) or {}):
-        deck.category_id = data.category_id if data.category_id else None
+        new_cat_id = data.category_id if data.category_id else None
+        if new_cat_id:
+            cat_result = await db.execute(
+                select(Category).where(
+                    Category.id == new_cat_id,
+                    Category.user_id == deck.user_id,
+                )
+            )
+            if cat_result.scalar_one_or_none() is None:
+                raise HTTPException(
+                    status_code=403,
+                    detail="Category not found or does not belong to you",
+                )
+        deck.category_id = new_cat_id
 
     await db.flush()
     await db.refresh(deck)

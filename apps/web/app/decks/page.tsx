@@ -221,16 +221,20 @@ export default function DecksPage() {
   }, []);
 
   useEffect(() => {
+    if (!userId) {
+      setCategories([]);
+      return;
+    }
     async function fetchCategories() {
       try {
-        const data = await getCategories();
+        const data = await getCategories(userId);
         setCategories(Array.isArray(data) ? data : []);
       } catch {
         setCategories([]);
       }
     }
     fetchCategories();
-  }, [refreshKey]);
+  }, [userId, refreshKey]);
 
   useEffect(() => {
     if (!userId) {
@@ -303,10 +307,10 @@ export default function DecksPage() {
   async function handleCreateCategory(e: React.FormEvent) {
     e.preventDefault();
     const name = categoryName.trim();
-    if (!name || categoryCreating) return;
+    if (!name || categoryCreating || !userId) return;
     try {
       setCategoryCreating(true);
-      await createCategory({ name });
+      await createCategory({ name, user_id: userId });
       setCategoryName("");
       setCategoryModalOpen(false);
       setRefreshKey((k) => k + 1);
@@ -334,10 +338,10 @@ export default function DecksPage() {
   async function handleRenameCategory(e: React.FormEvent) {
     e.preventDefault();
     const name = renameCategoryName.trim();
-    if (!name || !renameCategoryId || renameSaving) return;
+    if (!name || !renameCategoryId || renameSaving || !userId) return;
     try {
       setRenameSaving(true);
-      await updateCategory(renameCategoryId, { name });
+      await updateCategory(renameCategoryId, { name }, userId);
       setRefreshKey((k) => k + 1);
       closeRenameModal();
     } catch (err) {
@@ -348,8 +352,9 @@ export default function DecksPage() {
   }
 
   async function handleDeleteCategory(categoryId: string) {
+    if (!userId) return;
     try {
-      await deleteCategory(categoryId);
+      await deleteCategory(categoryId, userId);
       setRefreshKey((k) => k + 1);
       setDeleteConfirmId(null);
     } catch (err) {

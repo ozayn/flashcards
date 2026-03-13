@@ -1,6 +1,6 @@
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,11 +13,14 @@ router = APIRouter(prefix="/categories", tags=["categories"])
 
 @router.get("", response_model=List[CategoryResponse])
 async def get_categories(
+    user_id: str = Query(..., description="User ID (returns only categories owned by this user)"),
     db: AsyncSession = Depends(get_db),
 ):
-    """Get all categories."""
+    """Get categories owned by the user. Categories are user-specific and never shared."""
     result = await db.execute(
-        select(Category).order_by(Category.name.asc())
+        select(Category)
+        .where(Category.user_id == user_id)
+        .order_by(Category.name.asc())
     )
     return [CategoryResponse.model_validate(c) for c in result.scalars().all()]
 
@@ -27,7 +30,7 @@ async def create_category(
     payload: CategoryCreate,
     db: AsyncSession = Depends(get_db),
 ):
-    """Create a new category."""
+    """Create a new category. The category is owned by the user_id in the payload."""
     category = Category(
         name=payload.name,
         user_id=payload.user_id,
@@ -42,10 +45,13 @@ async def create_category(
 async def update_category(
     category_id: str,
     data: CategoryUpdate,
+    user_id: str = Query(..., description="User ID (must own the category)"),
     db: AsyncSession = Depends(get_db),
 ):
-    """Rename a category."""
-    result = await db.execute(select(Category).where(Category.id == category_id))
+    """Rename a category. Only the owner can update."""
+    result = await db.execute(
+        select(Category).where(Category.id == category_id, Category.user_id == user_id)
+    )
     category = result.scalar_one_or_none()
     if not category:
         raise HTTPException(status_code=404, detail="Category not found")
@@ -59,10 +65,13 @@ async def update_category(
 @router.delete("/{category_id}", status_code=204)
 async def delete_category(
     category_id: str,
+    user_id: str = Query(..., description="User ID (must own the category)"),
     db: AsyncSession = Depends(get_db),
 ):
-    """Delete a category. Decks in this category will have category_id set to NULL."""
-    result = await db.execute(select(Category).where(Category.id == category_id))
+    """Delete a category. Only the owner can delete. Decks in this category will have category_id set to NULL."""
+    result = await db.execute(
+        select(Category).where(Category.id == category_id, Category.user_id == user_id)
+    )
     category = result.scalar_one_or_none()
     if not category:
         raise HTTPException(status_code=404, detail="Category not found")

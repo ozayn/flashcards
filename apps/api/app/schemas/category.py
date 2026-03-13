@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 
 class CategoryCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
-    user_id: Optional[str] = Field(None, description="User ID (optional)")
+    user_id: str = Field(..., description="User ID (owner)")
 
 
 class CategoryUpdate(BaseModel):

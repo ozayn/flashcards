@@ -75,6 +75,25 @@ async def init_db() -> None:
                 logger.info("Created categories table")
         await conn.run_sync(_ensure_categories_table)
 
+    # Backfill categories with NULL user_id: assign to first user so they are not orphaned
+    async with engine.begin() as conn:
+        def _backfill_category_user_id(sync_conn):
+            has_null = sync_conn.execute(text(
+                "SELECT 1 FROM categories WHERE user_id IS NULL LIMIT 1"
+            )).fetchone()
+            if has_null is None:
+                return
+            first_user = sync_conn.execute(text(
+                "SELECT id FROM users LIMIT 1"
+            )).fetchone()
+            if first_user is None:
+                return
+            sync_conn.execute(text(
+                "UPDATE categories SET user_id = :uid WHERE user_id IS NULL"
+            ), {"uid": first_user[0]})
+            logger.info("Backfilled categories with NULL user_id to first user")
+        await conn.run_sync(_backfill_category_user_id)
+
     async with engine.begin() as conn:
         def _migrate_decks(sync_conn):
             _add_column_if_missing(

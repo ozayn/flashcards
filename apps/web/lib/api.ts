@@ -144,13 +144,15 @@ export async function deleteDeck(deckId: string) {
   if (!res.ok) throw new Error("Failed to delete deck");
 }
 
-export async function getCategories() {
-  const res = await fetch(`${apiUrl}/categories`, { cache: "no-store" });
+export async function getCategories(userId: string) {
+  const res = await fetch(`${apiUrl}/categories?user_id=${userId}`, {
+    cache: "no-store",
+  });
   if (!res.ok) throw new Error("Failed to fetch categories");
   return res.json();
 }
 
-export async function createCategory(data: { name: string; user_id?: string }) {
+export async function createCategory(data: { name: string; user_id: string }) {
   const res = await fetch(`${apiUrl}/categories`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -160,8 +162,12 @@ export async function createCategory(data: { name: string; user_id?: string }) {
   return res.json();
 }
 
-export async function updateCategory(id: string, data: { name: string }) {
-  const res = await fetch(`${apiUrl}/categories/${id}`, {
+export async function updateCategory(
+  id: string,
+  data: { name: string },
+  userId: string
+) {
+  const res = await fetch(`${apiUrl}/categories/${id}?user_id=${userId}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
@@ -170,8 +176,8 @@ export async function updateCategory(id: string, data: { name: string }) {
   return res.json();
 }
 
-export async function deleteCategory(id: string) {
-  const res = await fetch(`${apiUrl}/categories/${id}`, {
+export async function deleteCategory(id: string, userId: string) {
+  const res = await fetch(`${apiUrl}/categories/${id}?user_id=${userId}`, {
     method: "DELETE",
   });
   if (!res.ok) throw new Error("Failed to delete category");
