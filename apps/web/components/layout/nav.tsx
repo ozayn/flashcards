@@ -10,14 +10,16 @@ import { UserSettings } from "@/components/user-settings";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 
-const appNavLinks = [
+type NavLink = { href: string; label: string; primary?: boolean };
+
+const appNavLinks: NavLink[] = [
   { href: "/decks", label: "Decks" },
   { href: "/study", label: "Study" },
   { href: "/create-deck", label: "Create Deck" },
   { href: "/about", label: "About" },
 ];
 
-const landingNavLinks = [
+const landingNavLinks: NavLink[] = [
   { href: "/about", label: "About" },
   { href: "/decks", label: "Sign In" },
   { href: "/create-deck", label: "Get Started", primary: true },
