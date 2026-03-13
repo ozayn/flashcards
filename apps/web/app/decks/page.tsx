@@ -225,9 +225,10 @@ export default function DecksPage() {
       setCategories([]);
       return;
     }
+    const uid = userId;
     async function fetchCategories() {
       try {
-        const data = await getCategories(userId);
+        const data = await getCategories(uid);
         setCategories(Array.isArray(data) ? data : []);
       } catch {
         setCategories([]);
