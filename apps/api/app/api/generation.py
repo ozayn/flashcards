@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.llm.router import generate_flashcards as llm_generate_flashcards
 from app.models import Deck, Flashcard
+from app.models.enums import GenerationStatus, SourceType
 from app.schemas.flashcard import DIFFICULTY_TO_INT
 from app.utils.topic_analysis import build_language_instruction
 
@@ -134,20 +135,26 @@ async def generate_flashcards(
     if not deck:
         raise HTTPException(status_code=404, detail="Deck not found")
 
-    # Stage 1: Extract concepts from topic
-    lang_hint = (payload.language or "").strip().lower()[:2] or None
-    concepts = _extract_concepts(payload.topic, lang_hint)
+    deck.source_type = SourceType.topic.value
+    deck.generated_by_ai = True
+    deck.generation_status = GenerationStatus.generating.value
+    await db.flush()
 
-    # Stage 2: Generate flashcards from concepts (or fallback to topic if extraction failed)
-    if concepts:
-        try:
-            response_text = _generate_flashcards_from_concepts(concepts, payload.topic, lang_hint)
-        except ValueError as e:
-            raise HTTPException(status_code=503, detail=str(e))
-    else:
-        # Fallback: single-stage generation when concept extraction fails
-        lang_instruction = build_language_instruction(payload.topic, lang_hint)
-        fallback_prompt = f"""You are an expert educator creating high-quality flashcards.
+    try:
+        # Stage 1: Extract concepts from topic
+        lang_hint = (payload.language or "").strip().lower()[:2] or None
+        concepts = _extract_concepts(payload.topic, lang_hint)
+
+        # Stage 2: Generate flashcards from concepts (or fallback to topic if extraction failed)
+        if concepts:
+            try:
+                response_text = _generate_flashcards_from_concepts(concepts, payload.topic, lang_hint)
+            except ValueError as e:
+                raise HTTPException(status_code=503, detail=str(e))
+        else:
+            # Fallback: single-stage generation when concept extraction fails
+            lang_instruction = build_language_instruction(payload.topic, lang_hint)
+            fallback_prompt = f"""You are an expert educator creating high-quality flashcards.
 
 Topic:
 {payload.topic}
@@ -185,65 +192,75 @@ Additional Rules:
 - Do not include explanations outside JSON.
 - Ensure answers are correct and educational."""
 
+            try:
+                response_text = llm_generate_flashcards(fallback_prompt)
+            except ValueError as e:
+                raise HTTPException(status_code=503, detail=str(e))
+
         try:
-            response_text = llm_generate_flashcards(fallback_prompt)
-        except ValueError as e:
-            raise HTTPException(status_code=503, detail=str(e))
-
-    try:
-        parsed_json = _extract_json(response_text)
-    except json.JSONDecodeError as e:
-        logger.exception("Failed to parse LLM response as JSON: %s", e)
-        raise HTTPException(
-            status_code=502,
-            detail="Failed to parse LLM response as JSON",
-        )
-
-    cards: list = parsed_json.get("flashcards", [])
-    print("Generated cards:", cards)
-    logger.info("Generated cards: %s", cards)
-
-    created = 0
-    for raw_card in cards:
-        if not isinstance(raw_card, dict):
-            logger.warning("Skipping invalid card (not a dict): %s", raw_card)
-            continue
-
-        # Read question, answer_short, answer_detailed, difficulty (fallback: front/back)
-        question = raw_card.get("question") or raw_card.get("front")
-        answer_short = raw_card.get("answer_short") or raw_card.get("back") or raw_card.get("answer")
-
-        if not question or not answer_short:
-            logger.warning(
-                "Skipping card missing required fields (question/front, answer_short/back): %s",
-                raw_card,
+            parsed_json = _extract_json(response_text)
+        except json.JSONDecodeError as e:
+            logger.exception("Failed to parse LLM response as JSON: %s", e)
+            raise HTTPException(
+                status_code=502,
+                detail="Failed to parse LLM response as JSON",
             )
-            continue
 
-        answer_detailed = raw_card.get("answer_detailed")
-        difficulty_str = raw_card.get("difficulty", "medium")
-        if difficulty_str not in DIFFICULTY_TO_INT:
-            difficulty_str = "medium"
-        difficulty = DIFFICULTY_TO_INT[difficulty_str]
+        cards: list = parsed_json.get("flashcards", [])
+        print("Generated cards:", cards)
+        logger.info("Generated cards: %s", cards)
 
-        result = await db.execute(
-            select(Flashcard).where(
-                Flashcard.deck_id == deck_id_str,
-                Flashcard.question == question,
+        created = 0
+        for raw_card in cards:
+            if not isinstance(raw_card, dict):
+                logger.warning("Skipping invalid card (not a dict): %s", raw_card)
+                continue
+
+            # Read question, answer_short, answer_detailed, difficulty (fallback: front/back)
+            question = raw_card.get("question") or raw_card.get("front")
+            answer_short = raw_card.get("answer_short") or raw_card.get("back") or raw_card.get("answer")
+
+            if not question or not answer_short:
+                logger.warning(
+                    "Skipping card missing required fields (question/front, answer_short/back): %s",
+                    raw_card,
+                )
+                continue
+
+            answer_detailed = raw_card.get("answer_detailed")
+            difficulty_str = raw_card.get("difficulty", "medium")
+            if difficulty_str not in DIFFICULTY_TO_INT:
+                difficulty_str = "medium"
+            difficulty = DIFFICULTY_TO_INT[difficulty_str]
+
+            result = await db.execute(
+                select(Flashcard).where(
+                    Flashcard.deck_id == deck_id_str,
+                    Flashcard.question == question,
+                )
             )
-        )
-        existing = result.scalar_one_or_none()
-        if not existing:
-            flashcard = Flashcard(
-                deck_id=deck_id_str,
-                question=str(question)[:10000],
-                answer_short=str(answer_short)[:1000],
-                answer_detailed=(str(answer_detailed)[:10000] if answer_detailed else None),
-                difficulty=difficulty,
-            )
-            db.add(flashcard)
-            created += 1
+            existing = result.scalar_one_or_none()
+            if not existing:
+                flashcard = Flashcard(
+                    deck_id=deck_id_str,
+                    question=str(question)[:10000],
+                    answer_short=str(answer_short)[:1000],
+                    answer_detailed=(str(answer_detailed)[:10000] if answer_detailed else None),
+                    difficulty=difficulty,
+                )
+                db.add(flashcard)
+                created += 1
 
-    await db.flush()
+        deck.generation_status = GenerationStatus.completed.value
+        await db.flush()
 
-    return GenerateFlashcardsResponse(created=created)
+        return GenerateFlashcardsResponse(created=created)
+
+    except HTTPException:
+        deck.generation_status = GenerationStatus.failed.value
+        await db.flush()
+        raise
+    except Exception:
+        deck.generation_status = GenerationStatus.failed.value
+        await db.flush()
+        raise

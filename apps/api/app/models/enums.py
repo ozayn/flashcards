@@ -13,8 +13,19 @@ class Plan(str, enum.Enum):
 
 class SourceType(str, enum.Enum):
     topic = "topic"
-    webpage = "webpage"
     text = "text"
+    url = "url"
+    wikipedia = "wikipedia"
+    youtube = "youtube"
+    pdf = "pdf"
+    manual = "manual"
+    webpage = "webpage"  # legacy alias for url
+
+
+class GenerationStatus(str, enum.Enum):
+    generating = "generating"
+    completed = "completed"
+    failed = "failed"
 
 
 class ReviewRating(str, enum.Enum):

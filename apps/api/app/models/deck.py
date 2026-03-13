@@ -3,12 +3,12 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 from uuid import uuid4
-from sqlalchemy import Boolean, String, DateTime, Enum, ForeignKey, Text
+from sqlalchemy import Boolean, String, DateTime, ForeignKey, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
-from app.models.enums import SourceType
+from app.models.enums import GenerationStatus
 
 
 class Deck(Base):
@@ -22,11 +22,14 @@ class Deck(Base):
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
-    source_type: Mapped[SourceType] = mapped_column(
-        Enum(SourceType), default=SourceType.topic, nullable=False
-    )
+    source_type: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
     source_url: Mapped[Optional[str]] = mapped_column(String(2048), nullable=True)
+    source_title: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
     source_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    generation_status: Mapped[str] = mapped_column(
+        String(32), default=GenerationStatus.completed.value, nullable=False
+    )
+    generated_by_ai: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     archived: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, nullable=False

@@ -16,7 +16,7 @@ class DeckCreate(BaseModel):
     user_id: str = Field(..., description="User ID")
     name: str = Field(..., min_length=1, max_length=255)
     description: Optional[str] = Field(None, max_length=500)
-    source_type: SourceType = Field(default=SourceType.topic)
+    source_type: Optional[SourceType] = Field(default=SourceType.topic)
     source_url: Optional[str] = Field(None, max_length=2048)
     source_text: Optional[str] = None
 
@@ -26,9 +26,12 @@ class DeckResponse(BaseModel):
     user_id: str
     name: str
     description: Optional[str] = None
-    source_type: SourceType
+    source_type: Optional[str] = None
     source_url: Optional[str] = None
+    source_title: Optional[str] = None
     source_text: Optional[str] = None
+    generation_status: str = "completed"
+    generated_by_ai: bool = False
     archived: bool = False
     created_at: datetime
 

@@ -45,8 +45,35 @@ async def init_db() -> None:
                 "ALTER TABLE decks ADD COLUMN archived BOOLEAN DEFAULT 0" if _IS_SQLITE
                 else "ALTER TABLE decks ADD COLUMN archived BOOLEAN DEFAULT false"
             )
+            _add_column_if_missing(
+                sync_conn, "decks", "source_title",
+                "ALTER TABLE decks ADD COLUMN source_title TEXT"
+            )
+            _add_column_if_missing(
+                sync_conn, "decks", "generation_status",
+                "ALTER TABLE decks ADD COLUMN generation_status VARCHAR(32) DEFAULT 'completed'"
+            )
+            _add_column_if_missing(
+                sync_conn, "decks", "generated_by_ai",
+                "ALTER TABLE decks ADD COLUMN generated_by_ai BOOLEAN DEFAULT 0" if _IS_SQLITE
+                else "ALTER TABLE decks ADD COLUMN generated_by_ai BOOLEAN DEFAULT false"
+            )
         await conn.run_sync(_migrate_decks)
-    logger.info("Applied archived column migration")
+    logger.info("Applied decks column migrations")
+
+    # Make source_type nullable for PostgreSQL (allows NULL for existing/legacy rows)
+    if not _IS_SQLITE:
+        async with engine.begin() as conn:
+            def _migrate_source_type_nullable(sync_conn):
+                try:
+                    sync_conn.execute(text(
+                        "ALTER TABLE decks ALTER COLUMN source_type DROP NOT NULL"
+                    ))
+                    logger.info("Made source_type nullable")
+                except Exception as e:
+                    if "does not exist" not in str(e).lower() and "already" not in str(e).lower():
+                        logger.warning("Could not make source_type nullable: %s", e)
+            await conn.run_sync(_migrate_source_type_nullable)
 
     async with engine.begin() as conn:
         def _migrate_think_delay_enabled(sync_conn):
