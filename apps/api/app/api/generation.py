@@ -93,6 +93,30 @@ def _is_question_style_topic(topic: str) -> bool:
     return any(lower.startswith(s) for s in question_starts)
 
 
+def _is_people_list_topic(topic: str) -> bool:
+    """Return True if topic asks for a list of notable individuals (e.g. famous mathematicians, street photographers).
+    List-of-people topics perform badly with generic concept prompts because the model drifts into abstract domain
+    questions instead of producing cards about specific individuals."""
+    PEOPLE_LIST_HINTS = [
+        "photographers",
+        "mathematicians",
+        "scientists",
+        "authors",
+        "philosophers",
+        "artists",
+        "leaders",
+        "presidents",
+        "painters",
+        "composers",
+        "poets",
+        "physicists",
+        "chemists",
+        "biologists",
+    ]
+    topic_lower = topic.lower().strip()
+    return any(word in topic_lower for word in PEOPLE_LIST_HINTS)
+
+
 def extract_anchor_keywords(topic: str) -> list[str]:
     """Extract 2–5 anchor keywords from the topic to enforce topical grounding."""
     if not topic or not topic.strip():
@@ -118,6 +142,7 @@ def _extract_concepts(
     topic: Optional[str] = None,
     text: Optional[str] = None,
     language_hint: Optional[str] = None,
+    is_people_list: bool = False,
 ) -> list:
     """Extract key concepts from topic or text using LLM."""
     if text:
@@ -134,7 +159,7 @@ Text:
 
 {lang_instruction}
 
-Extract 5–10 important concepts suitable for flashcards.
+Extract 5–10 specific items: names of people, places, events, works, or key terms—prefer concrete entities over abstract concepts.
 
 Return STRICT JSON:
 {{
@@ -144,14 +169,37 @@ Return STRICT JSON:
         # Topic mode
         topic_str = topic or ""
         lang_instruction = build_language_instruction(topic_str, language_hint)
-        prompt = f"""You are identifying key learning concepts.
+
+        if is_people_list:
+            prompt = f"""You are extracting notable individuals for a study deck.
 
 Topic:
 {topic_str}
 
 {lang_instruction}
 
-Extract 5–10 important words, terms, or concepts related to the topic.
+Extract 5–10 names of real notable people directly relevant to this topic.
+
+Rules:
+- Return only person names
+- Do not return abstract concepts
+- Do not return styles, themes, techniques, or fields
+- Prefer famous, historically significant individuals
+- Concepts must be in the same language as the topic
+
+Return STRICT JSON:
+{{
+  "concepts": ["...", "...", "..."]
+}}"""
+        else:
+            prompt = f"""You are identifying key learning concepts.
+
+Topic:
+{topic_str}
+
+{lang_instruction}
+
+Extract 5–10 specific items: names of people, places, events, works, or key terms—whichever the topic asks for.
 
 Return STRICT JSON:
 
@@ -160,9 +208,9 @@ Return STRICT JSON:
 }}
 
 Rules:
-- Concepts must be specific terms
-- Avoid general descriptions
-- Concepts must be in the same language as the topic"""
+- Prefer specific entities: names of people, places, events, works (e.g. for "well-known street photographers" extract photographer names like Henri Cartier-Bresson, Garry Winogrand).
+- Avoid abstract or generic terms when the topic asks for specific individuals or examples.
+- Concepts must be in the same language as the topic."""
 
     try:
         response_text = llm_generate_flashcards(prompt)
@@ -202,8 +250,18 @@ Text:
 
 {lang_instruction}
 
-Extract key facts, concepts, definitions, or learnable points from the text.
-Create one flashcard per important concept.
+Instructions:
+- Prefer specific facts, names, events, or individuals over abstract concepts.
+- Questions should be concise and suitable for active recall.
+- Answers should be 1–2 sentences, short and easy to memorize.
+- Each flashcard must test exactly ONE piece of knowledge.
+- Prefer named entities (people, places, works, events) when possible.
+- Prefer questions that start with: Who, What, When, Where.
+- Avoid questions that start with: Why, How—unless absolutely necessary.
+- Avoid multi-part questions. Bad: "Who was Henri Cartier-Bresson and what was the decisive moment?" Good: "Who was Henri Cartier-Bresson?" / "What is the decisive moment in photography?"
+- Questions must be concise and focused on recall.
+
+Extract key facts and create one flashcard per important point.
 
 Return STRICT JSON only.
 
@@ -220,9 +278,62 @@ Return STRICT JSON only.
 
 Rules:
 - Generate between 5 and 15 flashcards.
-- Questions should test understanding of the content.
-- Answers should be accurate and concise.
 - Do not include explanations outside JSON."""
+
+    return llm_generate_flashcards(prompt)
+
+
+def _generate_flashcards_from_people_list(
+    concepts: list,
+    topic: str,
+    language_hint: Optional[str] = None,
+) -> str:
+    """Generate flashcards for list-of-people topics. Each card asks 'Who was [Name]?' with a 1–2 sentence answer."""
+    concept_list = "\n".join(f"- {c}" for c in concepts)
+    lang_instruction = build_language_instruction(topic, language_hint)
+    prompt = f"""You are generating flashcards for studying notable individuals.
+
+Topic:
+{topic}
+
+Names:
+{concept_list}
+
+{lang_instruction}
+
+Generate one flashcard per name.
+
+Rules:
+- Each question must be exactly in the style:
+  'Who was [Name]?'
+- Each answer should be 1–2 short sentences
+- Focus on why the person is notable
+- Do not ask abstract or conceptual questions
+- Do not ask 'Why' or 'How' questions
+- Do not ask about the field in general
+- Each card must test one person only
+
+Example:
+Q: Who was Henri Cartier-Bresson?
+A: A French photographer considered a pioneer of street photography and known for the idea of the decisive moment.
+
+Return STRICT JSON only.
+
+{{
+  "flashcards": [
+    {{
+      "question": "...",
+      "answer_short": "...",
+      "answer_detailed": "...",
+      "difficulty": "easy"
+    }}
+  ]
+}}
+
+Rules:
+- One flashcard per name.
+- Do not include explanations outside JSON.
+- Ensure answers are correct and educational."""
 
     return llm_generate_flashcards(prompt)
 
@@ -245,38 +356,24 @@ def _generate_flashcards_from_concepts(
 - Answer: Provide a clear definition.
 {vocab_instruction}"""
     else:
-        style_instruction = f"""Create conceptual learning flashcards.
+        style_instruction = f"""Instructions:
+- Prefer specific facts, names, events, or individuals over abstract concepts.
+- Avoid abstract explanations; focus on concrete, memorable facts.
+- Questions should be concise and suitable for active recall.
+- Answers should be 1–2 sentences, short and easy to memorize.
+- Each flashcard must test exactly ONE piece of knowledge.
+- Prefer named entities (people, places, works, events) when possible.
+- Prefer questions that start with: Who, What, When, Where.
+- Avoid questions that start with: Why, How—unless absolutely necessary.
+- Avoid multi-part questions. Bad: "Who was Henri Cartier-Bresson and what was the decisive moment?" Good: "Who was Henri Cartier-Bresson?" / "What is the decisive moment in photography?"
+- Questions must be concise and focused on recall.
 
-Flashcards should:
-- test understanding of ideas
-- explain relationships or arguments
-- avoid simple dictionary definitions
+When the topic asks for specific examples (e.g. "well-known street photographers"), create cards about those individuals—e.g. "Who was Henri Cartier-Bresson?" with a 1–2 sentence answer—not about abstract concepts like "What is street photography?".
 
-Preferred question styles:
-- Why...
-- How...
-- What did [author/theory] argue about...
-- What is the difference between...
-- What role does X play in Y...
-
-Answers should briefly explain the idea, not just define a word.
-
-Topical Grounding Rules:
-- Every flashcard question MUST include at least one anchor keyword.
-- Do not generate questions unrelated to these anchors.
-- Avoid generic domain questions.
+Topical Grounding:
 - Every flashcard must be directly related to the topic.
-- Focus specifically on the concepts, arguments, or ideas mentioned in the topic.
-- If the topic references a person, theory, or work, at least one of these must appear in each question.
-- Avoid drifting into general background information.
-
-Topical constraint:
-Every flashcard must remain tightly focused on the topic. Do not generate general questions about the field. The question must clearly reference the topic or its central concept.
-
-Example for topic "Niccolo Machiavelli quotes about exiles":
-Anchors: ["Machiavelli", "exiles"]
-Valid: Why did Machiavelli consider exiles politically dangerous? / What did Machiavelli say about the loyalty of exiles?
-Invalid: What is politics? / What is the relationship between government and power?"""
+- If the topic references people, works, or events, include specific names in questions.
+- Avoid generic domain questions that could apply to any topic."""
 
     prompt = f"""You are generating flashcards.
 
@@ -318,52 +415,27 @@ def _generate_flashcards_from_question_topic(
 ) -> str:
     """Generate flashcards directly from a question-style topic, skipping concept extraction."""
     lang_instruction = build_language_instruction(topic, language_hint)
-    anchors = extract_anchor_keywords(topic)
-    anchors_str = str(anchors)
-    prompt = f"""You are creating educational flashcards based on the following question or topic.
+    prompt = f"""You are generating flashcards for studying.
 
 Topic:
 {topic}
 
-Anchor keywords:
-{anchors_str}
-
 {lang_instruction}
 
-Create conceptual learning flashcards.
+Instructions:
+- Prefer specific facts, names, events, or individuals over abstract concepts.
+- Avoid abstract explanations; focus on concrete, memorable facts.
+- Questions should be concise and suitable for active recall.
+- Answers should be 1–2 sentences, short and easy to memorize.
+- Each flashcard must test exactly ONE piece of knowledge.
+- Prefer named entities (people, places, works, events) when possible.
+- Prefer questions that start with: Who, What, When, Where.
+- Avoid questions that start with: Why, How—unless absolutely necessary.
+- Avoid multi-part questions. Bad: "Who was Henri Cartier-Bresson and what was the decisive moment?" Good: "Who was Henri Cartier-Bresson?" / "What is the decisive moment in photography?"
+- Questions must be concise and focused on recall.
+- Cards must be directly related to the topic.
 
-Flashcards should:
-- test understanding of ideas
-- explain relationships or arguments
-- avoid simple dictionary definitions
-
-Preferred question styles:
-- Why...
-- How...
-- What did [author/theory] argue about...
-- What is the difference between...
-- What role does X play in Y...
-
-Answers should briefly explain the idea, not just define a word.
-
-Topical Grounding Rules:
-- Every flashcard question MUST include at least one anchor keyword.
-- Do not generate questions unrelated to these anchors.
-- Avoid generic domain questions.
-- Every flashcard must be directly related to the topic.
-- Focus specifically on the concepts, arguments, or ideas mentioned in the topic.
-- If the topic references a person, theory, or work, at least one of these must appear in each question.
-- Avoid drifting into general background information.
-
-Topical constraint:
-Every flashcard must remain tightly focused on the topic. Do not generate general questions about the field. The question must clearly reference the topic or its central concept.
-
-Example for topic "Niccolo Machiavelli quotes about exiles":
-Anchors: ["Machiavelli", "exiles"]
-Valid: Why did Machiavelli consider exiles politically dangerous? / What did Machiavelli say about the loyalty of exiles?
-Invalid: What is politics? / What is the relationship between government and power?
-
-Generate 5–10 flashcards that help a learner understand the topic.
+Generate 5–10 flashcards.
 
 Return STRICT JSON only.
 
@@ -449,8 +521,70 @@ async def generate_flashcards(
                     )
                 except ValueError as e:
                     raise HTTPException(status_code=503, detail=str(e))
+            elif _is_people_list_topic(topic_str) and not is_vocab:
+                # List-of-people topics: use dedicated extraction + generation for "Who was X?" cards
+                # (vocabulary topics use generic path above)
+                concepts = _extract_concepts(
+                    topic=topic_str, language_hint=lang_hint, is_people_list=True
+                )
+                if concepts:
+                    try:
+                        response_text = _generate_flashcards_from_people_list(
+                            concepts, topic_str, lang_hint
+                        )
+                    except ValueError as e:
+                        raise HTTPException(status_code=503, detail=str(e))
+                else:
+                    # Fallback to generic generation if people extraction fails
+                    concepts = _extract_concepts(topic=topic_str, language_hint=lang_hint)
+                    if concepts:
+                        try:
+                            response_text = _generate_flashcards_from_concepts(
+                                concepts, topic_str, lang_hint, is_vocab=False
+                            )
+                        except ValueError as e:
+                            raise HTTPException(status_code=503, detail=str(e))
+                    else:
+                        # Fallback: single-stage generation
+                        lang_instruction = build_language_instruction(topic_str, lang_hint)
+                        style_rules = """Instructions:
+- Prefer specific facts, names, events, or individuals over abstract concepts.
+- Prefer questions that start with: Who, What, When, Where.
+- Each question must be exactly: 'Who was [Name]?' for people-list topics.
+- Answers should be 1–2 sentences. Cards must be directly related to the topic."""
+
+                        fallback_prompt = f"""You are generating flashcards for studying notable individuals.
+
+Topic:
+{topic_str}
+
+{lang_instruction}
+
+{style_rules}
+
+Return STRICT JSON only.
+
+{{
+  "flashcards": [
+    {{
+      "question": "...",
+      "answer_short": "...",
+      "answer_detailed": "...",
+      "difficulty": "easy"
+    }}
+  ]
+}}
+
+Rules:
+- Generate between 5 and 10 flashcards.
+- Do not include explanations outside JSON."""
+
+                        try:
+                            response_text = llm_generate_flashcards(fallback_prompt)
+                        except ValueError as e:
+                            raise HTTPException(status_code=503, detail=str(e))
             else:
-                # Extract concepts then generate
+                # Extract concepts then generate (generic topics)
                 concepts = _extract_concepts(topic=topic_str, language_hint=lang_hint)
 
                 if concepts:
@@ -472,49 +606,28 @@ If the topic appears to be vocabulary, slang, or terminology:
 - The answer should define it clearly.
 {vocab_instruction}"""
                     else:
-                        fallback_anchors = extract_anchor_keywords(topic_str)
-                        fallback_anchors_str = str(fallback_anchors)
-                        style_rules = """Create conceptual learning flashcards.
-Flashcards should test understanding of ideas, explain relationships or arguments, and avoid simple dictionary definitions.
-Preferred question styles: Why..., How..., What did [author/theory] argue about..., What is the difference between...
-Answers should briefly explain the idea, not just define a word.
+                        style_rules = """Instructions:
+- Prefer specific facts, names, events, or individuals over abstract concepts.
+- Avoid abstract explanations; focus on concrete, memorable facts.
+- Questions should be concise and suitable for active recall.
+- Answers should be 1–2 sentences, short and easy to memorize.
+- Each flashcard must test exactly ONE piece of knowledge.
+- Prefer named entities (people, places, works, events) when possible.
+- Prefer questions that start with: Who, What, When, Where.
+- Avoid questions that start with: Why, How—unless absolutely necessary.
+- Avoid multi-part questions. Bad: "Who was Henri Cartier-Bresson and what was the decisive moment?" Good: "Who was Henri Cartier-Bresson?" / "What is the decisive moment in photography?"
+- Questions must be concise and focused on recall.
+- Cards must be directly related to the topic."""
 
-Topical Grounding Rules:
-- Every flashcard question MUST include at least one anchor keyword.
-- Do not generate questions unrelated to these anchors.
-- Avoid generic domain questions.
-- Every flashcard must be directly related to the topic.
-- Focus specifically on the concepts, arguments, or ideas mentioned in the topic.
-- If the topic references a person, theory, or work, at least one of these must appear in each question.
-- Avoid drifting into general background information.
-
-Topical constraint:
-Every flashcard must remain tightly focused on the topic. Do not generate general questions about the field. The question must clearly reference the topic or its central concept.
-
-Example for topic "Niccolo Machiavelli quotes about exiles":
-Anchors: ["Machiavelli", "exiles"]
-Valid: Why did Machiavelli consider exiles politically dangerous? / What did Machiavelli say about the loyalty of exiles?
-Invalid: What is politics? / What is the relationship between government and power?"""
-
-                    fallback_prompt = f"""You are an expert educator creating high-quality flashcards.
+                    fallback_prompt = f"""You are generating flashcards for studying.
 
 Topic:
 {topic_str}
 
-Anchor keywords:
-{fallback_anchors_str}
-
 {lang_instruction}
-
-Flashcard Rules:
-- Each flashcard must focus on ONE concept.
-- Questions should be clear and concise.
-- Answers should be short and easy to memorize.
-- Avoid vague or philosophical questions.
 
 {style_rules}
 
-Output Format:
 Return STRICT JSON only.
 
 {{
@@ -528,7 +641,7 @@ Return STRICT JSON only.
   ]
 }}
 
-Additional Rules:
+Rules:
 - Generate between 5 and 10 flashcards.
 - Do not include explanations outside JSON.
 - Ensure answers are correct and educational."""

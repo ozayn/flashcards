@@ -413,3 +413,150 @@ Run open-source models locally instead of relying only on external APIs.
 **Hosting:** Development machine (Ollama), dedicated GPU server (RunPod, Lambda Labs, Vast.ai), self-hosted infrastructure.
 
 **Switch via:** `LLM_PROVIDER=groq`, `openai`, or `local`.
+
+---
+
+## Future Work — LLM Generation Improvements
+
+These improvements aim to improve flashcard quality, reduce hallucinations, and better adapt flashcard generation to different topic types.
+
+These items are future improvements and should not block current development.
+
+### 1. Topic Type Detection
+
+Currently, concept extraction treats all topics the same. Some topics require extracting specific entities (for example people, places, works) instead of abstract concepts.
+
+Example:
+
+Topic: "well-known street photographers"
+
+Desired extraction:
+
+Henri Cartier-Bresson  
+Garry Winogrand  
+Vivian Maier  
+Robert Frank  
+Diane Arbus  
+
+Instead of abstract terms such as:
+
+street photography  
+urban scenes  
+candid photography  
+
+Planned solution:
+
+Introduce a lightweight topic classifier before concept extraction.
+
+Example topic types:
+
+people_list  
+historical_events  
+scientific_concepts  
+vocabulary  
+works (books, films, artworks)  
+general_topic  
+
+Example heuristic implementation:
+
+```
+PERSON_LIST_HINTS = [
+    "photographers",
+    "scientists",
+    "authors",
+    "philosophers",
+    "artists",
+    "mathematicians",
+    "leaders"
+]
+
+def topic_is_people_list(topic: str) -> bool:
+    topic_lower = topic.lower()
+    return any(word in topic_lower for word in PERSON_LIST_HINTS)
+```
+
+Concept extraction prompts can then adapt based on topic type.
+
+---
+
+### 2. Adaptive Concept Extraction Prompts
+
+Instead of a single extraction prompt, prompts should adapt to topic type.
+
+Examples:
+
+People list topics  
+Extract 5–10 notable individuals related to the topic. Return their names only.
+
+Historical topics  
+Extract key historical events, figures, or documents.
+
+Scientific topics  
+Extract key theories, concepts, or methods.
+
+This improves flashcard specificity and relevance.
+
+---
+
+### 3. Reduce Hallucinated Facts
+
+Some generated flashcards may contain incorrect or invented facts.
+
+Future improvements may include:
+
+lower temperature during flashcard generation  
+grounding entity-based topics with reliable sources  
+optional Wikipedia verification for entity topics
+
+---
+
+### 4. Improve Question Structure
+
+Flashcards should emphasize active recall.
+
+Preferred question patterns:
+
+Who was X?  
+What is X known for?  
+When did X occur?  
+What did X introduce?  
+
+Avoid abstract prompts such as:
+
+Why is X important?  
+Explain X  
+
+Goal: concise questions that test one fact per card.
+
+---
+
+### 5. Source-Grounded Flashcards
+
+Future capability: generate flashcards directly from structured sources such as:
+
+URLs  
+articles  
+PDFs  
+Wikipedia pages  
+
+Pipeline:
+
+source text  
+↓  
+entity extraction  
+↓  
+fact extraction  
+↓  
+flashcard generation  
+
+---
+
+### Priority
+
+These improvements should be implemented after the following core features are stable:
+
+authentication  
+guest mode  
+deck management  
+study interface  
+LLM routing
