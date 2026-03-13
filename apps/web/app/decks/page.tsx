@@ -141,7 +141,7 @@ function DroppableCategory({
   return (
     <div
       ref={setNodeRef}
-      className={`rounded-lg transition-all ${isOver ? "ring-2 ring-primary/40 ring-offset-2 ring-offset-background" : ""} ${className ?? ""}`}
+      className={`rounded-lg transition-all ${isOver ? "ring-2 ring-primary/40 bg-primary/5" : ""} ${className ?? ""}`}
     >
       {children}
     </div>
@@ -438,10 +438,10 @@ export default function DecksPage() {
                   id={group.categoryId}
                   isOver={isDropTarget}
                 >
-                  <h2 className={`text-sm font-medium text-muted-foreground uppercase tracking-wide mb-2 ${idx === 0 ? "mt-0" : "mt-6"}`}>
+                  <h2 className={`text-xs font-medium text-muted-foreground tracking-wide mb-2 ${idx === 0 ? "mt-0" : "mt-6"}`}>
                     {group.categoryName}
                   </h2>
-                  <div className="space-y-3">
+                  <div className="space-y-3 pl-4">
                     {group.decks.map((deck) => (
                       <DraggableDeckRow
                         key={deck.id}
@@ -458,7 +458,7 @@ export default function DecksPage() {
                               router.push(`/decks/${deck.id}`);
                             }
                           }}
-                          className="rounded-xl border border-neutral-200 px-5 py-5 flex items-center justify-between gap-3 bg-white hover:bg-muted/40 transition-colors dark:bg-neutral-900 dark:border-neutral-700 cursor-pointer"
+                          className="rounded-xl border border-neutral-200 px-5 py-5 flex items-center justify-between gap-3 bg-white hover:bg-muted/40 hover:shadow-sm transition-colors dark:bg-neutral-900 dark:border-neutral-700 cursor-pointer"
                         >
                           <div className="flex items-center gap-3 flex-1 min-w-0">
                             {(() => {
