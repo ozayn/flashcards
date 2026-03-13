@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Archive, ArchiveRestore, Pencil } from "lucide-react";
+import { Archive, ArchiveRestore, Pencil, Trash2 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
@@ -11,6 +11,8 @@ import {
   getFlashcards,
   generateFlashcards,
   updateDeck,
+  deleteDeck,
+  deleteFlashcard,
 } from "@/lib/api";
 import PageContainer from "@/components/layout/page-container";
 
@@ -42,6 +44,8 @@ export default function DeckPage({ params }: DeckPageProps) {
   const [editingDescription, setEditingDescription] = useState(false);
   const [title, setTitle] = useState(deck?.name ?? "");
   const [description, setDescription] = useState(deck?.description ?? "");
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [deckDeleteConfirm, setDeckDeleteConfirm] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -88,6 +92,29 @@ export default function DeckPage({ params }: DeckPageProps) {
       // ignore
     } finally {
       setGenerating(false);
+    }
+  }
+
+  async function handleDeleteCard(cardId: string) {
+    try {
+      await deleteFlashcard(cardId);
+      const data = await getFlashcards(params.id);
+      setFlashcards(Array.isArray(data) ? data : []);
+      setDeleteConfirmId(null);
+    } catch {
+      // ignore
+    }
+  }
+
+  async function handleDeleteDeck() {
+    if (!deck) return;
+    try {
+      await deleteDeck(deck.id);
+      router.push("/decks");
+    } catch {
+      // ignore
+    } finally {
+      setDeckDeleteConfirm(false);
     }
   }
 
@@ -264,24 +291,125 @@ export default function DeckPage({ params }: DeckPageProps) {
                       </div>
                     </div>
                   </Link>
-                  <Link
-                    href={`/decks/${params.id}/edit-card/${card.id}`}
-                    className="flex-shrink-0 mt-1"
-                  >
+                  <div className="flex items-center gap-1 flex-shrink-0 mt-1">
+                    <Link
+                      href={`/decks/${params.id}/edit-card/${card.id}`}
+                      className="inline-flex"
+                    >
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="text-muted-foreground hover:text-foreground"
+                        aria-label="Edit card"
+                      >
+                        <Pencil className="size-4" />
+                      </Button>
+                    </Link>
                     <Button
+                      type="button"
                       variant="ghost"
                       size="icon"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setDeleteConfirmId(card.id);
+                      }}
                       className="text-muted-foreground hover:text-foreground"
-                      aria-label="Edit card"
+                      aria-label="Delete card"
                     >
-                      <Pencil className="size-4" />
+                      <Trash2 className="w-4 h-4 text-muted-foreground" />
                     </Button>
-                  </Link>
+                  </div>
                 </div>
               ))}
             </div>
           )}
         </section>
+
+        <section className="space-y-4 pt-8 border-t border-border">
+          <h2 className="text-lg font-semibold">Danger Zone</h2>
+          <div className="rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3">
+            <p className="font-medium mb-1">Delete deck</p>
+            <p className="text-sm text-muted-foreground mb-3">
+              This will permanently delete the deck and all flashcards.
+            </p>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={() => setDeckDeleteConfirm(true)}
+            >
+              Delete Deck
+            </Button>
+          </div>
+        </section>
+
+        {deleteConfirmId && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+            onClick={() => setDeleteConfirmId(null)}
+          >
+            <div
+              className="bg-background rounded-lg shadow-lg p-6 w-full max-w-sm mx-4"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h2 className="text-lg font-semibold mb-4">Delete this card?</h2>
+              <div className="flex justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setDeleteConfirmId(null)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="destructive"
+                  onClick={() => deleteConfirmId && handleDeleteCard(deleteConfirmId)}
+                >
+                  Delete
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {deckDeleteConfirm && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+            onClick={() => setDeckDeleteConfirm(false)}
+          >
+            <div
+              className="bg-background rounded-lg shadow-lg p-6 w-full max-w-sm mx-4"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h2 className="text-lg font-semibold mb-2">Delete this deck?</h2>
+              <p className="text-sm text-muted-foreground mb-4">
+                This will permanently delete:
+              </p>
+              <ul className="text-sm text-muted-foreground list-disc list-inside mb-4 space-y-1">
+                <li>the deck</li>
+                <li>all flashcards inside it</li>
+              </ul>
+              <p className="text-sm text-muted-foreground mb-4">
+                This action cannot be undone.
+              </p>
+              <div className="flex justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setDeckDeleteConfirm(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="destructive"
+                  onClick={handleDeleteDeck}
+                >
+                  Delete Deck
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
     </PageContainer>
   );
 }

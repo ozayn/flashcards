@@ -19,6 +19,8 @@ import {
   ArchiveRestore,
   CircleAlert,
   Loader2,
+  Pencil,
+  Trash2,
 } from "lucide-react";
 import {
   Card,
@@ -34,7 +36,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { getUsers, getDecks, getCategories, updateDeck, createCategory, apiUrl } from "@/lib/api";
+import { getUsers, getDecks, getCategories, updateDeck, createCategory, updateCategory, deleteCategory, apiUrl } from "@/lib/api";
 import { getStoredUserId } from "@/components/user-selector";
 import PageContainer from "@/components/layout/page-container";
 
@@ -183,6 +185,11 @@ export default function DecksPage() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
+  const [renameModalOpen, setRenameModalOpen] = useState(false);
+  const [renameCategoryId, setRenameCategoryId] = useState<string | null>(null);
+  const [renameCategoryName, setRenameCategoryName] = useState("");
+  const [renameSaving, setRenameSaving] = useState(false);
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
@@ -310,6 +317,46 @@ export default function DecksPage() {
     }
   }
 
+  function openRenameModal(categoryId: string, currentName: string) {
+    setRenameCategoryId(categoryId);
+    setRenameCategoryName(currentName);
+    setRenameModalOpen(true);
+  }
+
+  function closeRenameModal() {
+    if (!renameSaving) {
+      setRenameModalOpen(false);
+      setRenameCategoryId(null);
+      setRenameCategoryName("");
+    }
+  }
+
+  async function handleRenameCategory(e: React.FormEvent) {
+    e.preventDefault();
+    const name = renameCategoryName.trim();
+    if (!name || !renameCategoryId || renameSaving) return;
+    try {
+      setRenameSaving(true);
+      await updateCategory(renameCategoryId, { name });
+      setRefreshKey((k) => k + 1);
+      closeRenameModal();
+    } catch (err) {
+      console.error("Failed to rename category", err);
+    } finally {
+      setRenameSaving(false);
+    }
+  }
+
+  async function handleDeleteCategory(categoryId: string) {
+    try {
+      await deleteCategory(categoryId);
+      setRefreshKey((k) => k + 1);
+      setDeleteConfirmId(null);
+    } catch (err) {
+      console.error("Failed to delete category", err);
+    }
+  }
+
   return (
     <PageContainer>
         <div className="flex items-center justify-between mb-6">
@@ -365,6 +412,75 @@ export default function DecksPage() {
                   </Button>
                 </div>
               </form>
+            </div>
+          </div>
+        )}
+
+        {renameModalOpen && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+            onClick={closeRenameModal}
+          >
+            <div
+              className="bg-background rounded-lg shadow-lg p-6 w-full max-w-sm mx-4"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h2 className="text-lg font-semibold mb-4">Rename Category</h2>
+              <form onSubmit={handleRenameCategory} className="space-y-4">
+                <Input
+                  placeholder="Category name"
+                  value={renameCategoryName}
+                  onChange={(e) => setRenameCategoryName(e.target.value)}
+                  disabled={renameSaving}
+                  autoFocus
+                  className="w-full"
+                />
+                <div className="flex justify-end gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={closeRenameModal}
+                    disabled={renameSaving}
+                  >
+                    Cancel
+                  </Button>
+                  <Button type="submit" disabled={!renameCategoryName.trim() || renameSaving}>
+                    {renameSaving ? "Saving..." : "Save"}
+                  </Button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {deleteConfirmId && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+            onClick={() => setDeleteConfirmId(null)}
+          >
+            <div
+              className="bg-background rounded-lg shadow-lg p-6 w-full max-w-sm mx-4"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h2 className="text-lg font-semibold mb-2">Delete this category?</h2>
+              <p className="text-sm text-muted-foreground mb-4">
+                Decks will not be deleted. They will move to &quot;Uncategorized&quot;.
+              </p>
+              <div className="flex justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setDeleteConfirmId(null)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="destructive"
+                  onClick={() => deleteConfirmId && handleDeleteCategory(deleteConfirmId)}
+                >
+                  Delete
+                </Button>
+              </div>
             </div>
           </div>
         )}
@@ -438,9 +554,39 @@ export default function DecksPage() {
                   id={group.categoryId}
                   isOver={isDropTarget}
                 >
-                  <h2 className={`text-xs font-medium text-muted-foreground tracking-wide mb-2 ${idx === 0 ? "mt-0" : "mt-6"}`}>
-                    {group.categoryName}
-                  </h2>
+                  <div
+                    className={`group flex items-center justify-between mb-2 ${idx === 0 ? "mt-0" : "mt-6"}`}
+                  >
+                    <h2 className="text-xs font-medium text-muted-foreground tracking-wide">
+                      {group.categoryName}
+                    </h2>
+                    {group.categoryId !== UNCATEGORIZED && (
+                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openRenameModal(group.categoryId, group.categoryName);
+                          }}
+                          className="p-1 rounded hover:bg-muted/60"
+                          aria-label="Rename category"
+                        >
+                          <Pencil className="w-4 h-4 text-muted-foreground" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setDeleteConfirmId(group.categoryId);
+                          }}
+                          className="p-1 rounded hover:bg-muted/60"
+                          aria-label="Delete category"
+                        >
+                          <Trash2 className="w-4 h-4 text-muted-foreground" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
                   <div className="space-y-3 pl-4">
                     {group.decks.map((deck) => (
                       <DraggableDeckRow

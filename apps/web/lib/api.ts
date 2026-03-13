@@ -156,6 +156,23 @@ export async function createCategory(data: { name: string; user_id?: string }) {
   return res.json();
 }
 
+export async function updateCategory(id: string, data: { name: string }) {
+  const res = await fetch(`${apiUrl}/categories/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error("Failed to update category");
+  return res.json();
+}
+
+export async function deleteCategory(id: string) {
+  const res = await fetch(`${apiUrl}/categories/${id}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) throw new Error("Failed to delete category");
+}
+
 export async function getFlashcards(deckId: string) {
   const res = await fetch(`${apiUrl}/decks/${deckId}/flashcards`, { cache: "no-store" });
   if (!res.ok) throw new Error("Failed to fetch flashcards");
