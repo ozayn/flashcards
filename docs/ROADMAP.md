@@ -94,9 +94,12 @@ User enters a concept (e.g. "Neural Networks"). System fetches Wikipedia content
 
 User pastes a YouTube URL. System retrieves transcript and generates flashcards. See **YouTube → Flashcards** below.
 
-**5. File Upload (Future)**
+**5. PDF**
 
-- PDF
+User uploads a PDF. System extracts text and generates flashcards. See **PDF → Flashcards** below.
+
+**6. File Upload (Future)**
+
 - Markdown
 - Text files
 - Lecture slides
@@ -137,7 +140,7 @@ Possible files:
 - `text_loader.py`
 - `wikipedia_loader.py`
 - `youtube_loader.py`
-- `pdf_loader.py` (future)
+- `pdf_loader.py`
 
 Each loader returns:
 
@@ -155,6 +158,7 @@ This text is then passed into the existing concept extraction pipeline.
 - `POST /generate-from-text`
 - `POST /generate-from-wikipedia`
 - `POST /generate-from-youtube`
+- `POST /generate-from-pdf`
 
 Each endpoint returns generated flashcards.
 
@@ -170,6 +174,7 @@ Generate Flashcards
 [ ] Paste Notes
 [ ] Wikipedia
 [ ] YouTube
+[ ] PDF Upload
 ```
 
 User selects source → system generates deck.
@@ -315,6 +320,233 @@ Allowing users to convert YouTube lectures into flashcards makes the tool extrem
 - Language learners
 
 This feature significantly expands the product beyond traditional flashcard generation.
+
+### PDF → Flashcards
+
+Users should be able to upload a PDF document and automatically generate flashcards from its contents.
+
+**Example use cases:**
+
+- Lecture slides
+- Textbook chapters
+- Research papers
+- Study guides
+- Documentation
+
+**User flow:**
+
+```
+User uploads a PDF
+    ↓
+System extracts text from the document
+    ↓
+Text is cleaned and chunked
+    ↓
+Key concepts are extracted
+    ↓
+Flashcards are generated
+    ↓
+A new deck is created
+```
+
+#### Content Extraction
+
+Create a new loader module: `apps/api/app/content_sources/pdf_loader.py`
+
+**Suggested libraries:**
+
+- pypdf
+- pdfminer.six
+- pymupdf (fitz)
+
+**The loader should:**
+
+1. Read the PDF file
+2. Extract text page by page
+3. Combine text into a single document
+4. Return cleaned text
+
+**Example return format:**
+
+```json
+{
+  "text": "Full extracted PDF text..."
+}
+```
+
+#### Pipeline
+
+```
+PDF Upload
+    ↓
+Text Extraction
+    ↓
+Text Cleaning
+    ↓
+Concept Extraction
+    ↓
+Flashcard Generation
+    ↓
+Deck Creation
+```
+
+#### API Endpoint
+
+`POST /generate-from-pdf`
+
+**Example request:** `multipart/form-data`
+
+```
+file: lecture_notes.pdf
+```
+
+**Response:**
+
+```json
+{
+  "deck_title": "Lecture Notes Deck",
+  "flashcards": [...]
+}
+```
+
+#### Future Improvements
+
+**Smart section detection**
+
+The system can detect headings or slide titles and group flashcards by section.
+
+Example:
+
+```
+Deck: Machine Learning
+
+Sections:
+• Supervised Learning
+• Neural Networks
+• Model Evaluation
+```
+
+#### Strategic Value
+
+Students often study from PDFs such as lecture slides and textbooks.
+
+Allowing direct PDF ingestion lets users instantly convert large study materials into structured flashcards, significantly reducing manual effort.
+
+---
+
+## Deck Organization and Metadata
+
+As the system supports generating decks from many sources (topics, URLs, notes, Wikipedia, YouTube, PDFs), the product needs a consistent way to organize and track generated decks.
+
+### Collections
+
+Decks can belong to a **Collection**. Collections group related decks together.
+
+**Structure:**
+
+```
+Collection
+    ↓
+Deck
+    ↓
+Flashcards
+```
+
+**Example:**
+
+Collection: **Machine Learning**
+
+Decks:
+
+- Neural Networks (YouTube)
+- Gradient Descent (Wikipedia)
+- ML Interview Questions (Topic)
+
+Collections allow users to organize decks by:
+
+- Course
+- Subject
+- Project
+- Exam preparation
+
+**Example collections:**
+
+- Spanish Learning
+- Machine Learning
+- History of Iran
+- Biology 101
+
+### Deck Metadata
+
+Each deck should store metadata describing how it was created.
+
+**Suggested fields:**
+
+- `source_type`
+- `source_url`
+- `source_title`
+- `generation_method`
+- `created_at`
+- `generated_by_ai`
+
+**Example:**
+
+Deck: **Neural Networks**
+
+Metadata:
+
+- `source_type`: youtube
+- `source_url`: https://youtube.com/...
+- `source_title`: "Neural Networks Lecture – Andrew Ng"
+
+This allows the UI to show:
+
+- Generated from YouTube
+- Generated from Wikipedia
+- Generated from Notes
+
+### Generation Status
+
+Some sources (PDFs, YouTube transcripts, large webpages) may take longer to process. Decks should track generation state.
+
+**Possible values:**
+
+- `generating`
+- `completed`
+- `failed`
+
+**Example UI:**
+
+- Neural Networks (YouTube) — Generating…
+- Persian Slang — Ready
+- ML Basics — Ready
+
+### Sections (Future)
+
+Large decks may be divided into sections based on the source structure.
+
+**Example:**
+
+Deck: **Machine Learning**
+
+Sections:
+
+- Supervised Learning
+- Neural Networks
+- Model Evaluation
+
+Flashcards can optionally belong to a section.
+
+### Strategic Value
+
+Strong deck organization allows the product to scale beyond simple flashcard generation and become a structured learning system.
+
+Users can:
+
+- Generate decks from multiple sources
+- Group them by subject or project
+- Track where the content came from
+- Study material from many sources in one organized place
 
 ---
 
