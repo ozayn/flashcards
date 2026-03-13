@@ -21,12 +21,18 @@ def _column_exists(sync_conn, table: str, column: str) -> bool:
     return r is not None
 
 
-def _add_column_if_missing(sync_conn, table: str, column: str, sql: str) -> None:
+def _add_column_if_missing(sync_conn, table: str, column: str, sql: str, pg_if_not_exists: str | None = None) -> None:
     """Add column if it doesn't exist. Handles both SQLite and PostgreSQL."""
-    if _column_exists(sync_conn, table, column):
-        return
-    sync_conn.execute(text(sql))
-    logger.info("Added %s column to %s", column, table)
+    if _IS_SQLITE:
+        if _column_exists(sync_conn, table, column):
+            return
+        sync_conn.execute(text(sql))
+        logger.info("Added %s column to %s", column, table)
+    else:
+        # PostgreSQL: use ADD COLUMN IF NOT EXISTS (PG 9.6+) for idempotency
+        stmt = pg_if_not_exists if pg_if_not_exists else sql
+        sync_conn.execute(text(stmt))
+        logger.info("Ensured %s column exists on %s", column, table)
 
 
 async def init_db() -> None:
@@ -74,26 +80,31 @@ async def init_db() -> None:
             _add_column_if_missing(
                 sync_conn, "decks", "archived",
                 "ALTER TABLE decks ADD COLUMN archived BOOLEAN DEFAULT 0" if _IS_SQLITE
-                else "ALTER TABLE decks ADD COLUMN archived BOOLEAN DEFAULT false"
+                else "ALTER TABLE decks ADD COLUMN archived BOOLEAN DEFAULT false",
+                pg_if_not_exists="ALTER TABLE decks ADD COLUMN IF NOT EXISTS archived BOOLEAN DEFAULT false"
             )
             _add_column_if_missing(
                 sync_conn, "decks", "source_title",
-                "ALTER TABLE decks ADD COLUMN source_title TEXT"
+                "ALTER TABLE decks ADD COLUMN source_title TEXT",
+                pg_if_not_exists="ALTER TABLE decks ADD COLUMN IF NOT EXISTS source_title TEXT"
             )
             _add_column_if_missing(
                 sync_conn, "decks", "generation_status",
-                "ALTER TABLE decks ADD COLUMN generation_status VARCHAR(32) DEFAULT 'completed'"
+                "ALTER TABLE decks ADD COLUMN generation_status VARCHAR(32) DEFAULT 'completed'",
+                pg_if_not_exists="ALTER TABLE decks ADD COLUMN IF NOT EXISTS generation_status VARCHAR(32) DEFAULT 'completed'"
             )
             _add_column_if_missing(
                 sync_conn, "decks", "generated_by_ai",
                 "ALTER TABLE decks ADD COLUMN generated_by_ai BOOLEAN DEFAULT 0" if _IS_SQLITE
-                else "ALTER TABLE decks ADD COLUMN generated_by_ai BOOLEAN DEFAULT false"
+                else "ALTER TABLE decks ADD COLUMN generated_by_ai BOOLEAN DEFAULT false",
+                pg_if_not_exists="ALTER TABLE decks ADD COLUMN IF NOT EXISTS generated_by_ai BOOLEAN DEFAULT false"
             )
             _add_column_if_missing(
                 sync_conn, "decks", "category_id",
                 "ALTER TABLE decks ADD COLUMN category_id TEXT REFERENCES categories(id)"
                 if _IS_SQLITE
-                else "ALTER TABLE decks ADD COLUMN category_id UUID REFERENCES categories(id) ON DELETE SET NULL"
+                else "ALTER TABLE decks ADD COLUMN category_id UUID REFERENCES categories(id) ON DELETE SET NULL",
+                pg_if_not_exists="ALTER TABLE decks ADD COLUMN IF NOT EXISTS category_id UUID REFERENCES categories(id) ON DELETE SET NULL"
             )
         await conn.run_sync(_migrate_decks)
     logger.info("Applied decks column migrations")
@@ -117,7 +128,8 @@ async def init_db() -> None:
             _add_column_if_missing(
                 sync_conn, "users", "think_delay_enabled",
                 "ALTER TABLE users ADD COLUMN think_delay_enabled BOOLEAN DEFAULT 1" if _IS_SQLITE
-                else "ALTER TABLE users ADD COLUMN think_delay_enabled BOOLEAN DEFAULT true"
+                else "ALTER TABLE users ADD COLUMN think_delay_enabled BOOLEAN DEFAULT true",
+                pg_if_not_exists="ALTER TABLE users ADD COLUMN IF NOT EXISTS think_delay_enabled BOOLEAN DEFAULT true"
             )
         await conn.run_sync(_migrate_think_delay_enabled)
     logger.info("Applied think_delay_enabled column migration")
@@ -126,7 +138,8 @@ async def init_db() -> None:
         def _migrate_think_delay_ms(sync_conn):
             _add_column_if_missing(
                 sync_conn, "users", "think_delay_ms",
-                "ALTER TABLE users ADD COLUMN think_delay_ms INTEGER DEFAULT 1500"
+                "ALTER TABLE users ADD COLUMN think_delay_ms INTEGER DEFAULT 1500",
+                pg_if_not_exists="ALTER TABLE users ADD COLUMN IF NOT EXISTS think_delay_ms INTEGER DEFAULT 1500"
             )
         await conn.run_sync(_migrate_think_delay_ms)
     logger.info("Applied think_delay_ms column migration")
@@ -146,10 +159,27 @@ async def init_db() -> None:
         def _migrate_card_style(sync_conn):
             _add_column_if_missing(
                 sync_conn, "users", "card_style",
-                "ALTER TABLE users ADD COLUMN card_style TEXT DEFAULT 'paper'"
+                "ALTER TABLE users ADD COLUMN card_style TEXT DEFAULT 'paper'",
+                pg_if_not_exists="ALTER TABLE users ADD COLUMN IF NOT EXISTS card_style TEXT DEFAULT 'paper'"
             )
         await conn.run_sync(_migrate_card_style)
     logger.info("Applied card_style column migration")
+
+    # Ensure reviewrating enum has all values (PostgreSQL only; SQLite uses CHECK)
+    if not _IS_SQLITE:
+        async with engine.begin() as conn:
+            def _migrate_review_rating_enum(sync_conn):
+                for value in ("again", "hard", "good", "easy"):
+                    try:
+                        sync_conn.execute(text(
+                            f"ALTER TYPE reviewrating ADD VALUE IF NOT EXISTS '{value}'"
+                        ))
+                        logger.info("Ensured reviewrating enum has '%s'", value)
+                    except Exception as e:
+                        if "already exists" not in str(e).lower():
+                            logger.warning("Could not add reviewrating value '%s': %s", value, e)
+            await conn.run_sync(_migrate_review_rating_enum)
+        logger.info("Applied reviewrating enum migration")
 
     logger.info("Database tables created successfully")
 
