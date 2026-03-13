@@ -181,6 +181,34 @@ async def init_db() -> None:
             await conn.run_sync(_migrate_review_rating_enum)
         logger.info("Applied reviewrating enum migration")
 
+    # Ensure sourcetype enum exists (PostgreSQL only; required for decks.source_type)
+    if not _IS_SQLITE:
+        async with engine.begin() as conn:
+            def _migrate_sourcetype_enum(sync_conn):
+                r = sync_conn.execute(text("""
+                    SELECT 1 FROM pg_type t
+                    JOIN pg_namespace n ON n.oid = t.typnamespace
+                    WHERE n.nspname = 'public' AND t.typname = 'sourcetype'
+                """)).fetchone()
+                if r is None:
+                    sync_conn.execute(text("""
+                        CREATE TYPE sourcetype AS ENUM (
+                            'topic', 'text', 'url', 'wikipedia', 'youtube', 'pdf', 'manual', 'webpage'
+                        )
+                    """))
+                    logger.info("Created sourcetype enum")
+                else:
+                    for value in ("topic", "text", "url", "wikipedia", "youtube", "pdf", "manual", "webpage"):
+                        try:
+                            sync_conn.execute(text(
+                                f"ALTER TYPE sourcetype ADD VALUE IF NOT EXISTS '{value}'"
+                            ))
+                        except Exception as e:
+                            if "already exists" not in str(e).lower():
+                                logger.warning("Could not add sourcetype value '%s': %s", value, e)
+            await conn.run_sync(_migrate_sourcetype_enum)
+        logger.info("Applied sourcetype enum migration")
+
     logger.info("Database tables created successfully")
 
 

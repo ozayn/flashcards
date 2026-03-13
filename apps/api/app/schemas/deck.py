@@ -1,9 +1,16 @@
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.models.enums import SourceType
+
+
+def _coerce_enum_to_str(v: Any) -> Optional[str]:
+    """Coerce enum to string for JSON serialization."""
+    if v is None:
+        return None
+    return v.value if hasattr(v, "value") else str(v)
 
 
 class DeckUpdate(BaseModel):
@@ -27,7 +34,7 @@ class DeckResponse(BaseModel):
     user_id: str
     name: str
     description: Optional[str] = None
-    source_type: Optional[str] = None
+    source_type: Optional[str] = Field(default=None)
     source_url: Optional[str] = None
     source_title: Optional[str] = None
     source_text: Optional[str] = None
@@ -39,3 +46,8 @@ class DeckResponse(BaseModel):
     card_count: int = 0
 
     model_config = {"from_attributes": True}
+
+    @field_validator("source_type", mode="before")
+    @classmethod
+    def coerce_source_type(cls, v: Any) -> Optional[str]:
+        return _coerce_enum_to_str(v)

@@ -422,7 +422,7 @@ async def generate_flashcards(
             )
         text_input = cleaned
 
-    deck.source_type = SourceType.text.value if text_input else SourceType.topic.value
+    deck.source_type = SourceType.text if text_input else SourceType.topic
     deck.generated_by_ai = True
     deck.generation_status = GenerationStatus.generating.value
     await db.flush()
