@@ -25,7 +25,7 @@ export function Logo({ size = "md", className = "" }: LogoProps) {
   return (
     <Image
       src="/logo/brain_stack.svg"
-      alt="Flashcard AI"
+      alt="MemoNext"
       width={height}
       height={height}
       className={`dark:brightness-110 ${className}`}

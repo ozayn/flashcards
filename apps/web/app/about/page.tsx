@@ -22,7 +22,7 @@ export default function AboutPage() {
 
         <h1 className="text-2xl font-semibold tracking-tight">About</h1>
         <p className="text-muted-foreground">
-          Learn about the learning techniques used in the Flashcard AI app.
+          Learn about the learning techniques used in the MemoNext app.
         </p>
 
         <Card>

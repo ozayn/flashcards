@@ -22,8 +22,8 @@ from app.core.init_db import init_db
 from app.models import User, Deck, Flashcard, Review  # noqa: F401 - register models
 
 app = FastAPI(
-    title="Flashcard API",
-    description="AI Flashcard Learning Platform API",
+    title="MemoNext API",
+    description="MemoNext — Turn information into memory. AI Flashcard Learning Platform API",
     version="0.1.0",
 )
 

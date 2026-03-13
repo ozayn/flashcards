@@ -141,7 +141,7 @@ export default function StudyPage({ params }: StudyPageProps) {
   if (loading) {
     return (
       <main className="min-h-screen flex flex-col pt-6 pb-8" data-study>
-        <div className="max-w-2xl mx-auto w-full px-10 md:px-12 flex flex-col flex-1 justify-center gap-4">
+        <div className="max-w-4xl mx-auto w-full px-6 md:px-8 flex flex-col flex-1 justify-center gap-4">
           <Link
             href={`/decks/${params.deck_id}`}
             className="inline-flex h-7 items-center justify-center rounded-lg px-2.5 text-sm font-medium hover:bg-muted w-fit"
@@ -157,7 +157,7 @@ export default function StudyPage({ params }: StudyPageProps) {
   if (flashcards.length === 0) {
     return (
       <main className="min-h-screen flex flex-col pt-6 pb-8" data-study>
-        <div className="max-w-2xl mx-auto w-full px-10 md:px-12 flex flex-col flex-1 justify-center gap-4">
+        <div className="max-w-4xl mx-auto w-full px-6 md:px-8 flex flex-col flex-1 justify-center gap-4">
           <Link
             href={`/decks/${params.deck_id}`}
             className="inline-flex h-7 items-center justify-center rounded-lg px-2.5 text-sm font-medium hover:bg-muted w-fit"
@@ -185,7 +185,7 @@ export default function StudyPage({ params }: StudyPageProps) {
   if (sessionComplete) {
     return (
       <main className="h-full min-h-[50vh] flex flex-col pt-6 pb-8" data-study>
-        <div className="max-w-2xl mx-auto w-full px-10 md:px-12 flex flex-col flex-1 justify-center gap-6">
+        <div className="max-w-4xl mx-auto w-full px-6 md:px-8 flex flex-col flex-1 justify-center gap-6">
           <Link
             href={`/decks/${params.deck_id}`}
             className="inline-flex h-7 items-center justify-center rounded-lg px-2.5 text-sm font-medium hover:bg-muted w-fit"
@@ -250,7 +250,7 @@ export default function StudyPage({ params }: StudyPageProps) {
         Exit Study
       </Link>
       <div className="pt-6 shrink-0 w-full">
-        <div className="max-w-2xl mx-auto w-full px-10 md:px-12 flex items-center justify-between">
+        <div className="max-w-4xl mx-auto w-full px-6 md:px-8 flex items-center justify-between">
           <Link
             href={`/decks/${params.deck_id}`}
             className="inline-flex h-7 items-center justify-center rounded-lg px-2.5 text-sm font-medium hover:bg-muted"

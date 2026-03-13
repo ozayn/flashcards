@@ -114,7 +114,7 @@ export function UserSelector() {
     }
   };
 
-  if (loading) return <span className="text-muted-foreground text-sm animate-pulse">Loading users…</span>;
+  if (loading) return <span className="text-muted-foreground text-sm animate-pulse">Loading…</span>;
 
   if (apiError) {
     return (

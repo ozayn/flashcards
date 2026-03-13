@@ -2,7 +2,7 @@
 
 ## Overview
 
-Flashcard AI is a full-stack monorepo with a Next.js frontend and FastAPI backend.
+MemoNext is a full-stack monorepo with a Next.js frontend and FastAPI backend.
 
 ## Frontend
 

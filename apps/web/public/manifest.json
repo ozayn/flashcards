@@ -1,7 +1,7 @@
 {
-  "name": "Flashcard AI",
-  "short_name": "Flashcard AI",
-  "description": "AI-powered flashcard learning platform",
+  "name": "MemoNext",
+  "short_name": "MemoNext",
+  "description": "MemoNext helps you turn information into memory. Generate flashcards instantly from text or topics.",
   "start_url": "/",
   "display": "standalone",
   "icons": [

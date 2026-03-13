@@ -1,6 +1,6 @@
-# Flashcard AI
+# MemoNext
 
-AI-powered flashcard learning platform built with Next.js 14 and FastAPI.
+MemoNext helps you turn information into memory. Generate flashcards instantly from text or topics. Built with Next.js 14 and FastAPI.
 
 ## Project Overview
 

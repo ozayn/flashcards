@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import {
@@ -16,12 +16,21 @@ import { getUsers, createDeck, generateFlashcards } from "@/lib/api";
 import { getStoredUserId } from "@/components/user-selector";
 import PageContainer from "@/components/layout/page-container";
 
-export default function CreateDeckPage() {
+function CreateDeckForm() {
   const [name, setName] = useState("");
   const [topic, setTopic] = useState("");
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(false);
   const router = useRouter();
+  const searchParams = useSearchParams();
+
+  useEffect(() => {
+    const topicParam = searchParams.get("topic");
+    if (topicParam) {
+      setTopic(topicParam);
+      setName((n) => (n ? n : topicParam));
+    }
+  }, [searchParams]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -150,5 +159,17 @@ export default function CreateDeckPage() {
           </CardContent>
         </Card>
     </PageContainer>
+  );
+}
+
+export default function CreateDeckPage() {
+  return (
+    <Suspense fallback={
+      <PageContainer>
+        <p className="text-muted-foreground">Loading...</p>
+      </PageContainer>
+    }>
+      <CreateDeckForm />
+    </Suspense>
   );
 }

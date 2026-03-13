@@ -1,6 +1,6 @@
-# Flashcard AI — Product Roadmap
+# MemoNext — Product Roadmap
 
-Flashcard AI is a personal learning platform that combines flashcards, AI generation, and learning science techniques to help users study efficiently.
+MemoNext is a personal learning platform that combines flashcards, AI generation, and learning science techniques to help users study efficiently.
 
 The project evolves through several phases, gradually transforming a simple flashcard tool into an adaptive AI learning system.
 
@@ -176,7 +176,7 @@ This allows the platform to evolve into an AI-assisted learning laboratory.
 
 # Long-Term Vision
 
-Flashcard AI aims to become an adaptive learning platform combining:
+MemoNext aims to become an adaptive learning platform combining:
 
 • Flashcards  
 • AI-generated learning materials  

@@ -6,10 +6,8 @@ export default function PageContainer({
   className?: string;
 }) {
   return (
-    <main className={`pt-6 pb-8 ${className ?? ""}`.trim()}>
-      <div className="max-w-2xl mx-auto w-full px-10 md:px-12 space-y-6">
-        {children}
-      </div>
+    <main className={`space-y-6 ${className ?? ""}`.trim()}>
+      {children}
     </main>
   );
 }

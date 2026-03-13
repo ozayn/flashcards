@@ -2,7 +2,7 @@
 
 ## Overview
 
-Flashcard AI deploys as two Railway services:
+MemoNext deploys as two Railway services:
 
 | Service | Root Directory | Port | Description |
 |---------|----------------|------|-------------|

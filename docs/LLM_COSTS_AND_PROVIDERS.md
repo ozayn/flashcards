@@ -1,4 +1,4 @@
-# Flashcard AI — LLM Cost Estimates & Multi-Provider Setup
+# MemoNext — LLM Cost Estimates & Multi-Provider Setup
 
 This document records expected LLM costs and how to set up multiple API providers so the application can switch between them. Using several providers reduces cost, increases reliability, and allows us to benefit from free usage tiers.
 

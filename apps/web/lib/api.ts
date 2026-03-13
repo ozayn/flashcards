@@ -26,7 +26,10 @@ export async function fetchApi<T>(
 /** Lightweight API availability check using GET /. */
 export async function checkApiAvailability(): Promise<boolean> {
   try {
-    const res = await fetch(`${apiUrl}/`);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 3000);
+    const res = await fetch(`${apiUrl}/`, { signal: controller.signal });
+    clearTimeout(timeout);
     return res.ok;
   } catch {
     return false;

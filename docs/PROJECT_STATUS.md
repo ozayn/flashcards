@@ -1,6 +1,6 @@
 # Project Status Report
 
-**Flashcard AI** — AI-powered flashcard learning platform
+**MemoNext** — Turn information into memory. AI-powered flashcard learning platform.
 
 *Generated: March 2026*
 
