@@ -275,9 +275,9 @@ export default function DeckPage({ params }: DeckPageProps) {
                 Add Card
               </Link>
             </div>
-            <div className="mt-4 pt-4 border-t border-border space-y-3">
-              <p className="text-sm font-medium">Generate flashcards</p>
-              <p className="text-xs text-muted-foreground">
+            <div className="generate-box mt-4 pt-4 border-t border-border space-y-3 max-mobile:p-3.5 max-mobile:rounded-[12px]">
+              <p className="text-sm font-medium max-mobile:text-[15px] max-mobile:font-semibold">Generate flashcards</p>
+              <p className="text-xs text-muted-foreground max-mobile:text-[13px] max-mobile:text-[#777] dark:max-mobile:text-neutral-400">
                 Add AI-generated cards from topic, text, or both.
               </p>
               <div className="space-y-2">
@@ -292,7 +292,7 @@ export default function DeckPage({ params }: DeckPageProps) {
                   value={genText}
                   onChange={(e) => setGenText(e.target.value)}
                   maxLength={GEN_TEXT_MAX_LENGTH}
-                  className="w-full min-h-[100px] rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="w-full min-h-[100px] max-mobile:min-h-[120px] rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                 />
                 <div className="flex justify-between items-center">
                   <span className="text-xs text-muted-foreground">
@@ -319,31 +319,31 @@ export default function DeckPage({ params }: DeckPageProps) {
           </div>
         </Card>
 
-        <section className="space-y-4">
+        <section className="section space-y-4">
           <h2 className="text-lg font-semibold">Flashcards</h2>
           {flashcards.length === 0 ? (
             <p className="text-muted-foreground text-sm">No flashcards yet.</p>
           ) : (
-            <div className="space-y-3">
+            <div className="space-y-3 max-mobile:space-y-2.5">
               {flashcards.map((card) => (
                 <div
                   key={card.id}
-                  className="rounded-xl border border-neutral-200 px-4 py-3 flex items-start justify-between gap-3 bg-white dark:bg-neutral-900 dark:border-neutral-700"
+                  className="flashcard-item rounded-xl border border-neutral-200 px-4 py-3 flex items-start justify-between gap-3 bg-white dark:bg-neutral-900 dark:border-neutral-700 max-mobile:p-3.5 max-mobile:rounded-[12px]"
                 >
                   <Link
                     href={`/decks/${params.id}/edit-card/${card.id}`}
                     className="flex-1 min-w-0"
                   >
                     <div className="flex flex-col gap-1 text-start">
-                      <div dir="auto" className="font-medium text-base leading-snug">
+                      <div dir="auto" className="font-medium text-base leading-snug max-mobile:text-[15px] max-mobile:leading-[1.4]">
                         {card.question}
                       </div>
-                      <div dir="auto" className="text-sm text-neutral-500 leading-snug dark:text-neutral-400">
+                      <div dir="auto" className="text-sm text-neutral-500 leading-snug dark:text-neutral-400 max-mobile:text-[14px] max-mobile:text-[#555] dark:max-mobile:text-neutral-400">
                         {card.answer_short}
                       </div>
                     </div>
                   </Link>
-                  <div className="flex items-center gap-1 flex-shrink-0 mt-1">
+                  <div className="flex items-center gap-1 flex-shrink-0 mt-1 [&_svg]:max-mobile:!size-4">
                     <Link
                       href={`/decks/${params.id}/edit-card/${card.id}`}
                       className="inline-flex"
@@ -378,7 +378,7 @@ export default function DeckPage({ params }: DeckPageProps) {
           )}
         </section>
 
-        <section className="space-y-4 pt-8 border-t border-border">
+        <section className="section space-y-4 pt-8 border-t border-border">
           <h2 className="text-lg font-semibold">Danger Zone</h2>
           <div className="rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3">
             <p className="font-medium mb-1">Delete deck</p>

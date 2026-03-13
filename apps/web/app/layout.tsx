@@ -69,7 +69,7 @@ export default function RootLayout({
         <div className="flex flex-col min-h-screen min-h-[100dvh]">
           <ConditionalNav />
           {/* Content area: aligns with "M" in MemoNext (logo 32px + gap 8px = 40px extra left indent). Study page (data-study) opts out for full-width. */}
-          <div className="flex-1 min-h-0 min-h-[calc(100dvh-3.5rem)] overflow-y-auto max-w-4xl mx-auto w-full pl-[64px] pr-6 md:pl-[72px] md:pr-8 pt-6 pb-8 [&:has([data-study])]:max-w-none [&:has([data-study])]:pl-0 [&:has([data-study])]:pr-0 [&:has([data-study])]:pt-0 [&:has([data-study])]:pb-0 [&:has([data-study])]:min-h-[100dvh] [&:has([data-landing])]:min-h-[100dvh]">
+          <div className="flex-1 min-h-0 min-h-[calc(100dvh-3.5rem)] overflow-y-auto max-w-4xl mx-auto w-full pl-[64px] pr-6 md:pl-[72px] md:pr-8 pt-6 pb-8 max-mobile:max-w-[420px] max-mobile:px-3.5 [&:has([data-study])]:max-w-none [&:has([data-study])]:pl-0 [&:has([data-study])]:pr-0 [&:has([data-study])]:pt-0 [&:has([data-study])]:pb-0 [&:has([data-study])]:min-h-[100dvh] [&:has([data-landing])]:min-h-[100dvh]">
             <TooltipProvider>
               <ErrorBoundary>{children}</ErrorBoundary>
             </TooltipProvider>

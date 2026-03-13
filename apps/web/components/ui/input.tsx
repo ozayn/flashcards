@@ -14,6 +14,7 @@ const Input = React.forwardRef<HTMLInputElement, React.ComponentProps<"input">>(
           "disabled:cursor-not-allowed disabled:opacity-50",
           "dark:border-neutral-600 dark:bg-neutral-900 dark:text-neutral-100",
           "dark:focus:ring-blue-400",
+          "max-mobile:text-base max-mobile:px-3.5 max-mobile:py-3 max-mobile:rounded-[10px]",
           className
         )}
         {...props}

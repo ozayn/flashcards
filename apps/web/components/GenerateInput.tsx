@@ -52,7 +52,7 @@ export function GenerateInput({
           onChange={(e) => setValue(e.target.value)}
           placeholder={placeholder}
           rows={3}
-          className="w-full rounded-xl border border-border bg-background px-5 py-4 text-base placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 resize-none"
+          className="w-full rounded-xl border border-border bg-background px-5 py-4 text-base placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 resize-none max-mobile:rounded-[10px] max-mobile:px-3.5 max-mobile:py-3 max-mobile:text-base max-mobile:min-h-[120px]"
         />
       </div>
       {suggestions.length > 0 && (

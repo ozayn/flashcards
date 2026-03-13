@@ -587,7 +587,7 @@ export default function DecksPage() {
                       </div>
                     )}
                   </div>
-                  <div className="space-y-3 pl-4">
+                  <div className="space-y-3 max-mobile:space-y-2.5 pl-4">
                     {group.decks.map((deck) => (
                       <DraggableDeckRow
                         key={deck.id}
@@ -604,7 +604,7 @@ export default function DecksPage() {
                               router.push(`/decks/${deck.id}`);
                             }
                           }}
-                          className="rounded-xl border border-neutral-200 px-5 py-5 flex items-center justify-between gap-3 bg-white hover:bg-muted/40 hover:shadow-sm transition-colors dark:bg-neutral-900 dark:border-neutral-700 cursor-pointer"
+                          className="deck-card rounded-xl border border-neutral-200 px-5 py-5 flex items-center justify-between gap-3 bg-white hover:bg-muted/40 hover:shadow-sm transition-colors dark:bg-neutral-900 dark:border-neutral-700 cursor-pointer max-mobile:px-4 max-mobile:py-3.5 max-mobile:rounded-[12px]"
                         >
                           <div className="flex items-center gap-3 flex-1 min-w-0">
                             {(() => {
@@ -625,15 +625,15 @@ export default function DecksPage() {
                               ) : null;
                             })()}
                             <div className="flex flex-col gap-1 min-w-0">
-                              <span className="font-medium text-base leading-snug">
+                              <span className="font-medium text-base leading-snug max-mobile:text-[16px] max-mobile:font-semibold">
                                 {deck.name}
                               </span>
-                              <span className="text-sm text-muted-foreground">
+                              <span className="text-sm text-muted-foreground max-mobile:text-[13px] max-mobile:text-[#777] dark:max-mobile:text-neutral-400">
                                 {deck.card_count ?? 0} {deck.card_count === 1 ? "card" : "cards"}
                               </span>
                             </div>
                           </div>
-                          <div className="shrink-0">
+                          <div className="shrink-0 max-mobile:opacity-60">
                             <Button
                               variant="ghost"
                               size="icon"

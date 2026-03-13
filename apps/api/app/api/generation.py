@@ -146,6 +146,9 @@ def _extract_concepts(
 ) -> list:
     """Extract key concepts from topic or text using LLM."""
     if text:
+        # When users paste text (e.g., research papers), the LLM may drift into
+        # general domain knowledge. These grounding instructions ensure that
+        # extracted concepts remain strictly based on the provided text.
         lang_instruction = build_language_instruction("", language_hint)
         text_preview = text[:6000].strip()
         if len(text) > 6000:
@@ -159,9 +162,26 @@ Text:
 
 {lang_instruction}
 
-Extract 5–10 specific items: names of people, places, events, works, or key terms—prefer concrete entities over abstract concepts.
+Extract 5–10 specific items explicitly mentioned in the text.
 
-Return STRICT JSON:
+Items may include:
+- key concepts
+- brain regions
+- measurements
+- experimental methods
+- findings
+- devices
+- organisms
+- scientific terms
+
+Rules:
+- Only extract items that appear directly in the text.
+- Do NOT introduce new concepts, people, books, or ideas not mentioned in the text.
+- Do NOT expand using external knowledge.
+- Prefer concrete terms that appear in the paragraph.
+- Concepts must be in the same language as the text.
+
+Return STRICT JSON only:
 {{
   "concepts": ["...", "..."]
 }}"""
@@ -234,9 +254,12 @@ def _generate_flashcards_from_text(text: str, language_hint: Optional[str] = Non
     is_vocab = is_vocabulary_topic(text[:200]) if text else False
     if concepts:
         return _generate_flashcards_from_concepts(
-            concepts, text[:500], language_hint, is_vocab=is_vocab
+            concepts, text[:500], language_hint, is_vocab=is_vocab, is_from_text=True
         )
     # Fallback: single-stage generation when concept extraction fails
+    # When users paste text (e.g., research papers), the LLM may drift into
+    # general domain knowledge. These grounding instructions ensure that
+    # generated flashcards remain strictly based on the provided text.
     lang_instruction = build_language_instruction("", language_hint)
     text_preview = text[:8000].strip()
     if len(text) > 8000:
@@ -250,16 +273,24 @@ Text:
 
 {lang_instruction}
 
-Instructions:
-- Prefer specific facts, names, events, or individuals over abstract concepts.
-- Questions should be concise and suitable for active recall.
-- Answers should be 1–2 sentences, short and easy to memorize.
-- Each flashcard must test exactly ONE piece of knowledge.
-- Prefer named entities (people, places, works, events) when possible.
-- Prefer questions that start with: Who, What, When, Where.
-- Avoid questions that start with: Why, How—unless absolutely necessary.
-- Avoid multi-part questions. Bad: "Who was Henri Cartier-Bresson and what was the decisive moment?" Good: "Who was Henri Cartier-Bresson?" / "What is the decisive moment in photography?"
-- Questions must be concise and focused on recall.
+Flashcards must be based ONLY on the provided text.
+
+Rules:
+- Do not introduce outside knowledge.
+- Do not reference concepts not present in the text.
+- Prefer questions about:
+  - definitions
+  - measurements
+  - findings
+  - brain regions
+  - experimental methods
+- Each card must test exactly ONE fact from the text.
+- Answers should be 1–2 sentences.
+
+Example acceptable cards:
+- What is the theta rhythm?
+- Where is the theta rhythm coordinated?
+- What device recorded the intracranial activity?
 
 Extract key facts and create one flashcard per important point.
 
@@ -343,13 +374,36 @@ def _generate_flashcards_from_concepts(
     topic: str,
     language_hint: Optional[str] = None,
     is_vocab: bool = False,
+    is_from_text: bool = False,
 ) -> str:
     """Stage 2: Generate flashcards from concepts using LLM."""
     concept_list = "\n".join(f"- {c}" for c in concepts)
     lang_instruction = build_language_instruction(topic, language_hint)
-    anchors = extract_anchor_keywords(topic) if not is_vocab else []
+    anchors = extract_anchor_keywords(topic) if not is_vocab and not is_from_text else []
     anchors_str = str(anchors)
-    if is_vocab:
+    if is_from_text:
+        # When users paste text (e.g., research papers), the LLM may drift into
+        # general domain knowledge. These grounding instructions ensure that
+        # generated flashcards remain strictly based on the provided text.
+        style_instruction = """Flashcards must be based ONLY on the provided text.
+
+Rules:
+- Do not introduce outside knowledge.
+- Do not reference concepts not present in the text.
+- Prefer questions about:
+  - definitions
+  - measurements
+  - findings
+  - brain regions
+  - experimental methods
+- Each card must test exactly ONE fact from the text.
+- Answers should be 1–2 sentences.
+
+Example acceptable cards:
+- What is the theta rhythm?
+- Where is the theta rhythm coordinated?
+- What device recorded the intracranial activity?"""
+    elif is_vocab:
         vocab_instruction = build_vocab_instruction(topic)
         style_instruction = f"""For each flashcard:
 - Question: Ask for the meaning or explanation of the concept.
@@ -375,12 +429,13 @@ Topical Grounding:
 - If the topic references people, works, or events, include specific names in questions.
 - Avoid generic domain questions that could apply to any topic."""
 
+    source_label = "Source text (base flashcards ONLY on this):" if is_from_text else "Topic (stay focused on this):"
     prompt = f"""You are generating flashcards.
 
 Concepts:
 {concept_list}
 
-Topic (stay focused on this):
+{source_label}
 {topic}
 {f'Anchor keywords:\n{anchors_str}\n' if anchors else ''}
 {lang_instruction}

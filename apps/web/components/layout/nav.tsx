@@ -34,16 +34,18 @@ export function Nav() {
 
   return (
     <nav
-      className={`sticky top-0 z-50 h-14 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 ${isDeckStudy ? "landscape-mobile:hidden" : ""}`}
+      className={`sticky top-0 z-50 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 ${isDeckStudy ? "landscape-mobile:hidden" : ""} h-14 max-mobile:h-auto max-mobile:py-2.5 max-mobile:px-4`}
     >
-      <div className="max-w-4xl mx-auto h-full flex items-center justify-between px-6 md:px-8">
+      <div className="max-w-4xl mx-auto h-full flex items-center justify-between px-6 md:px-8 max-mobile:px-4">
         {/* Left: Logo + App Name (same location on all pages) */}
         <Link
           href="/"
           className="flex items-center gap-2 shrink-0 min-w-0"
         >
-          <Logo size="md" className="shrink-0" />
-          <span className="font-semibold text-lg text-foreground truncate">
+          <span className="shrink-0 inline-block max-mobile:scale-[0.625] max-mobile:origin-left">
+            <Logo size="md" />
+          </span>
+          <span className="font-semibold text-lg text-foreground truncate max-mobile:text-[18px] max-mobile:font-semibold">
             MemoNext
           </span>
         </Link>
@@ -82,15 +84,15 @@ export function Nav() {
 
         {/* Mobile: Hamburger + Theme */}
         <div className="flex md:hidden items-center gap-2">
-          <ThemeToggle />
+          <ThemeToggle className="max-mobile:!size-11 max-mobile:!min-h-[44px] max-mobile:!min-w-[44px] [&_svg]:max-mobile:!size-5" />
           <Button
             variant="ghost"
             size="icon"
-            className="size-8"
+            className="size-8 max-mobile:size-11 max-mobile:min-h-[44px] max-mobile:min-w-[44px]"
             onClick={() => setMobileOpen(!mobileOpen)}
             aria-label={mobileOpen ? "Close menu" : "Open menu"}
           >
-            {mobileOpen ? <X className="size-4" /> : <Menu className="size-4" />}
+            {mobileOpen ? <X className="size-4 max-mobile:size-5" /> : <Menu className="size-4 max-mobile:size-5" />}
           </Button>
         </div>
       </div>
@@ -98,7 +100,7 @@ export function Nav() {
       {/* Mobile menu (slide down) */}
       {mobileOpen && (
         <div className="md:hidden border-t border-border bg-background">
-          <div className="max-w-4xl mx-auto px-6 md:px-8 py-4">
+          <div className="max-w-4xl mx-auto px-6 md:px-8 py-4 max-mobile:px-4">
             <div className="flex flex-col gap-2">
               {navLinks.map(({ href, label, primary }) => (
                 <Link

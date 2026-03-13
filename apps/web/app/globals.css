@@ -153,3 +153,33 @@
     font-family: var(--font-sans), system-ui, sans-serif;
   }
 }
+
+/* Mobile UX refinements (360–430px) */
+@media (max-width: 430px) {
+  /* Touch targets */
+  button,
+  .icon-button,
+  [role="button"] {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  /* Section spacing */
+  .section {
+    margin-top: 18px;
+  }
+  /* Textarea */
+  textarea {
+    font-size: 16px;
+    padding: 12px 14px;
+    border-radius: 10px;
+    min-height: 120px;
+  }
+  /* Mobile container */
+  .mobile-container {
+    max-width: 420px;
+    margin-left: auto;
+    margin-right: auto;
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+}

@@ -18,6 +18,7 @@ const config: Config = {
         "landscape-mobile": {
           raw: "(orientation: landscape) and (max-height: 500px)",
         },
+        "max-mobile": { max: "430px" },
       },
       colors: {
         background: "var(--background)",
