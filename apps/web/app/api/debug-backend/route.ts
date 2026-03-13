@@ -41,11 +41,24 @@ export async function GET() {
     const message = err instanceof Error ? err.message : String(err);
     const isTimeout = message.includes("abort") || message.includes("timeout");
 
+    // Redacted URL hint for debugging (hostname masked, port visible)
+    let urlHint: string | undefined;
+    try {
+      const u = new URL(url);
+      urlHint = `${u.protocol}//***:${u.port || "(default)"}`;
+      if (backendUrl.includes("${{") || backendUrl.includes("}}")) {
+        urlHint += " (variable may not have resolved - check service name)";
+      }
+    } catch {
+      urlHint = backendUrl.includes("${{") ? "Variable reference may be invalid" : undefined;
+    }
+
     return NextResponse.json(
       {
         ok: false,
         backendReachable: false,
         source,
+        urlHint,
         error: isTimeout ? "Request timed out" : message,
         message:
           "Backend unreachable. Check API_INTERNAL_URL and Railway private networking.",
