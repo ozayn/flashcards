@@ -26,7 +26,19 @@ async def get_decks(
         .order_by(Deck.created_at.desc())
     )
     decks = result.scalars().all()
-    return [DeckResponse.model_validate(d) for d in decks]
+    if not decks:
+        return []
+    deck_ids = [d.id for d in decks]
+    count_result = await db.execute(
+        select(Flashcard.deck_id, func.count(Flashcard.id))
+        .where(Flashcard.deck_id.in_(deck_ids))
+        .group_by(Flashcard.deck_id)
+    )
+    counts = {row[0]: row[1] for row in count_result.all()}
+    return [
+        DeckResponse.model_validate(d).model_copy(update={"card_count": counts.get(d.id, 0)})
+        for d in decks
+    ]
 
 
 @router.get("/{deck_id}/flashcards", response_model=List[FlashcardResponse])
@@ -75,7 +87,11 @@ async def get_deck(
     deck = result.scalar_one_or_none()
     if not deck:
         raise HTTPException(status_code=404, detail="Deck not found")
-    return DeckResponse.model_validate(deck)
+    count_result = await db.execute(
+        select(func.count(Flashcard.id)).where(Flashcard.deck_id == deck_id)
+    )
+    card_count = count_result.scalar() or 0
+    return DeckResponse.model_validate(deck).model_copy(update={"card_count": card_count})
 
 
 @router.patch("/{deck_id}", response_model=DeckResponse)
@@ -99,6 +115,9 @@ async def update_deck(
 
     if data.archived is not None:
         deck.archived = data.archived
+
+    if "category_id" in (data.model_dump(exclude_unset=True) or {}):
+        deck.category_id = data.category_id if data.category_id else None
 
     await db.flush()
     await db.refresh(deck)

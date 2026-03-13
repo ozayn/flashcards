@@ -4,6 +4,7 @@ import "./globals.css";
 import { Nav } from "@/components/layout/nav";
 import { DevErrorHandler } from "@/components/dev-error-handler";
 import { ErrorBoundary } from "@/components/error-boundary";
+import { TooltipProvider } from "@/components/ui/tooltip";
 
 export const metadata: Metadata = {
   title: "Flashcard AI",
@@ -60,7 +61,9 @@ export default function RootLayout({
         <div className="flex flex-col min-h-screen min-h-[100dvh]">
           <Nav />
           <div className="flex-1 min-h-0 min-h-[calc(100dvh-3.5rem)] overflow-y-auto [&:has([data-study])]:max-w-none [&:has([data-study])]:px-0 [&:has([data-study])]:min-h-[100dvh]">
-            <ErrorBoundary>{children}</ErrorBoundary>
+            <TooltipProvider>
+              <ErrorBoundary>{children}</ErrorBoundary>
+            </TooltipProvider>
           </div>
         </div>
       </body>

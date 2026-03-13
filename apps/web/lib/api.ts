@@ -120,7 +120,7 @@ export async function createDeck(data: {
 
 export async function updateDeck(
   deckId: string,
-  data: { name?: string; description?: string; archived?: boolean }
+  data: { name?: string; description?: string; archived?: boolean; category_id?: string | null }
 ) {
   const res = await fetch(`${apiUrl}/decks/${deckId}`, {
     method: "PATCH",
@@ -138,6 +138,22 @@ export async function updateDeck(
 export async function deleteDeck(deckId: string) {
   const res = await fetch(`${apiUrl}/decks/${deckId}`, { method: "DELETE" });
   if (!res.ok) throw new Error("Failed to delete deck");
+}
+
+export async function getCategories() {
+  const res = await fetch(`${apiUrl}/categories`, { cache: "no-store" });
+  if (!res.ok) throw new Error("Failed to fetch categories");
+  return res.json();
+}
+
+export async function createCategory(data: { name: string; user_id?: string }) {
+  const res = await fetch(`${apiUrl}/categories`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error("Failed to create category");
+  return res.json();
 }
 
 export async function getFlashcards(deckId: string) {

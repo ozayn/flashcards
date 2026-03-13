@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 from uuid import uuid4
-from sqlalchemy import Boolean, String, DateTime, ForeignKey, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -31,11 +31,17 @@ class Deck(Base):
     )
     generated_by_ai: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     archived: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    category_id: Mapped[Optional[str]] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("categories.id", ondelete="SET NULL"), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, nullable=False
     )
 
     user: Mapped["User"] = relationship("User", back_populates="decks")
+    category: Mapped[Optional["Category"]] = relationship(
+        "Category", back_populates="decks"
+    )
     flashcards: Mapped[list["Flashcard"]] = relationship(
         "Flashcard", back_populates="deck", cascade="all, delete-orphan"
     )

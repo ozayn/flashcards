@@ -3,7 +3,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import generation, health, decks, users, flashcards, reviews
+from app.api import generation, health, decks, users, flashcards, reviews, categories
 
 # Load .env from apps/api/ or apps/api/app/
 for env_path in [
@@ -36,6 +36,7 @@ app.add_middleware(
 )
 
 app.include_router(health.router)
+app.include_router(categories.router)
 app.include_router(decks.router)
 app.include_router(users.router)
 app.include_router(flashcards.router)

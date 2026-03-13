@@ -2,7 +2,7 @@ import logging
 
 from sqlalchemy import text
 from app.core.database import engine, Base, DATABASE_URL
-from app.models import User, Deck, Flashcard, Review  # noqa: F401 - register models
+from app.models import User, Deck, Flashcard, Review, Category  # noqa: F401 - register models
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +38,37 @@ async def init_db() -> None:
     # These migrations are idempotent and safe to run on every startup.
     # Works with both SQLite (dev) and PostgreSQL (prod).
 
+    # Ensure categories table exists before adding category_id to decks
+    async with engine.begin() as conn:
+        def _ensure_categories_table(sync_conn):
+            if _IS_SQLITE:
+                r = sync_conn.execute(text(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name='categories'"
+                )).fetchone()
+            else:
+                r = sync_conn.execute(text("""
+                    SELECT 1 FROM information_schema.tables
+                    WHERE table_schema = 'public' AND table_name = 'categories'
+                """)).fetchone()
+            if r is None:
+                sync_conn.execute(text("""
+                    CREATE TABLE categories (
+                        id TEXT PRIMARY KEY,
+                        name VARCHAR(100) NOT NULL,
+                        user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """ if _IS_SQLITE else """
+                    CREATE TABLE categories (
+                        id UUID PRIMARY KEY,
+                        name VARCHAR(100) NOT NULL,
+                        user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """))
+                logger.info("Created categories table")
+        await conn.run_sync(_ensure_categories_table)
+
     async with engine.begin() as conn:
         def _migrate_decks(sync_conn):
             _add_column_if_missing(
@@ -57,6 +88,12 @@ async def init_db() -> None:
                 sync_conn, "decks", "generated_by_ai",
                 "ALTER TABLE decks ADD COLUMN generated_by_ai BOOLEAN DEFAULT 0" if _IS_SQLITE
                 else "ALTER TABLE decks ADD COLUMN generated_by_ai BOOLEAN DEFAULT false"
+            )
+            _add_column_if_missing(
+                sync_conn, "decks", "category_id",
+                "ALTER TABLE decks ADD COLUMN category_id TEXT REFERENCES categories(id)"
+                if _IS_SQLITE
+                else "ALTER TABLE decks ADD COLUMN category_id UUID REFERENCES categories(id) ON DELETE SET NULL"
             )
         await conn.run_sync(_migrate_decks)
     logger.info("Applied decks column migrations")

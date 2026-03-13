@@ -10,6 +10,7 @@ class DeckUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=255)
     description: Optional[str] = Field(None, max_length=500)
     archived: Optional[bool] = None
+    category_id: Optional[str] = None
 
 
 class DeckCreate(BaseModel):
@@ -33,6 +34,8 @@ class DeckResponse(BaseModel):
     generation_status: str = "completed"
     generated_by_ai: bool = False
     archived: bool = False
+    category_id: Optional[str] = None
     created_at: datetime
+    card_count: int = 0
 
     model_config = {"from_attributes": True}
