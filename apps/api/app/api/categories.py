@@ -17,7 +17,7 @@ async def get_categories(
 ):
     """Get all categories."""
     result = await db.execute(
-        select(Category).order_by(Category.created_at.asc())
+        select(Category).order_by(Category.name.asc())
     )
     return [CategoryResponse.model_validate(c) for c in result.scalars().all()]
 
