@@ -466,12 +466,13 @@ export default function DecksPage() {
                               const StatusIcon = statusIcon?.icon;
                               return statusIcon && StatusIcon ? (
                                 <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <span className="inline-flex shrink-0">
-                                      <StatusIcon
-                                        className={`w-4 h-4 text-muted-foreground ${statusIcon.spin ? "animate-spin" : ""}`}
-                                      />
-                                    </span>
+                                  <TooltipTrigger
+                                    className="inline-flex shrink-0"
+                                    aria-label={statusIcon.tooltip}
+                                  >
+                                    <StatusIcon
+                                      className={`w-4 h-4 text-muted-foreground ${statusIcon.spin ? "animate-spin" : ""}`}
+                                    />
                                   </TooltipTrigger>
                                   <TooltipContent>{statusIcon.tooltip}</TooltipContent>
                                 </Tooltip>
