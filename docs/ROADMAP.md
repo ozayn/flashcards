@@ -16,6 +16,49 @@ It is not primarily a gamified study app, but a **knowledge generation and learn
 
 ---
 
+## Core Learning Pipeline
+
+The platform is built around a central learning pipeline that converts raw knowledge into structured learning material.
+
+**High-level architecture:**
+
+```
+Knowledge Sources
+    ↓
+Content Extraction
+    ↓
+Concept Extraction
+    ↓
+Flashcard Generation
+    ↓
+Structured Learning
+```
+
+The system is designed to transform unstructured information (articles, videos, notes, textbooks) into organized learning material.
+
+**Examples of knowledge sources:**
+
+- Topics entered by the user
+- Articles and webpages
+- Wikipedia pages
+- YouTube lectures
+- PDFs and documents
+- Personal notes
+
+The platform extracts concepts from these sources and converts them into flashcards, decks, and eventually structured courses.
+
+**This pipeline enables several powerful capabilities:**
+
+- Generate flashcards from any content source
+- Automatically organize knowledge into decks and collections
+- Build structured courses from long documents
+- Adapt flashcards to the user's background and learning goals
+- Experiment with different AI models for knowledge extraction
+
+This architecture allows the platform to evolve from a flashcard generator into a **knowledge-to-learning system**.
+
+---
+
 ## Phase 1 — Core Platform (MVP)
 
 Establish the foundational product.
@@ -34,83 +77,21 @@ Establish the foundational product.
 
 ---
 
-## Phase 2 — Knowledge Organization
+## Phase 2 — Knowledge Ingestion
 
-Help users manage large knowledge bases.
+Convert external knowledge sources into flashcards. This phase defines how the platform ingests content from multiple sources.
 
-**Features:**
+### Supported Sources
 
-- Tags for flashcards
-- Deck folders / collections
-- Deck categorization
-- Search across decks
-- Filter cards by tag or category
+- **Topic** — User types a topic; system generates flashcards
+- **Raw text / notes** — User pastes notes, lecture text, or study material
+- **URLs** — User pastes a URL (Wikipedia, article, blog post)
+- **Wikipedia** — User enters a concept; system fetches Wikipedia content automatically
+- **YouTube transcripts** — User pastes a YouTube URL; system retrieves transcript
+- **PDFs** — User uploads a PDF document
+- **Future** — Markdown, text files, lecture slides
 
-**Example structure:**
-
-```
-Machine Learning
-  ├ Regression
-  ├ Neural Networks
-  └ Optimization
-```
-
----
-
-## Flashcards from Any Source
-
-*Core product capability.*
-
-The system should allow users to generate flashcards from multiple types of inputs, not just a typed topic. This transforms the product from a simple flashcard generator into a learning ingestion tool.
-
-### Supported Sources (Initial Roadmap)
-
-**1. URL / Webpage**
-
-User pastes a URL (e.g. Wikipedia, article, blog post).
-
-Pipeline:
-
-- Fetch page content
-- Extract main readable text
-- Summarize key concepts
-- Generate flashcards
-
-**2. Notes / Text**
-
-User pastes notes, lecture text, or study material.
-
-Pipeline:
-
-- Chunk text
-- Extract concepts
-- Generate flashcards
-
-**3. Wikipedia Topic**
-
-User enters a concept (e.g. "Neural Networks"). System fetches Wikipedia content automatically and generates flashcards.
-
-**4. YouTube Video**
-
-User pastes a YouTube URL. System retrieves transcript and generates flashcards. See **YouTube → Flashcards** below.
-
-**5. PDF**
-
-User uploads a PDF. System extracts text and generates flashcards. See **PDF → Flashcards** below.
-
-**6. File Upload (Future)**
-
-- Markdown
-- Text files
-- Lecture slides
-
-Pipeline:
-
-- Parse document
-- Extract key sections
-- Generate flashcards
-
-### Proposed Pipeline
+### Pipeline
 
 ```
 Input Source
@@ -128,13 +109,9 @@ Deck Creation
 
 ### Backend Architecture
 
-New module:
+New module: `apps/api/app/content_sources/`
 
-```
-apps/api/app/content_sources/
-```
-
-Possible files:
+Loaders:
 
 - `url_loader.py`
 - `text_loader.py`
@@ -150,9 +127,9 @@ Each loader returns:
 }
 ```
 
-This text is then passed into the existing concept extraction pipeline.
+This text is passed into the existing concept extraction pipeline.
 
-### API Additions
+### API Endpoints
 
 - `POST /generate-from-url`
 - `POST /generate-from-text`
@@ -160,289 +137,70 @@ This text is then passed into the existing concept extraction pipeline.
 - `POST /generate-from-youtube`
 - `POST /generate-from-pdf`
 
-Each endpoint returns generated flashcards.
+### UI
 
-### UI Changes
-
-Create a new generation page with input modes:
-
-```
-Generate Flashcards
-
-[ ] Topic
-[ ] URL
-[ ] Paste Notes
-[ ] Wikipedia
-[ ] YouTube
-[ ] PDF Upload
-```
+Generation page with input modes: Topic, URL, Paste Notes, Wikipedia, YouTube, PDF Upload.
 
 User selects source → system generates deck.
+
+### URL / Webpage
+
+User pastes a URL. Pipeline: fetch page content → extract readable text → summarize key concepts → generate flashcards.
+
+### Notes / Text
+
+User pastes notes. Pipeline: chunk text → extract concepts → generate flashcards.
+
+### Wikipedia Topic
+
+User enters a concept (e.g. "Neural Networks"). System fetches Wikipedia content and generates flashcards.
+
+### YouTube → Flashcards
+
+User pastes a YouTube URL. System retrieves transcript via `youtube-transcript-api`, cleans and chunks it, extracts concepts, generates flashcards.
+
+**Implementation:** `apps/api/app/content_sources/youtube_loader.py`
+
+**Logic:** Extract video ID → retrieve transcript → concatenate segments → return cleaned text.
+
+**API:** `POST /generate-from-youtube` — Request: `{ "url": "https://www.youtube.com/watch?v=XXXX" }` — Response: `{ "deck_title": "Video Title", "flashcards": [...] }`
+
+**Future:** Timestamp linking — flashcards can include timestamp references (e.g. "Backpropagation is explained at 12:34 in the lecture").
+
+**Use cases:** Lecture videos, programming tutorials, history documentaries, language lessons, university classes.
+
+### PDF → Flashcards
+
+User uploads a PDF. System extracts text, cleans and chunks it, extracts concepts, generates flashcards.
+
+**Implementation:** `apps/api/app/content_sources/pdf_loader.py`
+
+**Suggested libraries:** pypdf, pdfminer.six, pymupdf (fitz)
+
+**Logic:** Read PDF → extract text page by page → combine into single document → return cleaned text.
+
+**API:** `POST /generate-from-pdf` — Request: `multipart/form-data` with `file: lecture_notes.pdf` — Response: `{ "deck_title": "Lecture Notes Deck", "flashcards": [...] }`
+
+**Future:** Smart section detection — detect headings or slide titles and group flashcards by section.
+
+**Use cases:** Lecture slides, textbook chapters, research papers, study guides, documentation.
 
 ### Future Improvements
 
 - Automatic summarization of long sources
-- Source citation inside flashcards
-
-Example: `answer_detailed` may include reference to paragraph source.
+- Source citation inside flashcards (`answer_detailed` may include reference to paragraph source)
 
 ### Strategic Advantage
 
-Most flashcard tools require manual input.
-
-This feature allows users to transform **any** learning material into flashcards automatically.
-
-Examples:
-
-- Wikipedia article
-- Lecture notes
-- Blog post
-- Documentation
-- Textbook excerpt
-
-This differentiates the product from traditional flashcard apps.
-
-### YouTube → Flashcards
-
-Users should be able to generate flashcards directly from YouTube educational videos.
-
-**User flow:**
-
-```
-User pastes a YouTube URL
-    ↓
-System retrieves the video transcript
-    ↓
-Transcript is cleaned and chunked
-    ↓
-Key learning concepts are extracted
-    ↓
-Flashcards are generated
-```
-
-**Example use cases:**
-
-- Lecture videos
-- Programming tutorials
-- History documentaries
-- Language lessons
-- University classes
-
-**Example input:**
-
-```
-https://www.youtube.com/watch?v=XXXXX
-```
-
-**Example output:**
-
-Deck: "Neural Networks – Lecture"
-
-Flashcards generated from the lecture concepts.
-
-#### Transcript Retrieval
-
-**Preferred approach:** Use the `youtube-transcript-api` Python package.
-
-**Example implementation location:** `apps/api/app/content_sources/youtube_loader.py`
-
-**Example logic:**
-
-1. Extract video ID from URL
-2. Retrieve transcript
-3. Concatenate transcript segments
-4. Return cleaned text
-
-**Example output:**
-
-```json
-{
-  "text": "Full lecture transcript text..."
-}
-```
-
-#### Pipeline
-
-```
-YouTube URL
-    ↓
-Transcript Retrieval
-    ↓
-Text Cleaning
-    ↓
-Concept Extraction
-    ↓
-Flashcard Generation
-    ↓
-Deck Creation
-```
-
-#### API Endpoint
-
-`POST /generate-from-youtube`
-
-**Request body example:**
-
-```json
-{
-  "url": "https://www.youtube.com/watch?v=XXXX"
-}
-```
-
-**Response:**
-
-```json
-{
-  "deck_title": "Video Title",
-  "flashcards": [...]
-}
-```
-
-#### Future Improvements
-
-**Timestamp linking**
-
-Flashcards can include timestamp references so users can jump back to the exact moment in the video.
-
-Example: `answer_detailed` may include:
-
-> "Backpropagation is explained at 12:34 in the lecture."
-
-#### Strategic Value
-
-Educational video content is one of the most common learning formats today.
-
-Allowing users to convert YouTube lectures into flashcards makes the tool extremely useful for:
-
-- Students
-- Self-learners
-- Programmers
-- Language learners
-
-This feature significantly expands the product beyond traditional flashcard generation.
-
-### PDF → Flashcards
-
-Users should be able to upload a PDF document and automatically generate flashcards from its contents.
-
-**Example use cases:**
-
-- Lecture slides
-- Textbook chapters
-- Research papers
-- Study guides
-- Documentation
-
-**User flow:**
-
-```
-User uploads a PDF
-    ↓
-System extracts text from the document
-    ↓
-Text is cleaned and chunked
-    ↓
-Key concepts are extracted
-    ↓
-Flashcards are generated
-    ↓
-A new deck is created
-```
-
-#### Content Extraction
-
-Create a new loader module: `apps/api/app/content_sources/pdf_loader.py`
-
-**Suggested libraries:**
-
-- pypdf
-- pdfminer.six
-- pymupdf (fitz)
-
-**The loader should:**
-
-1. Read the PDF file
-2. Extract text page by page
-3. Combine text into a single document
-4. Return cleaned text
-
-**Example return format:**
-
-```json
-{
-  "text": "Full extracted PDF text..."
-}
-```
-
-#### Pipeline
-
-```
-PDF Upload
-    ↓
-Text Extraction
-    ↓
-Text Cleaning
-    ↓
-Concept Extraction
-    ↓
-Flashcard Generation
-    ↓
-Deck Creation
-```
-
-#### API Endpoint
-
-`POST /generate-from-pdf`
-
-**Example request:** `multipart/form-data`
-
-```
-file: lecture_notes.pdf
-```
-
-**Response:**
-
-```json
-{
-  "deck_title": "Lecture Notes Deck",
-  "flashcards": [...]
-}
-```
-
-#### Future Improvements
-
-**Smart section detection**
-
-The system can detect headings or slide titles and group flashcards by section.
-
-Example:
-
-```
-Deck: Machine Learning
-
-Sections:
-• Supervised Learning
-• Neural Networks
-• Model Evaluation
-```
-
-#### Strategic Value
-
-Students often study from PDFs such as lecture slides and textbooks.
-
-Allowing direct PDF ingestion lets users instantly convert large study materials into structured flashcards, significantly reducing manual effort.
+Most flashcard tools require manual input. This feature allows users to transform **any** learning material (Wikipedia, lecture notes, blog posts, documentation, textbook excerpts, YouTube lectures) into flashcards automatically.
 
 ---
 
-## Deck Organization and Metadata
+## Phase 3 — Knowledge Organization
 
-As the system supports generating decks from many sources (topics, URLs, notes, Wikipedia, YouTube, PDFs), the product needs a consistent way to organize and track generated decks.
+Organize and manage decks generated from multiple sources. Combine collections, metadata, tags, and search.
 
-### Collections
-
-Decks can belong to a **Collection**. Collections group related decks together.
-
-**Structure:**
+### Hierarchy
 
 ```
 Collection
@@ -452,348 +210,90 @@ Deck
 Flashcards
 ```
 
-**Example:**
+### Collections
 
-Collection: **Machine Learning**
+Decks can belong to a **Collection**. Collections group related decks.
 
-Decks:
+**Example:** Collection "Machine Learning" — Decks: Neural Networks (YouTube), Gradient Descent (Wikipedia), ML Interview Questions (Topic).
 
-- Neural Networks (YouTube)
-- Gradient Descent (Wikipedia)
-- ML Interview Questions (Topic)
+**Use cases:** Course, subject, project, exam preparation.
 
-Collections allow users to organize decks by:
-
-- Course
-- Subject
-- Project
-- Exam preparation
-
-**Example collections:**
-
-- Spanish Learning
-- Machine Learning
-- History of Iran
-- Biology 101
+**Example collections:** Spanish Learning, Machine Learning, History of Iran, Biology 101.
 
 ### Deck Metadata
 
-Each deck should store metadata describing how it was created.
+Each deck stores metadata describing how it was created.
 
-**Suggested fields:**
+**Fields:** `source_type`, `source_url`, `source_title`, `generation_method`, `created_at`, `generated_by_ai`
 
-- `source_type`
-- `source_url`
-- `source_title`
-- `generation_method`
-- `created_at`
-- `generated_by_ai`
+**Example:** Deck "Neural Networks" — `source_type`: youtube, `source_url`: https://youtube.com/..., `source_title`: "Neural Networks Lecture – Andrew Ng"
 
-**Example:**
-
-Deck: **Neural Networks**
-
-Metadata:
-
-- `source_type`: youtube
-- `source_url`: https://youtube.com/...
-- `source_title`: "Neural Networks Lecture – Andrew Ng"
-
-This allows the UI to show:
-
-- Generated from YouTube
-- Generated from Wikipedia
-- Generated from Notes
+**UI display:** Generated from YouTube, Generated from Wikipedia, Generated from Notes.
 
 ### Generation Status
 
-Some sources (PDFs, YouTube transcripts, large webpages) may take longer to process. Decks should track generation state.
+Decks track generation state for long-running sources (PDFs, YouTube, large webpages).
 
-**Possible values:**
+**Values:** `generating`, `completed`, `failed`
 
-- `generating`
-- `completed`
-- `failed`
+**Example UI:** Neural Networks (YouTube) — Generating… | Persian Slang — Ready | ML Basics — Ready
 
-**Example UI:**
+### Deck Sections (Future)
 
-- Neural Networks (YouTube) — Generating…
-- Persian Slang — Ready
-- ML Basics — Ready
+Large decks may be divided into sections based on source structure.
 
-### Sections (Future)
+**Example:** Deck "Machine Learning" — Sections: Supervised Learning, Neural Networks, Model Evaluation. Flashcards can optionally belong to a section.
 
-Large decks may be divided into sections based on the source structure.
+### Tags and Search
 
-**Example:**
+- Tags for flashcards
+- Deck folders / collections
+- Deck categorization
+- Search across decks
+- Filter cards by tag or category
 
-Deck: **Machine Learning**
+**Example structure:**
 
-Sections:
-
-- Supervised Learning
-- Neural Networks
-- Model Evaluation
-
-Flashcards can optionally belong to a section.
+```
+Machine Learning
+  ├ Regression
+  ├ Neural Networks
+  └ Optimization
+```
 
 ### Strategic Value
 
-Strong deck organization allows the product to scale beyond simple flashcard generation and become a structured learning system.
-
-Users can:
-
-- Generate decks from multiple sources
-- Group them by subject or project
-- Track where the content came from
-- Study material from many sources in one organized place
+Strong deck organization allows the product to scale beyond simple flashcard generation. Users can generate decks from multiple sources, group them by subject or project, track where content came from, and study material from many sources in one organized place.
 
 ---
 
-## Phase 3 — Flashcards From Anything
+## Phase 4 — Learning System
 
-Generate flashcards from multiple types of input.
+Transform the platform into a **structured learning system**. Merge adaptive learning, course building, concept graphs, and personalization.
 
-**Supported inputs:**
+### Spaced Repetition
 
-- topic
-- raw text / notes
-- URLs
-- Wikipedia pages
-- PDFs
-- lecture transcripts
-- YouTube videos (future)
-
-**Workflow:**
-
-```
-User provides content
-↓
-System extracts concepts
-↓
-AI generates flashcards
-↓
-User edits cards
-↓
-Cards saved to deck
-```
-
-**Source tracking:**
-
-- source_type
-- source_url
-- source_text
-
----
-
-## Phase 4 — Personalization
-
-Generate flashcards that adapt to the user's background and interests.
-
-**User profile attributes:**
-
-- profession
-- expertise level
-- interests
-- learning goals
-
-These attributes influence LLM prompts to produce more relevant study material.
-
----
-
-## Phase 5 — Platform Infrastructure
-
-Enable monitoring, debugging, and cost tracking.
-
-**Purpose:**
-
-- Monitoring platform growth
-- Debugging
-- Cost tracking
-
-**Features:**
-
-- Google Authentication
-- Admin Dashboard
-- AI usage tracking
-- Analytics
-
----
-
-## Phase 6 — Monetization
-
-Introduce plans and payments.
-
-**Features:**
-
-- Free plan
-- Pro plan
-- Stripe payments
-- AI generation limits for free users
-- Unlimited decks for Pro users
-
----
-
-## Phase 7 — Advanced Learning
-
-Transform the app into an adaptive learning system.
-
-**Features:**
-
-- Spaced repetition
+- Spaced repetition scheduling
 - Daily review queue
 - Learning analytics
 - AI tutor mode
 
----
+### Concept Graph Extraction
 
-## Phase 8 — AI Experiments
-
-Technical architecture for LLM experimentation.
-
-### LLM Architecture & Model Routing
-
-The platform uses a pluggable LLM router that allows switching between different model providers without changing application logic.
-
-**Purpose:**
-
-- Support experimentation with different AI models
-- Allow cost optimization
-- Enable future local model support
-- Enable A/B testing of learning quality
-
-**Architecture:**
-
-```
-Frontend
-   ↓
-FastAPI Backend
-   ↓
-LLM Router
-   ↓
-Providers:
-  - Groq
-  - OpenAI
-  - Local models (future)
-```
-
-**Capabilities:**
-
-- Switch providers using environment variable `LLM_PROVIDER`
-- Compare model output quality
-- Route requests to different models
-- Add fallback models for reliability
-
-**Example providers:**
-
-- Groq (current)
-- OpenAI (future)
-- Local models via Ollama (future)
-
-### AI Reliability Improvements
-
-To ensure flashcard generation is robust and production-ready, the platform will implement several reliability improvements.
-
-**Structured JSON Generation**
-
-All LLM providers must return flashcards in strict JSON format.
-
-Example schema:
-
-```json
-{
-  "flashcards": [
-    {
-      "question": "...",
-      "answer_short": "...",
-      "answer_detailed": "...",
-      "difficulty": "easy"
-    }
-  ]
-}
-```
-
-The backend will validate responses before inserting cards into the database.
-
-**Automatic JSON Validation**
-
-Responses will be validated against a schema before processing. Invalid responses will be rejected and logged.
-
-**Automatic Retry on Failure**
-
-If JSON validation fails:
-
-1. Retry generation with a stricter prompt
-2. Attempt regeneration with the same model
-3. Optionally fall back to another LLM provider
-
-**LLM Fallback Routing**
-
-If a provider fails or returns invalid output:
-
-- Retry with the same provider
-- Optionally route to another provider (OpenAI, local model)
-
-**Logging & Debugging**
-
-All generation failures should log: topic, model used, raw LLM response, validation errors.
-
-### Future AI Experiments
-
-Planned experiments enabled by the LLM router:
-
-- A/B testing flashcard quality between models
-- Compare explanation clarity
-- Evaluate learning retention with different AI-generated cards
-- Cost-aware routing (local model vs API model)
-- Adaptive model selection based on task difficulty
-
-### Local LLM Support (Future)
-
-The platform will eventually support running open-source language models locally instead of relying only on external APIs.
-
-**Purpose:**
-
-- Reduce AI API costs
-- Allow offline experimentation
-- Enable full control of AI generation
-- Support AI research and model comparisons
-
-**Possible local models:**
-
-- Llama 3
-- Mistral
-- Phi-3
-- Gemma
-
-**Possible hosting setups:**
-
-1. Development machine using Ollama
-2. Dedicated GPU server (RunPod, Lambda Labs, Vast.ai)
-3. Self-hosted AI infrastructure
-
-The LLM router allows switching providers via `LLM_PROVIDER=groq`, `openai`, or `local`.
-
-### Knowledge Graph Flashcard Generation
-
-Instead of generating flashcards directly from text, the system will first extract a concept graph representing relationships between ideas.
+Instead of generating flashcards directly from text, extract a concept graph first.
 
 **Workflow:**
 
 ```
-User provides input content
-• topic
-• article
-• lecture notes
-• long document
-↓
-AI extracts key concepts and relationships.
-↓
-A structured concept graph is created.
-↓
-Flashcards are generated per concept.
-↓
-Cards are grouped by topic and subtopic.
+Content (topic, article, lecture notes, long document)
+    ↓
+AI extracts key concepts and relationships
+    ↓
+Structured concept graph
+    ↓
+Flashcards generated per concept
+    ↓
+Cards grouped by topic and subtopic
 ```
 
 **Example:**
@@ -808,45 +308,13 @@ Machine Learning
     - PCA
 ```
 
-Each concept then produces flashcards such as:
+**Advantages:** Flashcards become structured; decks scale better; learners understand relationships; navigation across topics improves.
 
-**Q:** What is linear regression?  
-**A:** A statistical model used to predict continuous values using a linear relationship.
-
-**Advantages:**
-
-- Flashcards become structured instead of random
-- Decks scale better for large topics
-- Learners understand relationships between ideas
-- Navigation across topics becomes easier
-
-This feature enables hierarchical decks and topic-based studying.
-
----
-
-## Phase 9 — AI Course Builder
-
-Allow users to paste any knowledge source and generate a structured learning course.
-
-**Goal:**
+### AI Course Builder
 
 Turn the platform into a knowledge-to-learning pipeline.
 
-**Example workflow:**
-
-User pastes:
-
-- article
-- book chapter
-- lecture transcript
-- long document
-
-AI produces:
-
-- structured topics
-- decks per topic
-- flashcards per concept
-- difficulty levels
+**Workflow:** User pastes article, book chapter, lecture transcript, or long document → AI produces structured topics, decks per topic, flashcards per concept, difficulty levels.
 
 **Example output:**
 
@@ -859,3 +327,89 @@ Module 3 — Neural Networks
 ```
 
 Each module contains flashcards automatically generated.
+
+### Personalization
+
+Generate flashcards that adapt to the user's background and interests.
+
+**User profile attributes:** profession, expertise level, interests, learning goals
+
+These attributes influence LLM prompts to produce more relevant study material.
+
+---
+
+## Phase 5 — Platform Infrastructure
+
+Enable monitoring, debugging, cost tracking, authentication, monetization, and LLM experimentation.
+
+### Authentication & Admin
+
+- Google Authentication
+- Admin Dashboard
+- AI usage tracking
+- Analytics
+
+### Monetization
+
+- Free plan
+- Pro plan
+- Stripe payments
+- AI generation limits for free users
+- Unlimited decks for Pro users
+
+### LLM Architecture & Model Routing
+
+Pluggable LLM router for switching providers without changing application logic.
+
+**Architecture:**
+
+```
+Frontend
+    ↓
+FastAPI Backend
+    ↓
+LLM Router
+    ↓
+Providers: Groq, OpenAI, Local models (future)
+```
+
+**Capabilities:**
+
+- Switch providers via `LLM_PROVIDER` environment variable
+- Compare model output quality
+- Route requests to different models
+- Fallback models for reliability
+
+**Providers:** Groq (current), OpenAI (future), Local models via Ollama (future)
+
+### AI Reliability
+
+**Structured JSON:** All providers return flashcards in strict JSON format. Backend validates before inserting.
+
+**JSON validation:** Responses validated against schema. Invalid responses rejected and logged.
+
+**Automatic retry:** On validation failure — retry with stricter prompt, attempt regeneration, optionally fall back to another provider.
+
+**Fallback routing:** If provider fails — retry same provider, optionally route to OpenAI or local model.
+
+**Logging:** All failures log topic, model used, raw LLM response, validation errors.
+
+### Future AI Experiments
+
+- A/B testing flashcard quality between models
+- Compare explanation clarity
+- Evaluate learning retention with different AI-generated cards
+- Cost-aware routing (local vs API model)
+- Adaptive model selection based on task difficulty
+
+### Local LLM Support (Future)
+
+Run open-source models locally instead of relying only on external APIs.
+
+**Purpose:** Reduce costs, offline experimentation, full control, AI research.
+
+**Possible models:** Llama 3, Mistral, Phi-3, Gemma
+
+**Hosting:** Development machine (Ollama), dedicated GPU server (RunPod, Lambda Labs, Vast.ai), self-hosted infrastructure.
+
+**Switch via:** `LLM_PROVIDER=groq`, `openai`, or `local`.
