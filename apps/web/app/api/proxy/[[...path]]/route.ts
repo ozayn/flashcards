@@ -1,20 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-
-/** Server-only: use Railway private networking when available. */
-const getBackendUrl = (): string => {
-  const raw =
-    (process.env.API_INTERNAL_URL ?? process.env.NEXT_PUBLIC_API_URL)
-      ?.trim() || "http://localhost:8080";
-  const url = raw.replace(/\/$/, "");
-  // Fallback if URL is invalid (e.g. Railway variable reference failed)
-  try {
-    const parsed = new URL(url);
-    if (!parsed.hostname) return process.env.NEXT_PUBLIC_API_URL?.trim()?.replace(/\/$/, "") || "http://localhost:8080";
-  } catch {
-    return process.env.NEXT_PUBLIC_API_URL?.trim()?.replace(/\/$/, "") || "http://localhost:8080";
-  }
-  return url;
-};
+import { getBackendUrl } from "@/lib/backend-url";
 
 export async function GET(
   request: NextRequest,

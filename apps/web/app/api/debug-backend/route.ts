@@ -1,23 +1,15 @@
 import { NextResponse } from "next/server";
+import { getBackendUrl, getBackendUrlSource } from "@/lib/backend-url";
 
 /**
  * Temporary debug route for testing Railway private networking.
- * Server-side only: fetches backend /health via API_INTERNAL_URL.
+ * Server-side only: fetches backend /health. Uses API_INTERNAL_URL when valid.
  * Remove or protect in production.
  */
 export async function GET() {
-  const backendUrl =
-    process.env.API_INTERNAL_URL ??
-    process.env.NEXT_PUBLIC_API_URL ??
-    "http://localhost:8080";
+  const backendUrl = getBackendUrl();
   const url = `${backendUrl.replace(/\/$/, "")}/health`;
-
-  // Redact URL for response (hide internal hostname, show which env was used)
-  const source = process.env.API_INTERNAL_URL
-    ? "API_INTERNAL_URL"
-    : process.env.NEXT_PUBLIC_API_URL
-      ? "NEXT_PUBLIC_API_URL"
-      : "default (localhost:8080)";
+  const source = getBackendUrlSource();
 
   try {
     const controller = new AbortController();
@@ -34,7 +26,9 @@ export async function GET() {
       backendResponse: body,
       source,
       message: res.ok
-        ? "Backend reachable via private networking"
+        ? (source === "API_INTERNAL_URL"
+            ? "Backend reachable via private networking"
+            : `Backend reachable via ${source}`)
         : `Backend returned ${res.status}`,
     });
   } catch (err) {
