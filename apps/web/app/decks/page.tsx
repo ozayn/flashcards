@@ -190,6 +190,7 @@ export default function DecksPage() {
   const [renameCategoryName, setRenameCategoryName] = useState("");
   const [renameSaving, setRenameSaving] = useState(false);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
@@ -354,12 +355,14 @@ export default function DecksPage() {
 
   async function handleDeleteCategory(categoryId: string) {
     if (!userId) return;
+    setDeleteError(null);
     try {
       await deleteCategory(categoryId, userId);
       setRefreshKey((k) => k + 1);
       setDeleteConfirmId(null);
     } catch (err) {
       console.error("Failed to delete category", err);
+      setDeleteError(err instanceof Error ? err.message : "Failed to delete category");
     }
   }
 
@@ -462,7 +465,7 @@ export default function DecksPage() {
         {deleteConfirmId && (
           <div
             className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
-            onClick={() => setDeleteConfirmId(null)}
+            onClick={() => { setDeleteConfirmId(null); setDeleteError(null); }}
           >
             <div
               className="bg-background rounded-lg shadow-lg p-6 w-full max-w-sm mx-4"
@@ -472,6 +475,9 @@ export default function DecksPage() {
               <p className="text-sm text-muted-foreground mb-4">
                 Decks will not be deleted. They will move to &quot;Uncategorized&quot;.
               </p>
+              {deleteError && (
+                <p className="text-sm text-destructive mb-4">{deleteError}</p>
+              )}
               <div className="flex justify-end gap-2">
                 <Button
                   type="button"

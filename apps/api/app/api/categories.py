@@ -1,11 +1,11 @@
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.models import Category
+from app.models import Category, Deck
 from app.schemas.category import CategoryCreate, CategoryResponse, CategoryUpdate
 
 router = APIRouter(prefix="/categories", tags=["categories"])
@@ -75,5 +75,7 @@ async def delete_category(
     category = result.scalar_one_or_none()
     if not category:
         raise HTTPException(status_code=404, detail="Category not found")
+    # Explicitly nullify deck.category_id before delete (ensures SQLite works; DB ON DELETE SET NULL is backup)
+    await db.execute(update(Deck).where(Deck.category_id == category_id).values(category_id=None))
     await db.delete(category)
     await db.flush()

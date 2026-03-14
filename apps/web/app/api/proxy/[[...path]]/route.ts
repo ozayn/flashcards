@@ -71,7 +71,9 @@ async function proxy(
     const responseHeaders = new Headers();
     const contentType = res.headers.get("content-type");
     if (contentType) responseHeaders.set("content-type", contentType);
-    return new NextResponse(resBody, {
+    // 204/304 must not have a body per HTTP spec
+    const responseBody = (res.status === 204 || res.status === 304) ? null : resBody;
+    return new NextResponse(responseBody, {
       status: res.status,
       statusText: res.statusText,
       headers: responseHeaders,
