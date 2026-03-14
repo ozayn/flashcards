@@ -1,10 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 
 /** Server-only: use Railway private networking when available. */
-const getBackendUrl = () => {
-  const url =
-    process.env.API_INTERNAL_URL ?? process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
-  return url.replace(/\/$/, "");
+const getBackendUrl = (): string => {
+  const raw =
+    process.env.API_INTERNAL_URL?.trim() ||
+    process.env.NEXT_PUBLIC_API_URL?.trim() ||
+    "http://localhost:8000";
+  const url = raw.replace(/\/$/, "");
+  // Fallback if URL is invalid (e.g. Railway variable reference failed)
+  try {
+    const parsed = new URL(url);
+    if (!parsed.hostname) return process.env.NEXT_PUBLIC_API_URL?.trim()?.replace(/\/$/, "") || "http://localhost:8000";
+  } catch {
+    return process.env.NEXT_PUBLIC_API_URL?.trim()?.replace(/\/$/, "") || "http://localhost:8000";
+  }
+  return url;
 };
 
 export async function GET(
