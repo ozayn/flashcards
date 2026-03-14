@@ -11,18 +11,26 @@ export function getBackendUrl(): string {
     (process.env.API_INTERNAL_URL ?? process.env.NEXT_PUBLIC_API_URL)
       ?.trim() || DEFAULT_URL;
   let url = raw.replace(/\/$/, "");
+  // Add protocol if missing (e.g. NEXT_PUBLIC_API_URL=api.example.com)
+  if (url && !/^https?:\/\//i.test(url)) {
+    url = url.startsWith("localhost") || url.includes(".railway.internal")
+      ? `http://${url}`
+      : `https://${url}`;
+  }
   // Fallback if URL is invalid (e.g. Railway variable reference failed)
   try {
     const parsed = new URL(url);
     if (!parsed.hostname || url.includes("${{") || url.includes("}}")) {
-      return process.env.NEXT_PUBLIC_API_URL?.trim()?.replace(/\/$/, "") || DEFAULT_URL;
+      const fallback = process.env.NEXT_PUBLIC_API_URL?.trim()?.replace(/\/$/, "") || DEFAULT_URL;
+      return /^https?:\/\//i.test(fallback) ? fallback : `https://${fallback}`;
     }
     // Private networking (.railway.internal) must use http
     if (parsed.hostname.endsWith(".railway.internal") && parsed.protocol === "https:") {
       url = url.replace(/^https:\/\//, "http://");
     }
   } catch {
-    return process.env.NEXT_PUBLIC_API_URL?.trim()?.replace(/\/$/, "") || DEFAULT_URL;
+    const fallback = process.env.NEXT_PUBLIC_API_URL?.trim()?.replace(/\/$/, "") || DEFAULT_URL;
+    return /^https?:\/\//i.test(fallback) ? fallback : `https://${fallback}`;
   }
   return url;
 }
@@ -51,8 +59,17 @@ export function getBackendUrlDebugInfo(): {
   port: string;
   protocol: string;
   resolvedUrl: string;
+  /** Temporary: diagnose why API_INTERNAL_URL may not be available at runtime */
+  envDiagnostics: {
+    exists: boolean;
+    isEmpty: boolean;
+    startsWithHttp: boolean;
+    rawType: string;
+    rawLength: number;
+  };
 } {
-  const internal = process.env.API_INTERNAL_URL?.trim();
+  const raw = process.env.API_INTERNAL_URL;
+  const internal = raw?.trim();
   const url = getBackendUrl();
   let parsed: URL;
   try {
@@ -68,5 +85,12 @@ export function getBackendUrlDebugInfo(): {
     port: parsed.port || (parsed.protocol === "https:" ? "443" : "80"),
     protocol: parsed.protocol.replace(":", ""),
     resolvedUrl: url,
+    envDiagnostics: {
+      exists: typeof raw !== "undefined",
+      isEmpty: raw === undefined || raw === null || String(raw).trim() === "",
+      startsWithHttp: typeof raw === "string" && raw.trim().toLowerCase().startsWith("http://"),
+      rawType: typeof raw,
+      rawLength: typeof raw === "string" ? raw.length : 0,
+    },
   };
 }

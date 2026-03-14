@@ -27,6 +27,8 @@ export async function GET() {
       port: debug.port,
       protocol: debug.protocol,
       resolvedUrlRedacted: `${debug.protocol}://${debug.hostname}:${debug.port}/health`,
+      /** Diagnose API_INTERNAL_URL: exists=set in env, isEmpty=blank, startsWithHttp=valid format */
+      envDiagnostics: debug.envDiagnostics,
     },
     source,
   };
