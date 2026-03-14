@@ -17,5 +17,5 @@ COPY . .
 ENV PORT=8080
 EXPOSE 8080
 
-# Bind to :: (IPv6) - Railway private network is IPv6-only. 0.0.0.0 blocks private networking.
-CMD uvicorn app.main:app --host :: --port ${PORT}
+# Dual-stack bind: IPv4 (healthcheck, public) + IPv6 (Railway private networking)
+CMD gunicorn -w 1 -k uvicorn.workers.UvicornWorker -b 0.0.0.0:${PORT} -b [::]:${PORT} app.main:app
