@@ -36,7 +36,7 @@ MemoNext deploys as two Railway services:
 1. Click **+ New** → **GitHub Repo** → select same repo
 2. Set **Root Directory** to `apps/web`
 3. Add variable: `NEXT_PUBLIC_API_URL` = your API URL (e.g. `https://flashcard-api.up.railway.app`)
-4. **Optional (recommended)**: Add `API_INTERNAL_URL` = `http://${{api.RAILWAY_PRIVATE_DOMAIN}}:8080` for private networking. Replace `api` with your backend service name. Server-side proxy prefers this over the public URL.
+4. **Optional (recommended)**: Add `API_INTERNAL_URL` = `http://${{api.RAILWAY_PRIVATE_DOMAIN}}:8080` on the **web** service. Use your **backend** service name (e.g. `api` or `memonext`), NOT the web service name. Must be `http` (not https).
 5. **Important**: `NEXT_PUBLIC_*` is baked into the JS bundle at build time. Set before first deploy; redeploy after changing.
 6. Deploy. Generate a public domain for the web service.
 
@@ -50,7 +50,7 @@ MemoNext deploys as two Railway services:
 
 ## Dockerfiles
 
-- **apps/api/Dockerfile** – Python 3.12, FastAPI, uvicorn
+- **apps/api/Dockerfile** – Python 3.12, FastAPI, uvicorn. Binds to `::` (IPv6) for Railway private networking.
 - **apps/web/Dockerfile** – Node 20, Next.js standalone
 
 ## Health Check
@@ -63,3 +63,4 @@ The API exposes `GET /health`. Railway uses this for health checks when configur
 - **API not connecting to DB**: Ensure `DATABASE_URL` is set and referenced from Postgres
 - **Web shows 404 for API calls**: Verify `NEXT_PUBLIC_API_URL` matches your API's public URL
 - **Build fails**: Run `npm run build` and `docker build` locally to reproduce
+- **Private networking fails**: Hit `/api/debug-backend` for detailed diagnostics. Common causes: (1) `API_INTERNAL_URL` not set on web service, (2) wrong service name in `${{SERVICE.RAILWAY_PRIVATE_DOMAIN}}` (use backend name), (3) backend binding to `0.0.0.0` instead of `::` (Railway private net is IPv6)

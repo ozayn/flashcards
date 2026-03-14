@@ -1,15 +1,35 @@
 import { NextResponse } from "next/server";
-import { getBackendUrl, getBackendUrlSource } from "@/lib/backend-url";
+import {
+  getBackendUrl,
+  getBackendUrlSource,
+  getBackendUrlDebugInfo,
+} from "@/lib/backend-url";
 
 /**
- * Temporary debug route for testing Railway private networking.
- * Server-side only: fetches backend /health. Uses API_INTERNAL_URL when valid.
+ * Temporary debug route for Railway private networking.
+ * Server-side only. Reports exact failure point when API_INTERNAL_URL fails.
  * Remove or protect in production.
  */
 export async function GET() {
   const backendUrl = getBackendUrl();
   const url = `${backendUrl.replace(/\/$/, "")}/health`;
   const source = getBackendUrlSource();
+  const debug = getBackendUrlDebugInfo();
+
+  // Base response: always server-side, always report debug info
+  const basePayload = {
+    serverSide: true,
+    debug: {
+      apiInternalUrlPresent: debug.apiInternalUrlPresent,
+      apiInternalUrlLength: debug.apiInternalUrlLength,
+      apiInternalUrlUnresolved: debug.apiInternalUrlUnresolved,
+      hostname: debug.hostname,
+      port: debug.port,
+      protocol: debug.protocol,
+      resolvedUrlRedacted: `${debug.protocol}://${debug.hostname}:${debug.port}/health`,
+    },
+    source,
+  };
 
   try {
     const controller = new AbortController();
@@ -20,42 +40,51 @@ export async function GET() {
     const body = await res.json().catch(() => ({}));
 
     return NextResponse.json({
+      ...basePayload,
       ok: res.ok,
       backendReachable: true,
       status: res.status,
       backendResponse: body,
-      source,
       message: res.ok
-        ? (source === "API_INTERNAL_URL"
-            ? "Backend reachable via private networking"
-            : `Backend reachable via ${source}`)
+        ? source === "API_INTERNAL_URL"
+          ? "Backend reachable via private networking"
+          : `Backend reachable via ${source}`
         : `Backend returned ${res.status}`,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     const isTimeout = message.includes("abort") || message.includes("timeout");
+    const isDns = message.includes("ENOTFOUND") || message.includes("getaddrinfo");
+    const isConnRefused = message.includes("ECONNREFUSED");
 
-    // Redacted URL hint for debugging (hostname masked, port visible)
-    let urlHint: string | undefined;
-    try {
-      const u = new URL(url);
-      urlHint = `${u.protocol}//***:${u.port || "(default)"}`;
-      if (backendUrl.includes("${{") || backendUrl.includes("}}")) {
-        urlHint += " (variable may not have resolved - check service name)";
-      }
-    } catch {
-      urlHint = backendUrl.includes("${{") ? "Variable reference may be invalid" : undefined;
+    let failureReason: string;
+    if (debug.apiInternalUrlUnresolved) {
+      failureReason =
+        "API_INTERNAL_URL contains unresolved Railway variable (${{...}}). Use exact backend service name, e.g. ${{api.RAILWAY_PRIVATE_DOMAIN}}.";
+    } else if (!debug.apiInternalUrlPresent) {
+      failureReason =
+        "API_INTERNAL_URL not set on web service. Add it in Railway Variables.";
+    } else if (isTimeout) {
+      failureReason =
+        "Request timed out. Backend may not be listening on IPv6 (::). Check backend binds to :: for Railway private networking.";
+    } else if (isDns) {
+      failureReason =
+        "DNS resolution failed for .railway.internal hostname. Verify backend service name in API_INTERNAL_URL matches Railway dashboard.";
+    } else if (isConnRefused) {
+      failureReason =
+        "Connection refused. Backend may not be listening on port 8080 or may bind only to 0.0.0.0 (IPv4). Use --host :: for private networking.";
+    } else {
+      failureReason = message;
     }
 
     return NextResponse.json(
       {
+        ...basePayload,
         ok: false,
         backendReachable: false,
-        source,
-        urlHint,
         error: isTimeout ? "Request timed out" : message,
-        message:
-          "Backend unreachable. Check API_INTERNAL_URL and Railway private networking.",
+        failureReason,
+        message: "Backend unreachable. See failureReason for exact cause.",
       },
       { status: 503 }
     );
