@@ -77,7 +77,14 @@ async function proxy(
       headers: responseHeaders,
     });
   } catch (err) {
-    console.error("Proxy error:", err);
+    let urlHint = "unknown";
+    try {
+      const u = new URL(targetUrl);
+      urlHint = `${u.protocol}//${u.hostname}:${u.port || "(default)"}`;
+    } catch {
+      urlHint = targetUrl.slice(0, 50);
+    }
+    console.error("Proxy error:", err instanceof Error ? err.message : err, "| target:", urlHint);
     return NextResponse.json(
       { detail: "Backend unavailable" },
       { status: 503 }
