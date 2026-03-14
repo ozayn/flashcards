@@ -6,7 +6,7 @@ const API_BASE = "/api/proxy";
 
 /** For display only (e.g. error messages). Public URL, not used for requests. */
 export const apiUrl =
-  (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/$/, "");
+  (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080").replace(/\/$/, "");
 
 export async function fetchApi<T>(
   endpoint: string,

@@ -2,14 +2,14 @@
 """
 Text Input Security Test Script
 Runs API-level tests from the security checklist.
-Requires: API running at http://localhost:8000, a valid user_id.
+Requires: API running at http://localhost:8080, a valid user_id.
 """
 import json
 import sys
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
 
-API = "http://localhost:8000"
+API = "http://localhost:8080"
 
 
 def fetch_json(url: str, method: str = "GET", body: dict | None = None) -> dict:

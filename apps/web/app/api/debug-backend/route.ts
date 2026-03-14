@@ -9,7 +9,7 @@ export async function GET() {
   const backendUrl =
     process.env.API_INTERNAL_URL ??
     process.env.NEXT_PUBLIC_API_URL ??
-    "http://localhost:8000";
+    "http://localhost:8080";
   const url = `${backendUrl.replace(/\/$/, "")}/health`;
 
   // Redact URL for response (hide internal hostname, show which env was used)
@@ -17,7 +17,7 @@ export async function GET() {
     ? "API_INTERNAL_URL"
     : process.env.NEXT_PUBLIC_API_URL
       ? "NEXT_PUBLIC_API_URL"
-      : "default (localhost:8000)";
+      : "default (localhost:8080)";
 
   try {
     const controller = new AbortController();

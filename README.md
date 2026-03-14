@@ -154,19 +154,19 @@ Update `.env.example` from `.env` (redacts keys, tokens, secrets, passwords):
 
 ```bash
 # Backend
-cd apps/api && uvicorn main:app --reload --port 8000
+cd apps/api && uvicorn main:app --reload --port 8080
 
 # Frontend
 cd apps/web && npm run dev
 ```
 
-- Backend: http://localhost:8000
+- Backend: http://localhost:8080
 - Frontend: http://localhost:3000
 
 ### Environment Variables
 
 **Backend:** `DATABASE_URL` (optional, defaults to SQLite), `LLM_PROVIDER` (groq/openai/local, default: groq), `GROQ_API_KEY` (for Groq AI generation)  
-**Frontend:** `NEXT_PUBLIC_API_URL` (e.g. http://localhost:8000)
+**Frontend:** `NEXT_PUBLIC_API_URL` (e.g. http://localhost:8080)
 
 ## Deployment (Railway)
 

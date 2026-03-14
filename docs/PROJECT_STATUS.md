@@ -327,7 +327,7 @@ Return { created: N }
 
 | Service | Root | Port | Description |
 |---------|------|------|-------------|
-| **API** | `apps/api` | 8000 | FastAPI, uvicorn |
+| **API** | `apps/api` | 8080 | FastAPI, uvicorn |
 | **Web** | `apps/web` | 3000 | Next.js standalone |
 | **PostgreSQL** | — | — | Database (add via Railway) |
 

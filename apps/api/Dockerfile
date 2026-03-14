@@ -13,8 +13,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-# Railway uses PORT env var
-ENV PORT=8000
-EXPOSE 8000
+# Railway uses PORT env var (8080 for private networking)
+ENV PORT=8080
+EXPOSE 8080
 
 CMD uvicorn app.main:app --host 0.0.0.0 --port ${PORT}

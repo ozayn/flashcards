@@ -16,7 +16,7 @@ trap cleanup SIGINT SIGTERM
 echo "Starting backend..."
 cd apps/api
 if [ -d .venv313 ]; then source .venv313/bin/activate; elif [ -d .venv ]; then source .venv/bin/activate; fi
-uvicorn main:app --reload --port 8000 &
+uvicorn main:app --reload --port 8080 &
 BACKEND_PID=$!
 cd "$PROJECT_ROOT"
 
@@ -35,7 +35,7 @@ echo "Starting frontend..."
 cd apps/web
 echo ""
 echo "Flashcard app running!"
-echo "  Backend:  http://localhost:8000"
+echo "  Backend:  http://localhost:8080"
 echo "  Frontend: http://localhost:3000"
 echo ""
 npm run dev
