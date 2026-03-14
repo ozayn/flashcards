@@ -6,11 +6,12 @@ import {
 } from "@/lib/backend-url";
 
 /**
- * Temporary debug route for Railway private networking.
- * Server-side only. Reports exact failure point when API_INTERNAL_URL fails.
- * Remove or protect in production.
+ * Debug route for Railway private networking. Hidden in production (404).
  */
 export async function GET() {
+  if (process.env.NODE_ENV === "production") {
+    return new NextResponse(null, { status: 404 });
+  }
   const backendUrl = getBackendUrl();
   const url = `${backendUrl.replace(/\/$/, "")}/health`;
   const source = getBackendUrlSource();
