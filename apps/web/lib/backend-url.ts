@@ -28,6 +28,10 @@ export function getBackendUrl(): string {
     if (parsed.hostname.endsWith(".railway.internal") && parsed.protocol === "https:") {
       url = url.replace(/^https:\/\//, "http://");
     }
+    // .railway.internal without port defaults to 8080 (backend listen port)
+    if (parsed.hostname.endsWith(".railway.internal") && (!parsed.port || parsed.port === "80")) {
+      url = `${parsed.protocol}//${parsed.hostname}:8080`;
+    }
   } catch {
     const fallback = process.env.NEXT_PUBLIC_API_URL?.trim()?.replace(/\/$/, "") || DEFAULT_URL;
     return /^https?:\/\//i.test(fallback) ? fallback : `https://${fallback}`;
