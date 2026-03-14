@@ -13,6 +13,8 @@ for env_path in [
             pass
         break
 
+import os
+
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -22,10 +24,15 @@ from app.core.init_db import init_db
 from app.core.auth import require_admin_key
 from app.models import User, Deck, Flashcard, Review  # noqa: F401 - register models
 
+_is_production = os.environ.get("ENVIRONMENT", "development").lower() == "production"
+
 app = FastAPI(
     title="MemoNext API",
     description="MemoNext — Turn information into memory. AI Flashcard Learning Platform API",
     version="0.1.0",
+    docs_url=None if _is_production else "/docs",
+    redoc_url=None if _is_production else "/redoc",
+    openapi_url=None if _is_production else "/openapi.json",
 )
 
 app.add_middleware(
