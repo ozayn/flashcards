@@ -16,6 +16,92 @@ It is not primarily a gamified study app, but a **knowledge generation and learn
 
 ---
 
+## Current Priorities
+
+## LLM Infrastructure Setup (Priority)
+
+**Goal:** Ensure the application can reliably generate flashcards by supporting multiple LLM providers and switching between them.
+
+### 1. Multi-Provider LLM Support
+
+Implement support for multiple providers:
+
+- Groq
+- OpenRouter
+- OpenAI
+- Anthropic (optional future)
+- TogetherAI (optional future)
+
+The system should allow switching providers via `.env`:
+
+```
+LLM_PROVIDER=groq
+LLM_PROVIDER=openrouter
+LLM_PROVIDER=openai
+```
+
+### 2. Provider Test Scripts
+
+Create and maintain standalone test scripts for each provider.
+
+**Location:** `tests/llm_providers/`
+
+**Scripts:**
+
+- `test_groq.py`
+- `test_openrouter.py`
+- `test_openai.py`
+- `test_anthropic.py` (optional)
+- `test_together.py` (optional)
+
+Each test should:
+
+- load API key from `.env`
+- send a structured flashcard prompt
+- print latency
+- print token usage if available
+- print returned JSON
+
+### 3. Provider Fallback Routing
+
+Implement automatic provider fallback.
+
+**Flow:**
+
+1. Try primary provider (Groq)
+2. If request fails or times out → retry with OpenRouter
+3. If OpenRouter fails → fallback to OpenAI
+
+Log which provider handled the request.
+
+### 4. LLM Cost Monitoring
+
+Add optional cost tracking:
+
+`.env`:
+
+```
+LLM_COST_TRACKING=1
+```
+
+Track:
+
+- tokens used
+- provider used
+- estimated cost per request
+
+### 5. Reliability Improvements (Future Task)
+
+After provider setup is complete:
+
+- Improve concept extraction reliability
+- Improve entity extraction for topics like:
+  - "famous scientists"
+  - "well-known street photographers"
+- Add caching for generated decks
+
+---
+
 ## Core Learning Pipeline
 
 The platform is built around a central learning pipeline that converts raw knowledge into structured learning material.
