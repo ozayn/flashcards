@@ -49,7 +49,9 @@ export default function DeckPage({ params }: DeckPageProps) {
   const [deckDeleteConfirm, setDeckDeleteConfirm] = useState(false);
   const [genTopic, setGenTopic] = useState("");
   const [genText, setGenText] = useState("");
+  const [cardCount, setCardCount] = useState(10);
   const GEN_TEXT_MAX_LENGTH = 10000;
+  const CARD_COUNT_OPTIONS = [5, 10, 20, 26, 50] as const;
 
   useEffect(() => {
     let cancelled = false;
@@ -93,7 +95,7 @@ export default function DeckPage({ params }: DeckPageProps) {
         await generateFlashcards({
           deck_id: deck.id,
           text: textTrimmed,
-          num_cards: 10,
+          num_cards: cardCount,
           language: "en",
         });
       } else {
@@ -102,7 +104,7 @@ export default function DeckPage({ params }: DeckPageProps) {
           await generateFlashcards({
             deck_id: deck.id,
             topic: topicToUse,
-            num_cards: 10,
+            num_cards: cardCount,
             language: "en",
           });
         }
@@ -283,6 +285,23 @@ export default function DeckPage({ params }: DeckPageProps) {
               <p className="text-xs text-muted-foreground max-mobile:text-[13px] max-mobile:text-[#777] dark:max-mobile:text-neutral-400">
                 Add AI-generated cards from topic, text, or both.
               </p>
+              <div className="space-y-2">
+                <label htmlFor="cardCount" className="text-sm font-medium">
+                  Number of cards
+                </label>
+                <select
+                  id="cardCount"
+                  value={cardCount}
+                  onChange={(e) => setCardCount(Number(e.target.value))}
+                  className="h-10 w-[80px] rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                >
+                  {CARD_COUNT_OPTIONS.map((n) => (
+                    <option key={n} value={n}>
+                      {n}
+                    </option>
+                  ))}
+                </select>
+              </div>
               <div className="space-y-2">
                 <Input
                   placeholder="Topic (e.g. Spanish vocabulary)"

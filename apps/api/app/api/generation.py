@@ -363,7 +363,7 @@ Text:
 
 {lang_instruction}
 
-Extract up to {num_cards} specific items from the text.
+Extract up to {num_cards} specific items from the text. If fewer concepts exist, extract fewer.
 
 Items may include:
 - key concepts
@@ -394,7 +394,7 @@ Topic:
 
 {lang_instruction}
 
-Extract up to {num_cards} names of real notable people directly relevant to this topic.
+Extract up to {num_cards} names of real notable people directly relevant to this topic. If fewer exist, extract fewer.
 
 Rules:
 - Return only person names
@@ -415,7 +415,7 @@ Topic:
 
 {lang_instruction}
 
-Extract up to {num_cards} specific items: names of people, places, events, works, or key terms—whichever the topic asks for.
+Extract up to {num_cards} specific items: names of people, places, events, works, or key terms—whichever the topic asks for. If fewer exist, extract fewer.
 
 Return STRICT JSON:
 
@@ -501,7 +501,7 @@ Text:
 
 {grounding_block}
 
-Extract key facts and create one flashcard per important point. Generate up to {num_cards} flashcards.
+Extract key facts and create one flashcard per important point. Generate exactly {num_cards} flashcards. Return exactly {num_cards} flashcards. Do not generate fewer or more.
 
 Return STRICT JSON only.
 
@@ -541,7 +541,7 @@ Names:
 
 {lang_instruction}
 
-Generate up to {num_cards} flashcards, one per name. If there are more names than {num_cards}, select the most important {num_cards}.
+Generate exactly {num_cards} flashcards, one per name. If there are more names than {num_cards}, select the most important {num_cards}. Return exactly {num_cards} flashcards. Do not generate fewer or more.
 
 Rules:
 - Each question must be exactly in the style:
@@ -643,7 +643,7 @@ Concepts:
 {f'Anchor keywords:\n{anchors_str}\n' if anchors else ''}
 {lang_instruction}
 
-Generate up to {num_cards} flashcards, one per concept. If there are more concepts than {num_cards}, select the most important {num_cards}.
+Generate exactly {num_cards} flashcards, one per concept. If there are more concepts than {num_cards}, select the most important {num_cards}. Return exactly {num_cards} flashcards. Do not generate fewer or more.
 
 {style_instruction}
 
@@ -693,7 +693,7 @@ Instructions:
 - Questions must be concise and focused on recall.
 - Cards must be directly related to the topic.
 
-Generate up to {num_cards} flashcards.
+Generate exactly {num_cards} flashcards. Return exactly {num_cards} flashcards. Do not generate fewer or more.
 
 Return STRICT JSON only.
 
@@ -779,7 +779,7 @@ async def generate_flashcards(
     try:
         lang_hint = (payload.language or "").strip().lower()[:2] or None
 
-        num_cards = payload.num_cards
+        num_cards = max(1, min(payload.num_cards or 10, 50))
 
         if text_input:
             # Text mode: generate only from pasted text. Ignore topic/deck name.
@@ -861,7 +861,7 @@ Return STRICT JSON only.
 }}
 
 Rules:
-- Generate up to {num_cards} flashcards.
+- Generate exactly {num_cards} flashcards. Return exactly {num_cards} flashcards. Do not generate fewer or more.
 - Do not include explanations outside JSON."""
 
                         try:
@@ -927,7 +927,7 @@ Return STRICT JSON only.
 }}
 
 Rules:
-- Generate up to {num_cards} flashcards.
+- Generate exactly {num_cards} flashcards. Return exactly {num_cards} flashcards. Do not generate fewer or more.
 - Do not include explanations outside JSON.
 - Ensure answers are correct and educational."""
 

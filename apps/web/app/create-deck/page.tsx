@@ -16,10 +16,13 @@ import { getUsers, createDeck, generateFlashcards } from "@/lib/api";
 import { getStoredUserId } from "@/components/user-selector";
 import PageContainer from "@/components/layout/page-container";
 
+const CARD_COUNT_OPTIONS = [5, 10, 20, 26, 50] as const;
+
 function CreateDeckForm() {
   const [name, setName] = useState("");
   const [topic, setTopic] = useState("");
   const [text, setText] = useState("");
+  const [cardCount, setCardCount] = useState(10);
   const [loading, setLoading] = useState(false);
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -65,14 +68,14 @@ function CreateDeckForm() {
         await generateFlashcards({
           deck_id: deckId,
           text: textTrimmed,
-          num_cards: 10,
+          num_cards: cardCount,
           language: "en",
         });
       } else if (topicTrimmed || name) {
         await generateFlashcards({
           deck_id: deckId,
           topic: topicTrimmed || name,
-          num_cards: 10,
+          num_cards: cardCount,
           language: "en",
         });
       }
@@ -119,16 +122,32 @@ function CreateDeckForm() {
 
               <div className="space-y-4">
                 <p className="text-sm font-medium">Add cards automatically (optional)</p>
-                <div className="space-y-2">
+                <div className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-2 items-end">
                   <label htmlFor="topic" className="text-sm font-medium">
                     Generate cards about
+                  </label>
+                  <label htmlFor="cardCount" className="text-sm font-medium">
+                    Number of cards
                   </label>
                   <Input
                     id="topic"
                     placeholder="Leave blank to use the deck name"
                     value={topic}
                     onChange={(e) => setTopic(e.target.value)}
+                    className="min-w-0"
                   />
+                  <select
+                    id="cardCount"
+                    value={cardCount}
+                    onChange={(e) => setCardCount(Number(e.target.value))}
+                    className="h-10 rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 w-[80px]"
+                  >
+                    {CARD_COUNT_OPTIONS.map((n) => (
+                      <option key={n} value={n}>
+                        {n}
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 <div className="space-y-2">
                   <label htmlFor="text" className="text-sm font-medium">
