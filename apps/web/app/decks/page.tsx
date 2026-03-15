@@ -841,7 +841,7 @@ export default function DecksPage() {
                               router.push(`/decks/${deck.id}`);
                             }
                           }}
-                          className="deck-card rounded-xl border border-neutral-200 px-5 py-5 flex items-center justify-between gap-3 bg-white hover:bg-muted/40 hover:shadow-sm transition-colors dark:bg-neutral-900 dark:border-neutral-700 cursor-pointer max-mobile:px-4 max-mobile:py-3.5 max-mobile:rounded-[12px]"
+                          className="deck-card group rounded-xl border border-neutral-200 px-5 py-5 flex items-center justify-between gap-3 bg-white hover:bg-muted/40 hover:shadow-sm transition-colors dark:bg-neutral-900 dark:border-neutral-700 cursor-pointer max-mobile:px-4 max-mobile:py-3.5 max-mobile:rounded-[12px]"
                         >
                           <div className="flex items-center gap-3 flex-1 min-w-0">
                             {(() => {
@@ -871,7 +871,7 @@ export default function DecksPage() {
                             </div>
                           </div>
                           <div className="shrink-0 flex items-center gap-0.5 max-mobile:opacity-60">
-                            <div className="relative">
+                            <div className={`relative deck-menu-button opacity-0 transition-opacity duration-150 group-hover:opacity-100 max-mobile:opacity-100 ${openDeckMenuId === deck.id ? "!opacity-100" : ""}`}>
                               <Button
                                 variant="ghost"
                                 size="icon"
