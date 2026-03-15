@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Flashcard } from "@/components/study/Flashcard";
-import { getFlashcards, getUserSettings, updateUserSettings, submitReview, type UserSettings } from "@/lib/api";
+import { getFlashcards, getUserSettings, updateUserSettings, submitReview, deleteDeckReviews, type UserSettings } from "@/lib/api";
 import { getStoredUserId } from "@/components/user-selector";
 
 interface StudyPageProps {
@@ -21,9 +21,14 @@ interface StudyFlashcard {
   answer_detailed?: string | null;
 }
 
+type StudyMode = "study" | "explore";
+
 export default function StudyPage({ params }: StudyPageProps) {
+  const [mode, setMode] = useState<StudyMode>("study");
   const [flashcards, setFlashcards] = useState<StudyFlashcard[]>([]);
   const [loading, setLoading] = useState(true);
+  const [noUserForStudy, setNoUserForStudy] = useState(false);
+  const [userChangeKey, setUserChangeKey] = useState(0);
   const [currentCardIndex, setCurrentCardIndex] = useState(0);
   const [showAnswer, setShowAnswer] = useState(false);
   const [sessionComplete, setSessionComplete] = useState(false);
@@ -34,13 +39,48 @@ export default function StudyPage({ params }: StudyPageProps) {
   });
   const [canFlip, setCanFlip] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
+  const [resetLoading, setResetLoading] = useState(false);
   const touchStartX = useRef(0);
   const settingsRef = useRef<HTMLDivElement>(null);
 
+  const isDev = process.env.NODE_ENV === "development";
+
+  async function handleResetProgress() {
+    const userId = getStoredUserId();
+    if (!userId) return;
+    setResetLoading(true);
+    try {
+      await deleteDeckReviews(params.deck_id, userId);
+      setResetConfirmOpen(false);
+      setCurrentCardIndex(0);
+      setShowAnswer(false);
+      setSessionComplete(false);
+      setUserChangeKey((k) => k + 1);
+    } catch {
+      // ignore
+    } finally {
+      setResetLoading(false);
+    }
+  }
+
   useEffect(() => {
+    setLoading(true);
+    setNoUserForStudy(false);
     async function fetchFlashcards() {
+      const dueOnly = mode === "study";
+      const userId = getStoredUserId();
+      if (dueOnly && !userId) {
+        setFlashcards([]);
+        setNoUserForStudy(true);
+        setLoading(false);
+        return;
+      }
       try {
-        const data = await getFlashcards(params.deck_id);
+        const data = await getFlashcards(params.deck_id, {
+          dueOnly,
+          userId: dueOnly ? userId ?? undefined : undefined,
+        });
         setFlashcards(Array.isArray(data) ? data : []);
       } catch {
         setFlashcards([]);
@@ -50,7 +90,13 @@ export default function StudyPage({ params }: StudyPageProps) {
     }
 
     fetchFlashcards();
-  }, [params.deck_id]);
+  }, [params.deck_id, mode, userChangeKey]);
+
+  useEffect(() => {
+    const handleUserChanged = () => setUserChangeKey((k) => k + 1);
+    window.addEventListener("flashcard_user_changed", handleUserChanged);
+    return () => window.removeEventListener("flashcard_user_changed", handleUserChanged);
+  }, []);
 
   useEffect(() => {
     const userId = getStoredUserId();
@@ -74,6 +120,12 @@ export default function StudyPage({ params }: StudyPageProps) {
     setShowAnswer(false);
     setSessionComplete(false);
   }, [params.deck_id]);
+
+  useEffect(() => {
+    setCurrentCardIndex(0);
+    setShowAnswer(false);
+    setSessionComplete(false);
+  }, [mode]);
 
   useEffect(() => {
     if (loading || flashcards.length === 0 || sessionComplete) return;
@@ -154,7 +206,7 @@ export default function StudyPage({ params }: StudyPageProps) {
     );
   }
 
-  if (flashcards.length === 0) {
+  if (noUserForStudy) {
     return (
       <main className="min-h-screen flex flex-col pt-6 pb-8" data-study>
         <div className="max-w-4xl mx-auto w-full px-6 md:px-8 flex flex-col flex-1 justify-center gap-4">
@@ -165,14 +217,64 @@ export default function StudyPage({ params }: StudyPageProps) {
             ← Back
           </Link>
           <p className="text-muted-foreground text-center">
-            No flashcards in this deck yet.
+            No user selected. Please choose a user to start studying.
           </p>
+          <div className="flex flex-col sm:flex-row gap-3 justify-center">
+            <Link
+              href="/decks"
+              className="inline-flex h-10 items-center justify-center rounded-lg bg-primary px-6 text-sm font-medium text-primary-foreground hover:bg-primary/80 w-fit"
+            >
+              Choose user
+            </Link>
+            <Button
+              variant="outline"
+              onClick={() => setMode("explore")}
+              className="w-fit"
+            >
+              Browse all cards
+            </Button>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  if (flashcards.length === 0) {
+    return (
+      <main className="min-h-screen flex flex-col pt-6 pb-8" data-study>
+        <div className="max-w-4xl mx-auto w-full px-6 md:px-8 flex flex-col flex-1 justify-center gap-4">
           <Link
-            href={`/decks/${params.deck_id}/add-card`}
-            className="inline-flex h-10 items-center justify-center rounded-lg bg-primary px-6 text-sm font-medium text-primary-foreground hover:bg-primary/80 w-fit"
+            href={`/decks/${params.deck_id}`}
+            className="inline-flex h-7 items-center justify-center rounded-lg px-2.5 text-sm font-medium hover:bg-muted w-fit"
           >
-            Add Cards
+            ← Back
           </Link>
+          {mode === "study" ? (
+            <>
+              <p className="text-muted-foreground text-center">
+                You&apos;re all caught up! No cards are due for review.
+              </p>
+              <Button
+                variant="outline"
+                onClick={() => setMode("explore")}
+                className="w-fit"
+              >
+                Browse all cards
+              </Button>
+            </>
+          ) : (
+            <>
+              <p className="text-muted-foreground text-center">
+                No flashcards in this deck yet.
+              </p>
+              <Link
+                href={`/decks/${params.deck_id}/add-card`}
+                className="inline-flex h-10 items-center justify-center rounded-lg bg-primary px-6 text-sm font-medium text-primary-foreground hover:bg-primary/80 w-fit"
+              >
+                Add Cards
+              </Link>
+            </>
+          )}
         </div>
       </main>
     );
@@ -185,40 +287,42 @@ export default function StudyPage({ params }: StudyPageProps) {
   if (sessionComplete) {
     return (
       <main className="h-full min-h-[50vh] flex flex-col pt-6 pb-8" data-study>
-        <div className="max-w-4xl mx-auto w-full px-6 md:px-8 flex flex-col flex-1 justify-center gap-6">
+        <div className="max-w-4xl mx-auto w-full px-6 md:px-8 flex flex-col flex-1">
           <Link
             href={`/decks/${params.deck_id}`}
             className="inline-flex h-7 items-center justify-center rounded-lg px-2.5 text-sm font-medium hover:bg-muted w-fit"
           >
             ← Back
           </Link>
-          <Card className="max-w-sm">
-          <CardHeader>
-            <CardTitle className="text-2xl">Session complete!</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <p className="text-muted-foreground">
-              You&apos;ve gone through all {flashcards.length} cards. Great work!
-            </p>
-            <div className="flex flex-col sm:flex-row gap-3 justify-center">
-              <Button
-                onClick={() => {
-                  setSessionComplete(false);
-                  setCurrentCardIndex(0);
-                  setShowAnswer(false);
-                }}
-              >
-                Study again
-              </Button>
-              <Link
-                href={`/decks/${params.deck_id}`}
-                className="inline-flex h-10 items-center justify-center rounded-md border border-neutral-300 bg-white px-4 text-sm font-medium hover:bg-neutral-50 dark:border-neutral-600 dark:bg-neutral-900 dark:hover:bg-neutral-800"
-              >
-                Back to deck
-              </Link>
-            </div>
-          </CardContent>
-        </Card>
+          <div className="flex flex-1 w-full justify-center items-center mt-6">
+            <Card className="max-w-xl w-full">
+              <CardHeader>
+                <CardTitle className="text-2xl">Session complete!</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <p className="text-muted-foreground">
+                  You&apos;ve gone through all {flashcards.length} cards. Great work!
+                </p>
+                <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                  <Button
+                    onClick={() => {
+                      setSessionComplete(false);
+                      setCurrentCardIndex(0);
+                      setShowAnswer(false);
+                    }}
+                  >
+                    Study again
+                  </Button>
+                  <Link
+                    href={`/decks/${params.deck_id}`}
+                    className="inline-flex h-10 items-center justify-center rounded-md border border-neutral-300 bg-white px-4 text-sm font-medium hover:bg-neutral-50 dark:border-neutral-600 dark:bg-neutral-900 dark:hover:bg-neutral-800"
+                  >
+                    Back to deck
+                  </Link>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
         </div>
       </main>
     );
@@ -233,15 +337,53 @@ export default function StudyPage({ params }: StudyPageProps) {
         // ignore
       }
     }
-    if (isLast) {
+    if (rating === "again") {
+      setFlashcards((prev) => [...prev, card]);
+    }
+    setShowAnswer(false);
+    if (isLast && rating !== "again") {
       setSessionComplete(true);
     } else {
-      handleNext();
+      setCurrentCardIndex((i) => i + 1);
     }
   };
 
   return (
     <main className="h-full min-h-0 flex flex-col items-center overflow-hidden relative" data-study>
+      {resetConfirmOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+          onClick={() => !resetLoading && setResetConfirmOpen(false)}
+        >
+          <div
+            className="bg-background rounded-lg shadow-lg p-6 w-full max-w-sm mx-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="text-lg font-semibold mb-2">Reset progress for this deck?</h2>
+            <p className="text-sm text-muted-foreground mb-4">
+              All review history for this deck will be deleted. Cards will appear as new.
+            </p>
+            <div className="flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => !resetLoading && setResetConfirmOpen(false)}
+                disabled={resetLoading}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                onClick={handleResetProgress}
+                disabled={resetLoading}
+              >
+                {resetLoading ? "Resetting..." : "Reset"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
       <Link
         href={`/decks/${params.deck_id}`}
         className="fixed bottom-8 right-[max(0.5rem,calc(50vw-min(50vw,18rem)))] z-50 inline-flex items-center gap-2 rounded-full bg-background/95 backdrop-blur border border-border shadow-lg px-4 py-2 text-sm font-medium hover:bg-muted transition-colors"
@@ -257,6 +399,41 @@ export default function StudyPage({ params }: StudyPageProps) {
           >
             ← Back
           </Link>
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1 rounded-lg border border-border p-0.5 bg-muted/30">
+              <button
+                type="button"
+                onClick={() => setMode("study")}
+                className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                  mode === "study"
+                    ? "bg-background shadow-sm text-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                Study
+              </button>
+              <button
+                type="button"
+                onClick={() => setMode("explore")}
+                className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                  mode === "explore"
+                    ? "bg-background shadow-sm text-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                Explore
+              </button>
+            </div>
+            {isDev && (
+              <button
+                type="button"
+                onClick={() => setResetConfirmOpen(true)}
+                className="text-xs px-2 py-1 rounded border border-red-400 text-red-500 hover:bg-red-50 dark:border-red-600 dark:text-red-400 dark:hover:bg-red-950/50 transition-colors"
+              >
+                Reset Deck Progress
+              </button>
+            )}
+          </div>
         <div className="flex items-center gap-2">
           <div className="hidden landscape-mobile:flex items-center gap-2">
             <ThemeToggle className="size-8 text-muted-foreground hover:text-foreground" />
@@ -344,36 +521,38 @@ export default function StudyPage({ params }: StudyPageProps) {
                       </p>
                     )}
                   </div>
-                  <div className="flex flex-row gap-2 justify-center flex-wrap shrink-0 w-full" onClick={(e) => e.stopPropagation()}>
-                  <Button
-                    variant="destructive"
-                    onClick={() => rateCard("again")}
-                    className="shrink-0"
-                  >
-                    Again
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    onClick={() => rateCard("hard")}
-                    className="shrink-0"
-                  >
-                    Hard
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() => rateCard("good")}
-                    className="shrink-0 bg-muted/80 hover:bg-muted dark:bg-muted/50 dark:hover:bg-muted/70"
-                  >
-                    Good
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() => rateCard("easy")}
-                    className="shrink-0"
-                  >
-                    Easy
-                  </Button>
-                </div>
+                  {mode === "study" && showAnswer && (
+                    <div className="flex flex-row gap-2 justify-center flex-wrap shrink-0 w-full" onClick={(e) => e.stopPropagation()}>
+                      <Button
+                        variant="destructive"
+                        onClick={() => rateCard("again")}
+                        className="shrink-0"
+                      >
+                        Again
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        onClick={() => rateCard("hard")}
+                        className="shrink-0"
+                      >
+                        Hard
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={() => rateCard("good")}
+                        className="shrink-0 bg-muted/80 hover:bg-muted dark:bg-muted/50 dark:hover:bg-muted/70"
+                      >
+                        Good
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={() => rateCard("easy")}
+                        className="shrink-0"
+                      >
+                        Easy
+                      </Button>
+                    </div>
+                  )}
               </>
             }
             flipped={showAnswer}

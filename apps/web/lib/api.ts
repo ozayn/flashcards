@@ -159,6 +159,13 @@ export async function deleteDeck(deckId: string) {
   if (!res.ok) throw new Error("Failed to delete deck");
 }
 
+export async function deleteDeckReviews(deckId: string, userId: string) {
+  const url = `${API_BASE}/decks/${deckId}/reviews?user_id=${encodeURIComponent(userId)}`;
+  const res = await fetch(url, { method: "DELETE" });
+  if (!res.ok) throw new Error("Failed to reset deck progress");
+  return res.json();
+}
+
 export async function getCategories(userId: string) {
   const res = await fetch(`${API_BASE}/categories?user_id=${userId}`, {
     cache: "no-store",
@@ -198,8 +205,17 @@ export async function deleteCategory(id: string, userId: string) {
   if (!res.ok) throw new Error("Failed to delete category");
 }
 
-export async function getFlashcards(deckId: string) {
-  const res = await fetch(`${API_BASE}/decks/${deckId}/flashcards`, { cache: "no-store" });
+export async function getFlashcards(
+  deckId: string,
+  options?: { dueOnly?: boolean; userId?: string }
+) {
+  const dueOnly = options?.dueOnly ?? false;
+  const userId = options?.userId;
+  let url = `${API_BASE}/decks/${deckId}/flashcards?due_only=${dueOnly}`;
+  if (dueOnly && userId) {
+    url += `&user_id=${encodeURIComponent(userId)}`;
+  }
+  const res = await fetch(url, { cache: "no-store" });
   if (!res.ok) throw new Error("Failed to fetch flashcards");
   return res.json();
 }

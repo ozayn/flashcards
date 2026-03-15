@@ -1,8 +1,9 @@
+import os
 from datetime import datetime
-from typing import List
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -45,18 +46,29 @@ async def get_decks(
 async def get_deck_flashcards(
     deck_id: str,
     due_only: bool = Query(False, description="Return only cards due for review"),
+    user_id: Optional[str] = Query(None, description="User ID (required when due_only=true)"),
     db: AsyncSession = Depends(get_db),
 ):
-    """Get all flashcards for a deck. When due_only=true, return only cards due for review."""
+    """Get all flashcards for a deck. When due_only=true, return only cards due for review for the given user."""
     result = await db.execute(
         select(Flashcard).where(Flashcard.deck_id == deck_id).order_by(Flashcard.created_at)
     )
     flashcards = result.scalars().all()
 
     if due_only:
+        if not user_id or not user_id.strip():
+            raise HTTPException(
+                status_code=400,
+                detail="user_id is required when due_only=true",
+            )
         now = datetime.utcnow()
+        # Latest review per flashcard for THIS user only
         latest_review_subq = (
-            select(Review.flashcard_id, func.max(Review.review_time).label("max_time"))
+            select(
+                Review.flashcard_id,
+                func.max(Review.review_time).label("max_time"),
+            )
+            .where(Review.user_id == user_id.strip())
             .group_by(Review.flashcard_id)
         ).subquery()
         not_due_ids_result = await db.execute(
@@ -69,7 +81,7 @@ async def get_deck_flashcards(
                     Review.review_time == latest_review_subq.c.max_time,
                 ),
             )
-            .where(Review.next_review > now)
+            .where(Review.user_id == user_id.strip(), Review.next_review > now)
         )
         not_due_ids = {row[0] for row in not_due_ids_result.all()}
         flashcards = [f for f in flashcards if f.id not in not_due_ids]
@@ -171,6 +183,30 @@ async def move_deck(
     await db.flush()
     await db.refresh(deck)
     return DeckResponse.model_validate(deck)
+
+
+@router.delete("/{deck_id}/reviews")
+async def delete_deck_reviews(
+    deck_id: str,
+    user_id: Optional[str] = Query(None, description="If provided, only delete reviews for this user"),
+    db: AsyncSession = Depends(get_db),
+):
+    """Development-only: Delete all review records for a deck. Flashcards become 'new' again."""
+    if (os.environ.get("ENVIRONMENT") or "development").strip().lower() == "production":
+        raise HTTPException(status_code=403, detail="This endpoint is disabled in production")
+
+    deck_result = await db.execute(select(Deck).where(Deck.id == deck_id))
+    if not deck_result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Deck not found")
+
+    flashcard_ids = select(Flashcard.id).where(Flashcard.deck_id == deck_id)
+    stmt = delete(Review).where(Review.flashcard_id.in_(flashcard_ids))
+    if user_id and user_id.strip():
+        stmt = stmt.where(Review.user_id == user_id.strip())
+    result = await db.execute(stmt)
+    await db.flush()
+    deleted_count = result.rowcount or 0
+    return {"deleted_reviews": deleted_count}
 
 
 @router.delete("/{deck_id}", status_code=204)
