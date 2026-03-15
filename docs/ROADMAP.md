@@ -646,3 +646,68 @@ guest mode
 deck management  
 study interface  
 LLM routing
+
+---
+
+## LLM Self-Refinement (Generator–Critic Flashcards)
+
+### Overview
+
+Introduce a two-stage LLM pipeline where one model generates flashcards and another model reviews and improves them.
+
+### Purpose
+
+Improve flashcard quality by:
+
+- removing duplicate cards
+- clarifying vague questions
+- ensuring answers are correct
+- enforcing the exact number of cards
+- improving learning effectiveness
+
+### Workflow
+
+**Stage 1 — Generator**
+
+The primary model (e.g., Groq or DeepSeek) generates N flashcards.
+
+**Stage 2 — Critic**
+
+A second model (e.g., Gemini or Claude) evaluates the generated cards and returns:
+
+- corrected cards
+- duplicate removals
+- improved phrasing
+- missing cards if fewer than requested
+
+**Example flow:**
+
+```
+User request
+   ↓
+Generator LLM
+   ↓
+Flashcards produced
+   ↓
+Critic LLM review
+   ↓
+Improved flashcards returned
+```
+
+### Benefits
+
+- higher quality cards
+- fewer duplicates
+- more consistent formatting
+- better learning outcomes
+
+### Implementation ideas
+
+- Add optional flag: `enable_flashcard_review`
+- Use a second LLM provider for review
+- Cache both generation and review outputs
+- Run critic only when card count or quality is questionable
+
+### Status
+
+Planned (future improvement).
