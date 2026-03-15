@@ -44,11 +44,21 @@ DEFAULT_MODELS = {
 
 
 def _get_provider_order() -> list[str]:
-    """Return provider order. If LLM_PROVIDER is set, try that first."""
+    """Return provider order. If LLM_PROVIDER is set, try that first. OpenAI is opt-in via OPENAI_ENABLED."""
+    base = list(PROVIDER_ORDER)
+
+    # OpenAI is opt-in; disabled by default (avoids quota errors when account has no credits)
+    if (os.getenv("OPENAI_ENABLED") or "0").strip() != "1":
+        if "openai" in base:
+            logger.info("OpenAI provider disabled via OPENAI_ENABLED")
+            base = [p for p in base if p != "openai"]
+
     preferred = (os.getenv("LLM_PROVIDER") or "").strip().lower()
     if not preferred:
-        return list(PROVIDER_ORDER)
-    order = [p for p in PROVIDER_ORDER if p != preferred]
+        return base
+    if preferred not in base:
+        return base
+    order = [p for p in base if p != preferred]
     return [preferred] + order
 
 

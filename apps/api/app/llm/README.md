@@ -12,8 +12,9 @@ MemoNext's LLM integration: provider router with fallback, cost tracking, and re
 
 ## Provider Router
 
-**Fallback order:** Groq → Gemini → OpenRouter → OpenAI
+**Fallback order:** Groq → Gemini → OpenRouter → OpenAI (when `OPENAI_ENABLED=1`)
 
+- OpenAI is **disabled by default** (`OPENAI_ENABLED=0`). Set `OPENAI_ENABLED=1` to include it as final fallback.
 - Set `LLM_PROVIDER` to try a specific provider first (e.g. `LLM_PROVIDER=gemini`).
 - If a provider fails (missing key, API error), the router logs the error and tries the next provider.
 - If all fail, raises `RuntimeError("All LLM providers failed")`.
@@ -65,6 +66,7 @@ sqlite3 apps/api/data/llm_cache.db "DELETE FROM llm_cache;"
 | `GROQ_MODEL` | Groq model | llama-3.1-8b-instant |
 | `OPENAI_API_KEY` | OpenAI API key | — |
 | `OPENAI_MODEL` | OpenAI model | gpt-4o-mini |
+| `OPENAI_ENABLED` | Include OpenAI in fallback chain (1=yes, 0=no) | 0 |
 | `OPENROUTER_API_KEY` | OpenRouter API key | — |
 | `OPENROUTER_MODEL` | OpenRouter model | deepseek/deepseek-chat |
 | `GEMINI_API_KEY` | Gemini API key | — |

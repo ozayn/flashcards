@@ -1,16 +1,22 @@
 #!/usr/bin/env python3
 """
 Standalone test for OpenAI API.
-Run: python tests/llm_providers/test_openai.py
-Requires: OPENAI_API_KEY
-Optional: OPENAI_MODEL, LLM_TEMPERATURE, LLM_MAX_TOKENS
+
+Run:
+python tests/llm_providers/test_openai.py
+
+Requires:
+OPENAI_API_KEY
+Optional:
+OPENAI_MODEL
 """
+
 import os
 import sys
 import time
 from pathlib import Path
 
-# Load .env from apps/api if present
+# Load .env
 for p in [Path(__file__).resolve().parents[2] / "apps" / "api" / ".env"]:
     if p.exists():
         try:
@@ -20,59 +26,62 @@ for p in [Path(__file__).resolve().parents[2] / "apps" / "api" / ".env"]:
             pass
         break
 
-TEST_PROMPT = "Return a JSON object with one flashcard about Jupiter (Roman god)."
+TEST_PROMPT = "Return STRICT JSON with one flashcard about Jupiter (Roman god)."
 DEFAULT_MODEL = "gpt-4o-mini"
 
 
-def main() -> int:
+def main():
     api_key = os.environ.get("OPENAI_API_KEY", "").strip()
     if not api_key:
-        print("Error: OPENAI_API_KEY not set in environment", file=sys.stderr)
-        return 1
+        print("Skipped: OPENAI_API_KEY not set", file=sys.stderr)
+        return 0
 
     model = os.environ.get("OPENAI_MODEL", "").strip() or DEFAULT_MODEL
-    temp = float(os.environ.get("LLM_TEMPERATURE", "0.3"))
-    max_tokens = os.environ.get("LLM_MAX_TOKENS")
-    max_tokens = int(max_tokens) if max_tokens and max_tokens.strip() else None
 
     try:
         from openai import OpenAI
     except ImportError:
-        print("Error: openai not installed. pip install openai", file=sys.stderr)
+        print("Error: pip install openai", file=sys.stderr)
         return 1
 
+    client = OpenAI(api_key=api_key)
+
     try:
-        client = OpenAI(api_key=api_key)
-        kwargs = {
-            "model": model,
-            "messages": [
-                {"role": "system", "content": "Return only valid JSON, no other text."},
-                {"role": "user", "content": TEST_PROMPT},
-            ],
-            "temperature": temp,
-        }
-        if max_tokens:
-            kwargs["max_tokens"] = max_tokens
         start = time.time()
-        response = client.chat.completions.create(**kwargs)
+
+        resp = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "user", "content": TEST_PROMPT}
+            ],
+            temperature=float(os.environ.get("LLM_TEMPERATURE", "0.2")),
+            max_tokens=int(os.environ.get("LLM_MAX_TOKENS", "300")),
+        )
+
         latency = round(time.time() - start, 2)
 
-        choice = response.choices[0] if response.choices else None
-        text = ""
-        if choice and getattr(choice, "message", None):
-            text = (choice.message.content or "").strip()
-        if not text:
-            print("Warning: No content returned from API", file=sys.stderr)
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
         return 1
+
+    text = resp.choices[0].message.content.strip()
+
+    usage = resp.usage
 
     print("Provider: OpenAI")
     print(f"Model: {model}")
     print(f"Latency: {latency} seconds")
     print()
+
+    if usage:
+        print(f"Prompt tokens: {usage.prompt_tokens}")
+        print(f"Completion tokens: {usage.completion_tokens}")
+        print(f"Total tokens: {usage.total_tokens}")
+        print()
+
     print("Response:")
     print(text)
+
     return 0
 
 
