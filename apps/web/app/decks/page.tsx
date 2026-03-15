@@ -18,7 +18,9 @@ import {
   Archive,
   ArchiveRestore,
   CircleAlert,
+  FolderInput,
   Loader2,
+  MoreVertical,
   Pencil,
   Trash2,
 } from "lucide-react";
@@ -36,7 +38,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { getUsers, getDecks, getCategories, updateDeck, createCategory, updateCategory, deleteCategory, apiUrl } from "@/lib/api";
+import { getUsers, getDecks, getCategories, updateDeck, createCategory, updateCategory, deleteCategory, deleteDeck, moveDeckToCategory, apiUrl } from "@/lib/api";
 import { getStoredUserId } from "@/components/user-selector";
 import PageContainer from "@/components/layout/page-container";
 
@@ -191,6 +193,16 @@ export default function DecksPage() {
   const [renameSaving, setRenameSaving] = useState(false);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [openDeckMenuId, setOpenDeckMenuId] = useState<string | null>(null);
+  const [moveModalDeckId, setMoveModalDeckId] = useState<string | null>(null);
+  const [moveModalCategoryId, setMoveModalCategoryId] = useState<string | null>(null);
+  const [moveModalSaving, setMoveModalSaving] = useState(false);
+  const [renameDeckModalOpen, setRenameDeckModalOpen] = useState(false);
+  const [renameDeckId, setRenameDeckId] = useState<string | null>(null);
+  const [renameDeckName, setRenameDeckName] = useState("");
+  const [renameDeckSaving, setRenameDeckSaving] = useState(false);
+  const [deleteDeckConfirmId, setDeleteDeckConfirmId] = useState<string | null>(null);
+  const [deleteDeckError, setDeleteDeckError] = useState<string | null>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
@@ -366,6 +378,96 @@ export default function DecksPage() {
     }
   }
 
+  function openMoveModal(deckId: string) {
+    const deck = decks.find((d) => d.id === deckId);
+    setMoveModalDeckId(deckId);
+    setMoveModalCategoryId(deck?.category_id ?? null);
+    setOpenDeckMenuId(null);
+  }
+
+  function closeMoveModal() {
+    if (!moveModalSaving) {
+      setMoveModalDeckId(null);
+      setMoveModalCategoryId(null);
+    }
+  }
+
+  async function handleMoveDeck(e: React.FormEvent) {
+    e.preventDefault();
+    if (!moveModalDeckId || moveModalSaving) return;
+    try {
+      setMoveModalSaving(true);
+      await moveDeckToCategory(moveModalDeckId, moveModalCategoryId);
+      closeMoveModal();
+      setRefreshKey((k) => k + 1);
+    } catch (err) {
+      console.error("Failed to move deck", err);
+    } finally {
+      setMoveModalSaving(false);
+    }
+  }
+
+  function openRenameDeckModal(deckId: string) {
+    const deck = decks.find((d) => d.id === deckId);
+    setRenameDeckId(deckId);
+    setRenameDeckName(deck?.name ?? "");
+    setRenameDeckModalOpen(true);
+    setOpenDeckMenuId(null);
+  }
+
+  function closeRenameDeckModal() {
+    if (!renameDeckSaving) {
+      setRenameDeckModalOpen(false);
+      setRenameDeckId(null);
+      setRenameDeckName("");
+    }
+  }
+
+  async function handleRenameDeck(e: React.FormEvent) {
+    e.preventDefault();
+    const name = renameDeckName.trim();
+    if (!name || !renameDeckId || renameDeckSaving) return;
+    try {
+      setRenameDeckSaving(true);
+      await updateDeck(renameDeckId, { name });
+      setRefreshKey((k) => k + 1);
+      closeRenameDeckModal();
+    } catch (err) {
+      console.error("Failed to rename deck", err);
+    } finally {
+      setRenameDeckSaving(false);
+    }
+  }
+
+  function openDeleteDeckConfirm(deckId: string) {
+    setDeleteDeckConfirmId(deckId);
+    setDeleteDeckError(null);
+    setOpenDeckMenuId(null);
+  }
+
+  async function handleDeleteDeck() {
+    if (!deleteDeckConfirmId) return;
+    try {
+      setDeleteDeckError(null);
+      await deleteDeck(deleteDeckConfirmId);
+      setDecks((d) => d.filter((deck) => deck.id !== deleteDeckConfirmId));
+      setDeleteDeckConfirmId(null);
+    } catch (err) {
+      console.error("Failed to delete deck", err);
+      setDeleteDeckError(err instanceof Error ? err.message : "Failed to delete deck");
+    }
+  }
+
+  useEffect(() => {
+    function handleClickOutside() {
+      setOpenDeckMenuId(null);
+    }
+    if (openDeckMenuId) {
+      document.addEventListener("click", handleClickOutside);
+      return () => document.removeEventListener("click", handleClickOutside);
+    }
+  }, [openDeckMenuId]);
+
   return (
     <PageContainer>
         <div className="flex items-center justify-between mb-6">
@@ -489,6 +591,129 @@ export default function DecksPage() {
                 <Button
                   variant="destructive"
                   onClick={() => deleteConfirmId && handleDeleteCategory(deleteConfirmId)}
+                >
+                  Delete
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {moveModalDeckId && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+            onClick={closeMoveModal}
+          >
+            <div
+              className="bg-background rounded-lg shadow-lg p-6 w-full max-w-sm mx-4"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h2 className="text-lg font-semibold mb-4">Move Deck to Category</h2>
+              <form onSubmit={handleMoveDeck} className="space-y-4">
+                <div>
+                  <label htmlFor="move-category" className="sr-only">
+                    Category
+                  </label>
+                  <select
+                    id="move-category"
+                    value={moveModalCategoryId ?? UNCATEGORIZED}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setMoveModalCategoryId(v === UNCATEGORIZED ? null : v);
+                    }}
+                    disabled={moveModalSaving}
+                    className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm min-h-[44px] max-mobile:min-h-[48px]"
+                  >
+                    <option value={UNCATEGORIZED}>Uncategorized</option>
+                    {categories.map((cat) => (
+                      <option key={cat.id} value={cat.id}>
+                        {cat.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex justify-end gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={closeMoveModal}
+                    disabled={moveModalSaving}
+                  >
+                    Cancel
+                  </Button>
+                  <Button type="submit" disabled={moveModalSaving}>
+                    {moveModalSaving ? "Moving..." : "Move"}
+                  </Button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {renameDeckModalOpen && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+            onClick={closeRenameDeckModal}
+          >
+            <div
+              className="bg-background rounded-lg shadow-lg p-6 w-full max-w-sm mx-4"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h2 className="text-lg font-semibold mb-4">Rename deck</h2>
+              <form onSubmit={handleRenameDeck} className="space-y-4">
+                <Input
+                  placeholder="Deck name"
+                  value={renameDeckName}
+                  onChange={(e) => setRenameDeckName(e.target.value)}
+                  disabled={renameDeckSaving}
+                  autoFocus
+                  className="w-full"
+                />
+                <div className="flex justify-end gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={closeRenameDeckModal}
+                    disabled={renameDeckSaving}
+                  >
+                    Cancel
+                  </Button>
+                  <Button type="submit" disabled={!renameDeckName.trim() || renameDeckSaving}>
+                    {renameDeckSaving ? "Saving..." : "Save"}
+                  </Button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {deleteDeckConfirmId && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+            onClick={() => { setDeleteDeckConfirmId(null); setDeleteDeckError(null); }}
+          >
+            <div
+              className="bg-background rounded-lg shadow-lg p-6 w-full max-w-sm mx-4"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h2 className="text-lg font-semibold mb-2">Delete this deck?</h2>
+              <p className="text-sm text-muted-foreground mb-4">
+                This will permanently delete the deck and all its flashcards.
+              </p>
+              {deleteDeckError && (
+                <p className="text-sm text-destructive mb-4">{deleteDeckError}</p>
+              )}
+              <div className="flex justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setDeleteDeckConfirmId(null)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="destructive"
+                  onClick={handleDeleteDeck}
                 >
                   Delete
                 </Button>
@@ -645,7 +870,55 @@ export default function DecksPage() {
                               </span>
                             </div>
                           </div>
-                          <div className="shrink-0 max-mobile:opacity-60">
+                          <div className="shrink-0 flex items-center gap-0.5 max-mobile:opacity-60">
+                            <div className="relative">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onPointerDown={(e) => e.stopPropagation()}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  e.preventDefault();
+                                  setOpenDeckMenuId((prev) => (prev === deck.id ? null : deck.id));
+                                }}
+                                className="text-muted-foreground hover:text-foreground"
+                                aria-label="Deck actions"
+                                aria-expanded={openDeckMenuId === deck.id}
+                              >
+                                <MoreVertical className="size-4" />
+                              </Button>
+                              {openDeckMenuId === deck.id && (
+                                <div
+                                  className="absolute right-0 top-full mt-1 z-50 min-w-[180px] rounded-lg border border-border bg-background py-1 shadow-lg"
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  <button
+                                    type="button"
+                                    className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm hover:bg-muted max-mobile:min-h-[44px] max-mobile:py-3"
+                                    onClick={() => openMoveModal(deck.id)}
+                                  >
+                                    <FolderInput className="size-4 shrink-0" />
+                                    Move to category
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm hover:bg-muted max-mobile:min-h-[44px] max-mobile:py-3"
+                                    onClick={() => openRenameDeckModal(deck.id)}
+                                  >
+                                    <Pencil className="size-4 shrink-0" />
+                                    Rename deck
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-destructive hover:bg-destructive/10 max-mobile:min-h-[44px] max-mobile:py-3"
+                                    onClick={() => openDeleteDeckConfirm(deck.id)}
+                                  >
+                                    <Trash2 className="size-4 shrink-0" />
+                                    Delete deck
+                                  </button>
+                                </div>
+                              )}
+                            </div>
                             <Button
                               variant="ghost"
                               size="icon"

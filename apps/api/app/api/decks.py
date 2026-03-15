@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.models import Category, Deck, Flashcard, Review
-from app.schemas.deck import DeckCreate, DeckResponse, DeckUpdate
+from app.schemas.deck import DeckCreate, DeckMoveRequest, DeckResponse, DeckUpdate
 from app.schemas.flashcard import FlashcardResponse
 
 router = APIRouter(prefix="/decks", tags=["decks"])
@@ -135,6 +135,41 @@ async def update_deck(
     await db.flush()
     await db.refresh(deck)
 
+    return DeckResponse.model_validate(deck)
+
+
+@router.patch("/{deck_id}/move", response_model=DeckResponse)
+async def move_deck(
+    deck_id: str,
+    payload: DeckMoveRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Move a deck to a category."""
+    result = await db.execute(select(Deck).where(Deck.id == deck_id))
+    deck = result.scalar_one_or_none()
+    if not deck:
+        raise HTTPException(status_code=404, detail="Deck not found")
+
+    raw = payload.category_id
+    category_id = (raw.strip() if raw else None) or None
+    if not category_id:
+        deck.category_id = None
+    else:
+        cat_result = await db.execute(
+            select(Category).where(
+                Category.id == category_id,
+                Category.user_id == deck.user_id,
+            )
+        )
+        if cat_result.scalar_one_or_none() is None:
+            raise HTTPException(
+                status_code=403,
+                detail="Category not found or does not belong to you",
+            )
+        deck.category_id = category_id
+
+    await db.flush()
+    await db.refresh(deck)
     return DeckResponse.model_validate(deck)
 
 

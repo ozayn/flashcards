@@ -20,6 +20,10 @@ class DeckUpdate(BaseModel):
     category_id: Optional[str] = None
 
 
+class DeckMoveRequest(BaseModel):
+    category_id: Optional[str] = Field(None, description="Target category ID, or null for Uncategorized")
+
+
 class DeckCreate(BaseModel):
     user_id: str = Field(..., description="User ID")
     name: str = Field(..., min_length=1, max_length=255)

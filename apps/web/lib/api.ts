@@ -127,6 +127,16 @@ export async function createDeck(data: {
   }
 }
 
+export async function moveDeckToCategory(deckId: string, categoryId: string | null) {
+  const res = await fetch(`${API_BASE}/decks/${deckId}/move`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ category_id: categoryId }),
+  });
+  if (!res.ok) throw new Error("Failed to move deck");
+  return res.json();
+}
+
 export async function updateDeck(
   deckId: string,
   data: { name?: string; description?: string; archived?: boolean; category_id?: string | null }
