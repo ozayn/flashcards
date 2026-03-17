@@ -501,11 +501,25 @@ Example acceptable cards (passage-specific):
 - Where is the theta rhythm coordinated according to the text?
 - What device recorded the intracranial activity?
 
-ANSWER FORMAT: Every answer MUST include a concise definition and a concrete example (from the passage when available). Do NOT generate definition-only answers. Each answer: 2–3 sentences max."""
+ANSWER FORMAT: Format each answer as:
+Definition:
+<one concise sentence>
+
+Example:
+<one concrete example from the passage when available>
+
+Do NOT combine into a single paragraph. 2–3 sentences max."""
     else:
         grounding_block = f"""{RELAXED_TEXT_GROUNDING_RULES}
 
-ANSWER FORMAT: Every answer MUST include a concise definition and a concrete example. Do NOT generate definition-only answers. Each answer: 2–3 sentences max."""
+ANSWER FORMAT: Format each answer as:
+Definition:
+<one concise sentence>
+
+Example:
+<one concrete example>
+
+Do NOT combine into a single paragraph. 2–3 sentences max."""
 
     prompt = f"""You are generating flashcards from the following text.
 
@@ -564,9 +578,15 @@ Rules:
 - Each question must be exactly in the style:
   'Who was [Name]?'
 - Each answer MUST include: (1) a concise definition of who they are, and (2) a concrete example (notable work, achievement, or contribution).
-- Format: "<1 sentence definition> Example: <concrete example>"
-- Do NOT generate definition-only answers. Every answer must include an example.
-- Each answer: 2–3 sentences max.
+- Format the answer exactly as:
+
+Definition:
+<one concise sentence>
+
+Example:
+<one concrete example>
+
+- Do NOT combine into a single paragraph. Every answer must include an example. 2–3 sentences max.
 - Focus on why the person is notable
 - Do not ask abstract or conceptual questions
 - Do not ask 'Why' or 'How' questions
@@ -575,7 +595,12 @@ Rules:
 
 Example:
 Q: Who was Henri Cartier-Bresson?
-A: A French photographer considered a pioneer of street photography and known for the idea of the decisive moment. Example: His photograph "Behind the Gare Saint-Lazare" (1932) is one of the most iconic images in the history of photography.
+A:
+Definition:
+A French photographer considered a pioneer of street photography and known for the idea of the decisive moment.
+
+Example:
+His photograph "Behind the Gare Saint-Lazare" (1932) is one of the most iconic images in the history of photography.
 
 Return STRICT JSON only.
 
@@ -625,11 +650,25 @@ Example (passage-specific, not generic):
 Bad: What is dopamine? (generic)
 Good: What frequency range defines theta rhythm in the passage? (grounded)
 
-ANSWER FORMAT: Every answer MUST include a concise definition and a concrete example (from the passage when available). Do NOT generate definition-only answers. Each answer: 2–3 sentences max."""
+ANSWER FORMAT: Format each answer as:
+Definition:
+<one concise sentence>
+
+Example:
+<one concrete example from the passage when available>
+
+Do NOT combine into a single paragraph. 2–3 sentences max."""
         else:
             style_instruction = f"""{RELAXED_TEXT_GROUNDING_RULES}
 
-ANSWER FORMAT: Every answer MUST include a concise definition and a concrete example. Do NOT generate definition-only answers. Each answer: 2–3 sentences max."""
+ANSWER FORMAT: Format each answer as:
+Definition:
+<one concise sentence>
+
+Example:
+<one concrete example>
+
+Do NOT combine into a single paragraph. 2–3 sentences max."""
     elif is_vocab:
         vocab_instruction = build_vocab_instruction(topic)
         examples_required = " Examples are REQUIRED in every card." if _topic_wants_examples(topic) else ""
@@ -757,15 +796,27 @@ Use the text only as content for extracting concepts and generating flashcards."
 
 EXAMPLE_FORMAT_REQUIREMENT = """
 ANSWER FORMAT (REQUIRED):
-- Every answer MUST include: (1) a concise definition, and (2) a concrete example.
-- Format: "<1 sentence definition> Example: <1 concrete real-world example>"
-- Do NOT generate answers without an example. If an example is missing, the output is invalid.
+Format the answer exactly as:
+
+Definition:
+<one concise sentence>
+
+Example:
+<one concrete real-world example>
+
+- Do NOT combine definition and example into a single paragraph.
+- Every answer MUST include both definition and example. If an example is missing, the output is invalid.
 - Avoid generic or dictionary-style definitions without examples.
-- Each answer must be no more than 2–3 sentences total.
+- Each answer must be no more than 2–3 sentences total. Trim extra whitespace.
 
 Example:
 Q: What is Confirmation Bias?
-A: The tendency to favor information that confirms existing beliefs. Example: You only read news sources that agree with your opinions."""
+A:
+Definition:
+The tendency to favor information that confirms existing beliefs.
+
+Example:
+You only read news sources that agree with your opinions."""
 
 
 def _topic_wants_examples(topic: str) -> bool:
@@ -892,7 +943,14 @@ async def generate_flashcards(
 - Prefer specific facts, names, events, or individuals over abstract concepts.
 - Prefer questions that start with: Who, What, When, Where.
 - Each question must be exactly: 'Who was [Name]?' for people-list topics.
-- Each answer MUST include a concise definition and a concrete example (notable work, achievement). Do NOT generate definition-only answers. 2–3 sentences max.
+- Format each answer as:
+Definition:
+<one concise sentence>
+
+Example:
+<one concrete example (notable work, achievement)>
+
+Do NOT combine into a single paragraph. 2–3 sentences max.
 - Cards must be directly related to the topic."""
 
                         fallback_prompt = f"""You are generating flashcards for studying notable individuals.
