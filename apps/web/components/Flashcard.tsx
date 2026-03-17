@@ -24,13 +24,13 @@ export function Flashcard({ front, back, className = "" }: FlashcardProps) {
         className="flashcard-inner relative h-full w-full transition-transform duration-500 ease-[cubic-bezier(0.4,0,0.2,1)] [transform-style:preserve-3d]"
         style={{ transform: flipped ? "rotateY(180deg)" : "rotateY(0deg)" }}
       >
-        <div className="flashcard-front [backface-visibility:hidden] absolute inset-0 rounded-xl border border-border bg-card p-6 shadow-sm dark:bg-card">
-          <p className="text-lg font-medium leading-relaxed text-foreground">
+        <div className="flashcard-front [backface-visibility:hidden] absolute inset-0 rounded-2xl border border-border bg-card p-4 shadow-md flex items-center justify-center dark:bg-card">
+          <p className="text-lg font-medium leading-relaxed text-foreground text-center line-clamp-3 overflow-hidden">
             {front}
           </p>
         </div>
-        <div className="flashcard-back [backface-visibility:hidden] absolute inset-0 rounded-xl border border-border bg-card p-6 shadow-sm [transform:rotateY(180deg)] dark:bg-card">
-          <p className="text-lg font-medium leading-relaxed text-foreground">
+        <div className="flashcard-back [backface-visibility:hidden] absolute inset-0 rounded-2xl border border-border bg-card p-4 shadow-md flex items-center justify-center [transform:rotateY(180deg)] dark:bg-card">
+          <p className="text-lg font-medium leading-relaxed text-foreground text-center line-clamp-3 overflow-hidden">
             {back}
           </p>
         </div>

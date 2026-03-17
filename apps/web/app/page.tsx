@@ -52,7 +52,7 @@ export default function LandingPage() {
             <p className="text-sm font-medium text-muted-foreground mb-8">
               Preview
             </p>
-            <div className="relative w-full max-w-sm">
+            <div className="relative w-full max-w-sm mx-auto">
               {DEMO_CARDS.map((card, i) => (
                 <div
                   key={i}
@@ -66,11 +66,11 @@ export default function LandingPage() {
                   <Flashcard
                     front={card.front}
                     back={card.back}
-                    className="aspect-[3/4] min-h-[180px]"
+                    className="aspect-[3/2] w-full rounded-2xl shadow-md"
                   />
                 </div>
               ))}
-              <div className="h-[240px]" />
+              <div className="w-full" style={{ paddingBottom: "calc(66.666% + 24px)" }} />
             </div>
           </div>
         </section>
