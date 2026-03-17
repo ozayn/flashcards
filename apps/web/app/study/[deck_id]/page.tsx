@@ -513,15 +513,12 @@ export default function StudyPage({ params }: StudyPageProps) {
               back={
                 <>
                   <div className="flex-1 min-h-0 flex flex-col items-stretch justify-start w-full overflow-y-auto cursor-pointer">
-                    <p dir="auto" className="text-xl leading-relaxed mt-6 whitespace-pre-line">
-                      {card.answer_short}
-                    </p>
-                    {card.answer_detailed &&
-                      card.answer_detailed.trim() !== card.answer_short.trim() && (
-                        <p dir="auto" className="text-xl leading-relaxed mt-4 text-muted-foreground whitespace-pre-line">
-                          {card.answer_detailed}
-                        </p>
-                      )}
+                    <div dir="auto" className="text-xl leading-relaxed mt-6 whitespace-pre-line">
+                      {card.answer_detailed &&
+                      card.answer_detailed.trim() !== card.answer_short.trim()
+                        ? card.answer_detailed
+                        : card.answer_short}
+                    </div>
                   </div>
                   {mode === "study" && showAnswer && (
                     <div className="flex flex-row gap-2 justify-center flex-wrap shrink-0 w-full" onClick={(e) => e.stopPropagation()}>
