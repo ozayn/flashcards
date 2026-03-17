@@ -478,7 +478,7 @@ export default function StudyPage({ params }: StudyPageProps) {
       </div>
 
       <div className="flex flex-col items-center justify-center min-h-[75vh] flex-1 min-h-0 w-full">
-        <div className="flex-1 min-h-0 min-h-[200px] flex flex-col landscape:flex-row landscape:items-stretch landscape:min-h-0 justify-center gap-2 w-full max-w-4xl mx-auto relative overflow-hidden [perspective:1000px]">
+        <div className="flex-1 min-h-0 min-h-[200px] flex flex-col landscape:flex-row landscape:items-stretch landscape:min-h-0 justify-center items-center gap-2 w-full max-w-4xl mx-auto relative overflow-hidden [perspective:1000px]">
           <Button
             variant="outline"
             size="icon"
@@ -489,12 +489,13 @@ export default function StudyPage({ params }: StudyPageProps) {
           >
             <ChevronLeft className="size-5" />
           </Button>
-          <div
-            onTouchStart={handleTouchStart}
-            onTouchEnd={handleTouchEnd}
-            dir="auto"
-            className="flashcard relative rounded-2xl w-full max-w-xl aspect-[3/4] min-h-[200px] max-h-[70vh] flex-1 min-w-0 order-1 landscape:order-2 touch-pan-y overflow-hidden flex flex-col"
-          >
+          <div className="flex justify-center items-center flex-1 min-w-0 w-full order-1 landscape:order-2 px-2">
+            <div
+              onTouchStart={handleTouchStart}
+              onTouchEnd={handleTouchEnd}
+              dir="auto"
+              className="flashcard relative w-full max-w-2xl aspect-[3/2] rounded-2xl shadow-lg overflow-hidden flex flex-col touch-pan-y"
+            >
             <div className="absolute top-6 right-6 text-sm text-muted-foreground z-10">
               {currentCardIndex + 1} / {flashcards.length}
             </div>
@@ -559,7 +560,8 @@ export default function StudyPage({ params }: StudyPageProps) {
             onFlip={() => setShowAnswer((prev) => !prev)}
             canFlip={canFlip}
           />
-        </div>
+            </div>
+          </div>
 
         <Button
           variant="outline"
