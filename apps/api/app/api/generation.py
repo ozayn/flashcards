@@ -508,7 +508,7 @@ Definition:
 Example:
 <one concrete example from the passage when available>
 
-Do NOT combine into a single paragraph. 2–3 sentences max."""
+Do NOT combine into a single paragraph. Include a blank line between definition and Example. 2–3 sentences max."""
     else:
         grounding_block = f"""{RELAXED_TEXT_GROUNDING_RULES}
 
@@ -519,7 +519,7 @@ Definition:
 Example:
 <one concrete example>
 
-Do NOT combine into a single paragraph. 2–3 sentences max."""
+Do NOT combine into a single paragraph. Include a blank line between definition and Example. 2–3 sentences max."""
 
     prompt = f"""You are generating flashcards from the following text.
 
@@ -586,7 +586,7 @@ Definition:
 Example:
 <one concrete example>
 
-- Do NOT combine into a single paragraph. Every answer must include an example. 2–3 sentences max.
+- Do NOT combine into a single paragraph. Include a blank line between definition and Example. Every answer must include an example. 2–3 sentences max.
 - Focus on why the person is notable
 - Do not ask abstract or conceptual questions
 - Do not ask 'Why' or 'How' questions
@@ -657,7 +657,7 @@ Definition:
 Example:
 <one concrete example from the passage when available>
 
-Do NOT combine into a single paragraph. 2–3 sentences max."""
+Do NOT combine into a single paragraph. Include a blank line between definition and Example. 2–3 sentences max."""
         else:
             style_instruction = f"""{RELAXED_TEXT_GROUNDING_RULES}
 
@@ -668,7 +668,7 @@ Definition:
 Example:
 <one concrete example>
 
-Do NOT combine into a single paragraph. 2–3 sentences max."""
+Do NOT combine into a single paragraph. Include a blank line between definition and Example. 2–3 sentences max."""
     elif is_vocab:
         vocab_instruction = build_vocab_instruction(topic)
         examples_required = " Examples are REQUIRED in every card." if _topic_wants_examples(topic) else ""
@@ -805,6 +805,7 @@ Example:
 <one concrete real-world example>
 
 - Do NOT combine definition and example into a single paragraph.
+- Include a blank line between the definition and the Example: section.
 - Every answer MUST include both definition and example. If an example is missing, the output is invalid.
 - Avoid generic or dictionary-style definitions without examples.
 - Each answer must be no more than 2–3 sentences total. Trim extra whitespace.
@@ -950,7 +951,7 @@ Definition:
 Example:
 <one concrete example (notable work, achievement)>
 
-Do NOT combine into a single paragraph. 2–3 sentences max.
+Do NOT combine into a single paragraph. Include a blank line between definition and Example. 2–3 sentences max.
 - Cards must be directly related to the topic."""
 
                         fallback_prompt = f"""You are generating flashcards for studying notable individuals.
