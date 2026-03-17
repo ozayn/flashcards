@@ -516,11 +516,12 @@ export default function StudyPage({ params }: StudyPageProps) {
                     <p dir="auto" className="text-xl leading-relaxed mt-6">
                       {card.answer_short}
                     </p>
-                    {card.answer_detailed && (
-                      <p dir="auto" className="text-xl leading-relaxed mt-4 text-muted-foreground">
-                        {card.answer_detailed}
-                      </p>
-                    )}
+                    {card.answer_detailed &&
+                      card.answer_detailed.trim() !== card.answer_short.trim() && (
+                        <p dir="auto" className="text-xl leading-relaxed mt-4 text-muted-foreground">
+                          {card.answer_detailed}
+                        </p>
+                      )}
                   </div>
                   {mode === "study" && showAnswer && (
                     <div className="flex flex-row gap-2 justify-center flex-wrap shrink-0 w-full" onClick={(e) => e.stopPropagation()}>
