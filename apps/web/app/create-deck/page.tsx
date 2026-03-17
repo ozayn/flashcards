@@ -16,7 +16,7 @@ import { getUsers, createDeck, generateFlashcards } from "@/lib/api";
 import { getStoredUserId } from "@/components/user-selector";
 import PageContainer from "@/components/layout/page-container";
 
-const CARD_COUNT_OPTIONS = [5, 10, 20, 26, 50] as const;
+const CARD_COUNT_OPTIONS = [5, 10, 20, 30, 40, 50] as const;
 
 function CreateDeckForm() {
   const [name, setName] = useState("");

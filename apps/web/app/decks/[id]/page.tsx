@@ -51,7 +51,7 @@ export default function DeckPage({ params }: DeckPageProps) {
   const [genText, setGenText] = useState("");
   const [cardCount, setCardCount] = useState(10);
   const GEN_TEXT_MAX_LENGTH = 10000;
-  const CARD_COUNT_OPTIONS = [5, 10, 20, 26, 50] as const;
+  const CARD_COUNT_OPTIONS = [5, 10, 20, 30, 40, 50] as const;
 
   useEffect(() => {
     let cancelled = false;
