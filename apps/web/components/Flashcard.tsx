@@ -16,7 +16,7 @@ export function Flashcard({ front, back, className = "" }: FlashcardProps) {
 
   return (
     <div
-      className={`flashcard cursor-pointer select-none [perspective:1200px] ${className}`}
+      className={`flashcard cursor-pointer select-none [perspective:1200px] transition-all duration-200 ease-out hover:-translate-y-1 hover:shadow-xl hover:rotate-[0.3deg] active:translate-y-0 active:shadow-md ${className}`}
       onMouseEnter={() => setFlipped(true)}
       onMouseLeave={() => setFlipped(false)}
     >

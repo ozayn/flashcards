@@ -139,19 +139,25 @@ export function UserSelector() {
           <div className="absolute right-0 top-full z-50 mt-1 w-64 rounded-md border border-border bg-popover p-3 shadow-lg">
             <form onSubmit={handleAddUser} className="space-y-2">
               <input
+                id="add-user-email"
+                name="email"
                 type="email"
                 placeholder="Email"
                 value={addEmail}
                 onChange={(e) => setAddEmail(e.target.value)}
                 required
+                autoComplete="email"
                 className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm"
               />
               <input
+                id="add-user-name"
+                name="name"
                 type="text"
                 placeholder="Name"
                 value={addName}
                 onChange={(e) => setAddName(e.target.value)}
                 required
+                autoComplete="name"
                 className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm"
               />
               {addError && <p className="text-xs text-destructive">{addError}</p>}
@@ -217,19 +223,25 @@ export function UserSelector() {
               <div className="p-2">
                 <form onSubmit={handleAddUser} className="space-y-2">
                   <input
+                    id="add-user-email-dropdown"
+                    name="email"
                     type="email"
                     placeholder="Email"
                     value={addEmail}
                     onChange={(e) => setAddEmail(e.target.value)}
                     required
+                    autoComplete="email"
                     className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm"
                   />
                   <input
+                    id="add-user-name-dropdown"
+                    name="name"
                     type="text"
                     placeholder="Name"
                     value={addName}
                     onChange={(e) => setAddName(e.target.value)}
                     required
+                    autoComplete="name"
                     className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm"
                   />
                   {addError && <p className="text-xs text-destructive">{addError}</p>}

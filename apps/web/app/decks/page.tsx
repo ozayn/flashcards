@@ -502,11 +502,14 @@ export default function DecksPage() {
               <h2 className="text-lg font-semibold mb-4">New Category</h2>
               <form onSubmit={handleCreateCategory} className="space-y-4">
                 <Input
+                  id="new-category-name"
+                  name="categoryName"
                   placeholder="Category name"
                   value={categoryName}
                   onChange={(e) => setCategoryName(e.target.value)}
                   disabled={categoryCreating}
                   autoFocus
+                  autoComplete="off"
                   className="w-full"
                 />
                 <div className="flex justify-end gap-2">
@@ -539,11 +542,14 @@ export default function DecksPage() {
               <h2 className="text-lg font-semibold mb-4">Rename Category</h2>
               <form onSubmit={handleRenameCategory} className="space-y-4">
                 <Input
+                  id="rename-category-name"
+                  name="categoryName"
                   placeholder="Category name"
                   value={renameCategoryName}
                   onChange={(e) => setRenameCategoryName(e.target.value)}
                   disabled={renameSaving}
                   autoFocus
+                  autoComplete="off"
                   className="w-full"
                 />
                 <div className="flex justify-end gap-2">
@@ -662,11 +668,14 @@ export default function DecksPage() {
               <h2 className="text-lg font-semibold mb-4">Rename deck</h2>
               <form onSubmit={handleRenameDeck} className="space-y-4">
                 <Input
+                  id="rename-deck-name"
+                  name="deckName"
                   placeholder="Deck name"
                   value={renameDeckName}
                   onChange={(e) => setRenameDeckName(e.target.value)}
                   disabled={renameDeckSaving}
                   autoFocus
+                  autoComplete="off"
                   className="w-full"
                 />
                 <div className="flex justify-end gap-2">

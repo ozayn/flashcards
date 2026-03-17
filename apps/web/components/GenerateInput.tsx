@@ -48,10 +48,13 @@ export function GenerateInput({
     <form onSubmit={handleSubmit} className="w-full max-w-2xl mx-auto space-y-4">
       <div className="relative">
         <textarea
+          id="generate-topic"
+          name="topic"
           value={value}
           onChange={(e) => setValue(e.target.value)}
           placeholder={placeholder}
           rows={3}
+          autoComplete="off"
           className="w-full rounded-xl border border-border bg-background px-5 py-4 text-base placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 resize-none max-mobile:rounded-[10px] max-mobile:px-3.5 max-mobile:py-3 max-mobile:text-base max-mobile:min-h-[120px]"
         />
       </div>

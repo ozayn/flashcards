@@ -494,7 +494,7 @@ export default function StudyPage({ params }: StudyPageProps) {
               onTouchStart={handleTouchStart}
               onTouchEnd={handleTouchEnd}
               dir="auto"
-              className="flashcard relative w-full max-w-2xl aspect-[3/2] rounded-2xl shadow-lg overflow-hidden flex flex-col touch-pan-y"
+              className="flashcard relative w-full max-w-2xl aspect-[3/2] rounded-2xl shadow-lg overflow-hidden flex flex-col touch-pan-y transition-all duration-200 ease-out hover:-translate-y-1 hover:shadow-xl hover:rotate-[0.3deg] active:translate-y-0 active:shadow-md"
             >
             <div className="absolute top-6 right-6 text-sm text-muted-foreground z-10">
               {currentCardIndex + 1} / {flashcards.length}

@@ -201,6 +201,8 @@ export default function DeckPage({ params }: DeckPageProps) {
             <div className="flex flex-col gap-2 mb-4">
               {editingTitle ? (
                 <input
+                  id="deck-title"
+                  name="deckTitle"
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
                   onBlur={async () => {
@@ -240,6 +242,8 @@ export default function DeckPage({ params }: DeckPageProps) {
               )}
               {editingDescription ? (
                 <textarea
+                  id="deck-description"
+                  name="deckDescription"
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   onBlur={async () => {
@@ -304,12 +308,17 @@ export default function DeckPage({ params }: DeckPageProps) {
               </div>
               <div className="space-y-2">
                 <Input
+                  id="gen-topic"
+                  name="genTopic"
                   placeholder="Topic (e.g. Spanish vocabulary)"
                   value={genTopic}
                   onChange={(e) => setGenTopic(e.target.value)}
+                  autoComplete="off"
                   className="w-full"
                 />
                 <textarea
+                  id="gen-text"
+                  name="genText"
                   placeholder="Or paste text to generate from..."
                   value={genText}
                   onChange={(e) => setGenText(e.target.value)}

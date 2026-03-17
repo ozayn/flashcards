@@ -117,6 +117,7 @@ function CreateDeckForm() {
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   required
+                  autoComplete="off"
                 />
               </div>
 
