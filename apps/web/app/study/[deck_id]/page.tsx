@@ -400,13 +400,13 @@ export default function StudyPage({ params }: StudyPageProps) {
             ← Back
           </Link>
           <div className="flex items-center gap-2">
-            <div className="flex items-center gap-1 rounded-lg border border-border p-0.5 bg-muted/30">
+            <div className="flex items-center gap-1 rounded-lg border border-black/20 dark:border-white/10 p-0.5 bg-muted/30">
               <button
                 type="button"
                 onClick={() => setMode("study")}
                 className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
                   mode === "study"
-                    ? "bg-background shadow-sm text-foreground"
+                    ? "bg-mondrian-blue/15 dark:bg-mondrian-blue/20 text-foreground shadow-sm ring-1 ring-mondrian-blue/30 dark:ring-mondrian-blue/40"
                     : "text-muted-foreground hover:text-foreground"
                 }`}
               >
@@ -417,7 +417,7 @@ export default function StudyPage({ params }: StudyPageProps) {
                 onClick={() => setMode("explore")}
                 className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
                   mode === "explore"
-                    ? "bg-background shadow-sm text-foreground"
+                    ? "bg-mondrian-blue/15 dark:bg-mondrian-blue/20 text-foreground shadow-sm ring-1 ring-mondrian-blue/30 dark:ring-mondrian-blue/40"
                     : "text-muted-foreground hover:text-foreground"
                 }`}
               >
@@ -525,23 +525,23 @@ export default function StudyPage({ params }: StudyPageProps) {
                   {mode === "study" && showAnswer && (
                     <div className="flex flex-row gap-2 justify-center flex-wrap shrink-0 w-full" onClick={(e) => e.stopPropagation()}>
                       <Button
-                        variant="destructive"
+                        variant="ghost"
                         onClick={() => rateCard("again")}
-                        className="shrink-0"
+                        className="shrink-0 !bg-mondrian-red !text-white hover:!bg-mondrian-red/90 border-0"
                       >
                         Again
                       </Button>
                       <Button
-                        variant="secondary"
+                        variant="ghost"
                         onClick={() => rateCard("hard")}
-                        className="shrink-0"
+                        className="shrink-0 !bg-mondrian-yellow !text-mondrian-black hover:!bg-mondrian-yellow/90 border-0"
                       >
                         Hard
                       </Button>
                       <Button
-                        variant="outline"
+                        variant="ghost"
                         onClick={() => rateCard("good")}
-                        className="shrink-0 bg-muted/80 hover:bg-muted dark:bg-muted/50 dark:hover:bg-muted/70"
+                        className="shrink-0 !bg-mondrian-blue !text-white hover:!bg-mondrian-blue/90 border-0"
                       >
                         Good
                       </Button>

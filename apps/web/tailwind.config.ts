@@ -51,6 +51,12 @@ const config: Config = {
           foreground: "var(--accent-foreground)",
         },
         destructive: "var(--destructive)",
+        mondrian: {
+          red: "#E57373",
+          blue: "#64B5F6",
+          yellow: "#FFD54F",
+          black: "#222222",
+        },
       },
       borderRadius: {
         lg: "var(--radius)",

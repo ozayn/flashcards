@@ -107,6 +107,11 @@
     --sidebar-accent-foreground: oklch(0.205 0 0);
     --sidebar-border: oklch(0.922 0 0);
     --sidebar-ring: oklch(0.708 0 0);
+    /* Mondrian-inspired accents (subtle) */
+    --mondrian-red: #E57373;
+    --mondrian-blue: #64B5F6;
+    --mondrian-yellow: #FFD54F;
+    --mondrian-black: #222222;
   }
   .dark {
     --background: oklch(0.145 0 0);
