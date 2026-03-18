@@ -1557,27 +1557,17 @@ def _is_formula_topic(topic: str) -> bool:
         return False
     t = topic.lower()
 
-    # Must contain a math/science domain signal
-    math_signals = [
-        "math", "physics", "equation", "calculus",
-        "algebra", "probability", "statistics"
-    ]
-
     formula_words = ["formula", "formulas", "equation", "equations"]
-
-    has_formula_word = any(k in t for k in formula_words)
-    has_math_context = any(k in t for k in math_signals)
-
-    non_math_topics = [
+    non_formula_topics = [
         "fallacy", "fallacies",
         "philosophy", "logic",
         "cognitive bias", "biases"
     ]
 
-    if any(k in t for k in non_math_topics):
+    if any(k in t for k in non_formula_topics):
         return False
 
-    return has_formula_word and has_math_context
+    return any(k in t for k in formula_words)
 
 
 LIGHTWEIGHT_KEYWORDS = ["simple", "basic", "intro", "easy", "quick", "concepts"]
