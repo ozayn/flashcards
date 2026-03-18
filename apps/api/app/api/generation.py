@@ -82,6 +82,14 @@ def _normalize_question(q: str) -> str:
     return s.strip()
 
 
+def normalize_latex(text: str) -> str:
+    """Convert single $...$ to $$...$$ for consistent block-math rendering. Does not touch existing $$...$$."""
+    if not text:
+        return text
+    # (?<!\$) ensures we don't match $ that is part of $$ (opening); (?!\$) ensures we don't match $ that is part of $$ (closing)
+    return re.sub(r"(?<!\$)\$(?!\$)(.*?)\$(?!\$)", r"$$\1$$", text)
+
+
 def _evidence_matches_passage(evidence: str, passage: str) -> bool:
     """Return True if evidence appears in passage (exact or normalized substring match)."""
     if not evidence or not passage:
@@ -392,7 +400,7 @@ def _validate_flashcards_schema(data) -> bool:
 
 
 def _extract_json(text: str) -> dict:
-    """Extract JSON from LLM response. Isolate, parse, validate. No post-processing."""
+    """Extract JSON from LLM response. Isolate, parse, validate. No LaTeX modification - preserve backslashes exactly."""
     raw = text.strip()
 
     json_chunk = _isolate_json_chunk(raw)
@@ -403,6 +411,8 @@ def _extract_json(text: str) -> dict:
     if not _is_balanced_json(json_chunk):
         logger.warning("RAW LLM RESPONSE: %s", raw[:500])
         raise ValueError("LLM response appears truncated")
+
+    logger.warning("RAW BEFORE PARSE: %s", json_chunk[:500])
 
     try:
         data = json.loads(json_chunk)
@@ -431,6 +441,10 @@ def _extract_json(text: str) -> dict:
     if not _validate_flashcards_schema(result):
         logger.warning("RAW LLM RESPONSE: %s", raw[:500])
         raise ValueError("Invalid flashcards schema")
+
+    cards = result.get("flashcards", [])
+    if cards and isinstance(cards[0], dict):
+        logger.warning("AFTER PARSE: %s", cards[0].get("answer_short", ""))
 
     return result
 
@@ -1349,7 +1363,38 @@ def _generate_flashcards_simple(
 ) -> str:
     """Simple generation. Minimal prompt for formula and non-formula topics."""
     lang_instruction = build_language_instruction(topic, language_hint)
-    prompt = f"""Return ONLY valid JSON.
+
+    if num_cards == 1 and _is_formula_topic(topic):
+        prompt = f"""Return ONLY valid JSON.
+
+Generate EXACTLY ONE flashcard for the topic: "{topic}"
+
+{lang_instruction}
+
+Rules:
+- Include formulas using LaTeX inside $$...$$
+- Answers must be VERY short (1 line max)
+- Use compact formulas only
+- Each flashcard should test one DIFFERENT concept
+
+Return this exact JSON format:
+{{
+  "flashcards": [
+    {{
+      "question": "<question>",
+      "answer_short": "<formula only or very short explanation>",
+      "answer_detailed": null,
+      "difficulty": "easy"
+    }}
+  ]
+}}
+
+IMPORTANT:
+- Return ONLY ONE flashcard
+- Do NOT return multiple flashcards
+"""
+    else:
+        prompt = f"""Return ONLY valid JSON.
 
 Generate flashcards for the topic: "{topic}"
 
@@ -1359,7 +1404,8 @@ Generate flashcards for the topic: "{topic}"
 
 Rules:
 - Include formulas using LaTeX inside $$...$$
-- Keep answers short and clear
+- Answers must be VERY short (1 line max)
+- Use compact formulas only (no explanations inside formulas)
 - Each flashcard should test one concept
 
 Return this exact JSON format:
@@ -1367,12 +1413,13 @@ Return this exact JSON format:
   "flashcards": [
     {{
       "question": "<question>",
-      "answer_short": "<short explanation with formula if relevant>",
+      "answer_short": "<formula only or very short explanation>",
       "answer_detailed": null,
       "difficulty": "easy"
     }}
   ]
 }}"""
+
     return generate_completion(prompt, skip_cache=skip_cache, max_tokens=max_tokens_override)
 
 
@@ -1553,12 +1600,10 @@ def _topic_wants_examples(topic: str) -> bool:
 
 def _build_count_instruction(num_cards: int) -> str:
     """Build card count instruction for generation prompts."""
-    min_acceptable = max(5, num_cards - 5)
     return f"""CARD COUNT:
 - Aim for {num_cards} flashcards
 - It is acceptable to return between {num_cards - 3} and {num_cards + 3}
 - Do NOT significantly exceed {num_cards}
-- Do NOT return fewer than {min_acceptable}
 - If needed, prioritize the most important concepts first"""
 
 
@@ -1668,22 +1713,58 @@ async def generate_flashcards(
                 topic_str = payload.topic or ""
                 is_vocab = is_vocabulary_topic(topic_str)
 
-                # Formula topics: single simple path, no batching or concept extraction
+                # Formula topics: one card per call with retries (parse failure only)
                 if _is_formula_topic(topic_str):
-                    try:
-                        response_text = _generate_flashcards_simple(
-                            topic_str,
-                            lang_hint,
-                            num_cards=num_cards,
-                            skip_cache=attempt > 0,
-                            max_tokens_override=800,
-                        )
-                        parsed_json = _extract_json(response_text)
-                        break
-                    except ValueError as e:
-                        if attempt < 2:
+                    seen_questions = set()
+                    all_cards = []
+
+                    for i in range(num_cards):
+                        parsed_json = None
+
+                        for attempt in range(3):
+                            try:
+                                response_text = _generate_flashcards_simple(
+                                    topic_str,
+                                    lang_hint,
+                                    num_cards=1,
+                                    skip_cache=(attempt > 0 or i > 0),
+                                    max_tokens_override=400,
+                                )
+
+                                result = _extract_json(response_text)
+                                cards = result.get("flashcards", [])
+
+                                if not cards:
+                                    raise ValueError("No flashcards generated")
+
+                                parsed_json = {"flashcards": cards}
+                                break
+
+                            except Exception:
+                                if attempt == 2:
+                                    raise HTTPException(status_code=503, detail="Failed to generate flashcard")
+
+                        if not parsed_json:
                             continue
-                        raise HTTPException(status_code=503, detail=str(e))
+
+                        cards = parsed_json.get("flashcards", [])
+                        if not cards:
+                            continue
+
+                        card = cards[0]  # CRITICAL: force 1 card only
+
+                        q = card.get("question", "").strip().lower()
+                        if not q or q in seen_questions:
+                            continue
+
+                        seen_questions.add(q)
+                        all_cards.append(card)
+
+                    if len(all_cards) == 0:
+                        raise HTTPException(status_code=503, detail="No flashcards generated")
+
+                    parsed_json = {"flashcards": all_cards}
+                    break
 
                 # Use simple mode for non-formula topics OR lightweight formula topics (e.g. "basic formulas", "intro calculus")
                 is_lightweight_formula = (
@@ -2079,6 +2160,10 @@ async def generate_flashcards(
         cards: list = parsed_json["flashcards"]
         logger.info("Generated %d candidate cards", len(cards))
 
+        # Accept partial results - only fail when we have zero cards (never fail for len(cards) < num_cards)
+        if not cards:
+            raise HTTPException(status_code=503, detail="No flashcards generated")
+
         topic_str = (payload.topic or "").strip()
 
         # Grounding check: when text mode and strict_text_only, filter out unsupported cards
@@ -2127,6 +2212,7 @@ async def generate_flashcards(
             difficulty = DIFFICULTY_TO_INT[difficulty_str]
 
             answer_short = str(answer_short or "")[:1000]
+            answer_short = normalize_latex(answer_short)
             if answer_detailed:
                 answer_detailed = str(answer_detailed)[:10000]
 
@@ -2140,6 +2226,9 @@ async def generate_flashcards(
             )
             db.add(flashcard)
             created += 1
+
+        if created == 0:
+            raise HTTPException(status_code=503, detail="No flashcards generated")
 
         deck.generation_status = GenerationStatus.completed.value
         await db.flush()

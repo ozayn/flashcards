@@ -1,48 +1,50 @@
 "use client";
 
-import Latex from "react-latex-next";
-import "katex/dist/katex.min.css";
+import { BlockMath } from "react-katex";
 
 type Props = {
   text: string;
   className?: string;
 };
 
-/** Remove \\ and \\newline from display-mode formulas (they have no effect and cause KaTeX warnings). */
-function stripDisplayModeLineBreaks(text: string): string {
-  if (!text.includes("$$")) return text;
-  return text.replace(/\$\$([\s\S]*?)\$\$/g, (_, formula) => {
-    const cleaned = formula
-      .replace(/\\\\/g, " ")
-      .replace(/\\newline\s*/g, " ")
-      .replace(/\s+/g, " ")
-      .trim();
-    return `$$${cleaned}$$`;
+/** Render text with $$...$$ as block math. No modification of formula content - backslashes preserved. */
+function renderMixed(text: string) {
+  const parts = text.split(/(\$\$[\s\S]*?\$\$)/);
+  return parts.map((part, i) => {
+    if (part.startsWith("$$")) {
+      const math = part.replace(/\$\$/g, "").trim();
+      return (
+        <span key={i} className="katex-block overflow-visible my-2">
+          <BlockMath
+            math={math}
+            renderError={(err) => (
+              <span className="text-destructive text-sm" title={err.message}>
+                {part}
+              </span>
+            )}
+          />
+        </span>
+      );
+    }
+    return <span key={i}>{part}</span>;
   });
 }
 
 export default function FormattedText({ text, className }: Props) {
   if (!text) return null;
 
-  const cleaned = stripDisplayModeLineBreaks(text);
+  console.log("RENDER INPUT:", text);
 
   try {
     return (
       <div className={className ? `whitespace-pre-line ${className}` : "whitespace-pre-line"} dir="auto">
-        <Latex
-          delimiters={[
-            { left: "$$", right: "$$", display: true },
-            { left: "$", right: "$", display: false },
-          ]}
-        >
-          {cleaned}
-        </Latex>
+        {renderMixed(text)}
       </div>
     );
   } catch {
     return (
       <div className={className ? `whitespace-pre-line ${className}` : "whitespace-pre-line"} dir="auto">
-        {cleaned}
+        {text}
       </div>
     );
   }

@@ -20,6 +20,7 @@
     "next": "14.2.35",
     "react": "^18",
     "react-dom": "^18",
+    "react-katex": "^3.1.0",
     "react-latex-next": "^3.0.0",
     "react-swipeable": "^7.0.2",
     "shadcn": "^4.0.2",
