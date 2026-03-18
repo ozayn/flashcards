@@ -82,74 +82,6 @@ def _normalize_question(q: str) -> str:
     return s.strip()
 
 
-# LaTeX commands that need escaping in JSON (single \ -> \\)
-_LATEX_ESCAPE_COMMANDS = (
-    "frac", "sum", "int", "sqrt", "alpha", "beta", "gamma", "theta", "eta",
-    "pi", "cdot", "cap", "cup", "log", "exp", "sigma", "mu", "lambda",
-    "partial", "nabla", "times", "pm", "leq", "geq",
-)
-
-# LaTeX commands that indicate raw formula content (without $ delimiters)
-_RAW_LATEX_PATTERNS = (
-    r"\\frac",
-    r"\\sum",
-    r"\\int",
-    r"\\sqrt",
-    r"\\alpha",
-    r"\\beta",
-    r"\\gamma",
-    r"\\theta",
-    r"\\pi",
-    r"\\cap",
-    r"\\cup",
-    r"\\cdot",
-)
-
-
-def _normalize_formula_answer(text: str) -> str:
-    """Wrap raw LaTeX in $$...$$ when answer contains formula commands but no delimiters."""
-    if not text or not isinstance(text, str):
-        return text
-    s = text.strip()
-    if not s:
-        return text
-    # Already has LaTeX delimiters - leave as is
-    if "$" in s:
-        return text
-    # Check for raw LaTeX commands
-    has_raw = any(re.search(p, s) for p in _RAW_LATEX_PATTERNS)
-    if not has_raw:
-        return text
-    # Try to split: explanation before last sentence boundary, formula after
-    # Look for ". " or ".\n" before the first LaTeX command
-    first_cmd = -1
-    for p in _RAW_LATEX_PATTERNS:
-        m = re.search(p, s)
-        if m and (first_cmd < 0 or m.start() < first_cmd):
-            first_cmd = m.start()
-    if first_cmd < 0:
-        return text
-    # Find last sentence end (". " or ".\n") before the formula
-    before_formula = s[:first_cmd]
-    last_period = max(
-        before_formula.rfind(". "),
-        before_formula.rfind(".\n"),
-    )
-    if last_period >= 0:
-        explanation = s[: last_period + 1].strip()
-        formula_part = s[last_period + 1 :].strip()
-    else:
-        explanation = ""
-        formula_part = s
-    # Ensure formula part is wrapped
-    formula_part = formula_part.strip()
-    if formula_part and not formula_part.startswith("$$"):
-        formula_part = f"$${formula_part}$$"
-    if explanation and formula_part:
-        return f"{explanation}\n\n{formula_part}"
-    return formula_part if formula_part else text
-
-
 def _evidence_matches_passage(evidence: str, passage: str) -> bool:
     """Return True if evidence appears in passage (exact or normalized substring match)."""
     if not evidence or not passage:
@@ -406,123 +338,6 @@ def _extract_first_json(text: str):
     return None
 
 
-# Flexible formula pattern: captures across lines, allows extra spaces
-_FORMULA_CAPTURE = r"\$\$\s*([\s\S]*?)\s*\$\$"
-
-# Pseudo-LaTeX words to fix (plain text -> proper LaTeX). Order matters: more specific first.
-_PSEUDO_LATEX_REPLACEMENTS: list[tuple[str, str]] = [
-    ("sigma1", r"\sigma_1"),
-    ("sigma2", r"\sigma_2"),
-    ("sigmax", r"\sigma_x"),
-    ("sigmay", r"\sigma_y"),
-    ("sigma", r"\sigma"),
-    ("frac", r"\frac"),
-    ("sqrt", r"\sqrt"),
-    ("pm", r"\pm"),
-    ("left", r"\left"),
-    ("right", r"\right"),
-    ("lambda", r"\lambda"),
-    ("alpha", r"\alpha"),
-    ("beta", r"\beta"),
-    ("theta", r"\theta"),
-    ("eta", r"\eta"),
-    ("cdot", r"\cdot"),
-    ("sum", r"\sum"),
-    ("int", r"\int"),
-    ("mu", r"\mu"),
-]
-
-
-def _repair_pseudo_latex(text: str) -> str:
-    """Fix pseudo-LaTeX (plain words) to proper LaTeX inside $$...$$ blocks."""
-    if "$$" not in text:
-        return text
-
-    def _fix_formula(m: re.Match) -> str:
-        formula = m.group(1)
-        # "hat <var>" -> "\hat{<var>}" (valid LaTeX with braces)
-        formula = re.sub(r"\bhat\s+([a-zA-Z][a-zA-Z0-9_]*)", r"\\hat{\1}", formula)
-        # ||x|| -> \|x\|
-        formula = re.sub(r"\|\|([^\|]+)\|\|", r"\\|\1\\|", formula)
-        # fracP(X|C) -> \frac{P(X|C)}{P(C)}
-        formula = re.sub(r"fracP\(([^|]*)\|([^)]*)\)", r"\\frac{P(\1|\2)}{P(\2)}", formula)
-        # Greek letters: match when followed by _, {, (, space, or end (e.g. alpha_j, mu_{c(i)})
-        _GREEK = ("alpha", "beta", "theta", "eta", "sigma", "mu")
-        for plain, latex in _PSEUDO_LATEX_REPLACEMENTS:
-            repl = latex.replace("\\", "\\\\")  # escape for re.sub replacement
-            if plain in _GREEK:
-                formula = re.sub(rf"(?<!\\){re.escape(plain)}(?=\s|_|\{{|\(|$)", repl, formula)
-            else:
-                formula = re.sub(rf"(?<!\\){re.escape(plain)}(?!\w)", repl, formula)
-        return f"$${formula}$$"
-
-    return re.sub(r"\$\$([\s\S]*?)\$\$", _fix_formula, text)
-
-
-def _repair_unescaped_latex_json(text: str) -> tuple[str, bool]:
-    """Fix unescaped LaTeX backslashes in JSON strings. Returns (repaired_text, changed)."""
-    pattern = (
-        r"(?<!\\)\\("
-        + "|".join(re.escape(c) for c in _LATEX_ESCAPE_COMMANDS)
-        + r")(?=[^a-zA-Z]|$)"
-    )
-    repaired = re.sub(pattern, r"\\\\\1", text)
-    return (repaired, repaired != text)
-
-
-def _repair_bare_formula_json(text: str) -> str:
-    """Fix LLM output where formula is outside answer_short. Handles multiple malformed patterns."""
-
-    def _normalize_formula(raw: str) -> str:
-        """Trim whitespace, collapse to single-line, wrap in $$...$$."""
-        s = raw.strip()
-        if s.startswith("$$") and s.endswith("$$"):
-            s = s[2:-2].strip()
-        s = re.sub(r"\s+", " ", s).strip()
-        return f"$${s}$$" if s else ""
-
-    def _replacer(match) -> str:
-        answer_content = match.group(1)
-        formula_raw = match.group(2)
-        if "$$" in answer_content:
-            return match.group(0)
-        formula = _normalize_formula(formula_raw)
-        if not formula or formula in answer_content:
-            return match.group(0)
-        return f'"answer_short": "{answer_content}\\n\\n{formula}",'
-
-    # Case 1: Bare $$ block (multi-line or spaced inline)
-    text = re.sub(
-        rf'"answer_short":\s*"([^"]*)"\s*,\s*{_FORMULA_CAPTURE}',
-        _replacer,
-        text,
-    )
-
-    # Case 2: Quoted formula as separate field
-    text = re.sub(
-        rf'"answer_short":\s*"([^"]*)"\s*,\s*"{_FORMULA_CAPTURE}"',
-        _replacer,
-        text,
-    )
-
-    # Case 4: "formula:" prefix (with optional spaces)
-    text = re.sub(
-        rf'"answer_short":\s*"([^"]*)"\s*,\s*formula\s*:\s*{_FORMULA_CAPTURE}',
-        _replacer,
-        text,
-    )
-
-    # Case 3: Raw LaTeX without $$ (must contain \command, must not start with $$)
-    # Match until newline before , or } to avoid stopping at } inside \frac{...}
-    text = re.sub(
-        r'"answer_short":\s*"([^"]*)"\s*,\s*((?!\$\$)[^\n]*\\[a-zA-Z][^\n]*)\s*(?=\n\s*[,}])',
-        _replacer,
-        text,
-    )
-
-    return text
-
-
 def _is_balanced_json(text: str) -> bool:
     """Check if brackets and braces are properly balanced (ignores content inside strings)."""
     stack: list[str] = []
@@ -577,52 +392,41 @@ def _validate_flashcards_schema(data) -> bool:
 
 
 def _extract_json(text: str) -> dict:
-    """Extract JSON from LLM response. Isolate JSON first, then repair, then parse."""
+    """Extract JSON from LLM response. Isolate, parse, validate. No post-processing."""
     raw = text.strip()
-    # 1. FIRST extract JSON from raw (isolates from "LLM Usage", logs, metadata)
+
     json_chunk = _isolate_json_chunk(raw)
     if not json_chunk:
         logger.warning("RAW LLM RESPONSE: %s", raw[:500])
-        raise ValueError("No valid JSON found in LLM response")
+        raise ValueError("No valid JSON found")
 
     if not _is_balanced_json(json_chunk):
         logger.warning("RAW LLM RESPONSE: %s", raw[:500])
         raise ValueError("LLM response appears truncated")
 
-    # 2. THEN run repair steps on the isolated JSON only
-    text = _repair_bare_formula_json(json_chunk)
-    text = _repair_pseudo_latex(text)
-    before_latex = text
-    text, latex_repaired = _repair_unescaped_latex_json(text)
-    if latex_repaired:
-        logger.info(
-            "Repaired unescaped LaTeX in JSON. Before: %s... After: %s...",
-            (before_latex[:150] + "...") if len(before_latex) > 150 else before_latex,
-            (text[:150] + "...") if len(text) > 150 else text,
-        )
-
-    # 3. THEN parse
     try:
-        data = json.loads(text)
+        data = json.loads(json_chunk)
     except Exception:
-        trimmed = re.sub(r",\s*([}\]])", r"\1", text)
+        fixed = re.sub(r",\s*([}\]])", r"\1", json_chunk)
         try:
-            data = json.loads(trimmed)
+            data = json.loads(fixed)
         except Exception:
             logger.warning("RAW LLM RESPONSE: %s", raw[:500])
             raise ValueError("Failed to parse JSON")
+
     if isinstance(data, list):
         result = {"flashcards": data}
-    elif not isinstance(data, dict):
-        logger.warning("RAW LLM RESPONSE: %s", raw[:500])
-        raise ValueError("Failed to parse JSON")
-    elif "flashcards" in data:
-        result = data
-    elif "cards" in data and isinstance(data["cards"], list):
-        result = {"flashcards": data["cards"]}
+    elif isinstance(data, dict):
+        if "flashcards" in data:
+            result = data
+        elif "cards" in data and isinstance(data["cards"], list):
+            result = {"flashcards": data["cards"]}
+        else:
+            logger.warning("RAW LLM RESPONSE: %s", raw[:500])
+            raise ValueError("Invalid JSON structure")
     else:
         logger.warning("RAW LLM RESPONSE: %s", raw[:500])
-        raise ValueError("Failed to parse JSON")
+        raise ValueError("Invalid JSON structure")
 
     if not _validate_flashcards_schema(result):
         logger.warning("RAW LLM RESPONSE: %s", raw[:500])
@@ -1154,7 +958,6 @@ def _generate_flashcards_from_concepts(
     include_background: bool = False,
     skip_cache: bool = False,
     max_tokens_override: Optional[int] = None,
-    batch_context: Optional[str] = None,
 ) -> str:
     """Stage 2: Generate flashcards from concepts using LLM."""
     concept_list = "\n".join(f"- {c}" for c in concepts)
@@ -1365,7 +1168,6 @@ Return ONLY this JSON structure (no other text):
 
 Rules:
 - One flashcard per concept when you have enough concepts. When fewer concepts, create multiple cards per concept.
-{f'- {batch_context}' if batch_context else ''}
 {json_rules}
 {JSON_CLOSING_CONSTRAINT}"""
 
@@ -1378,7 +1180,6 @@ def _generate_flashcards_from_question_topic(
     num_cards: int = 10,
     skip_cache: bool = False,
     max_tokens_override: Optional[int] = None,
-    batch_context: Optional[str] = None,
 ) -> str:
     """Generate flashcards directly from a question-style topic, skipping concept extraction."""
     lang_instruction = build_language_instruction(topic, language_hint)
@@ -1457,7 +1258,6 @@ Return ONLY this JSON structure (no other text):
 Rules:
 - Output MUST be valid JSON. No plain text, no Q/A format, no markdown outside the JSON.
 - Use double quotes for keys and values. Escape newlines as \\n in strings.
-{f'- {batch_context}' if batch_context else ''}
 {JSON_CLOSING_CONSTRAINT}"""
 
     return generate_completion(prompt, skip_cache=skip_cache, max_tokens=max_tokens_override)
@@ -1625,26 +1425,15 @@ CONTENT_RULES = """CONTENT RULES:
 - Avoid repetition and duplicates
 - Ensure coverage across distinct concepts"""
 
-LATEX_INSTRUCTION = """When including LaTeX:
-- Use $...$ only for very short inline expressions if needed
-- Use $$...$$ for formulas on their own line
-- CRITICAL: Put ALL content (explanation + formula) inside the answer_short string. Never output bare LaTeX outside quoted strings.
+LATEX_INSTRUCTION = """When including formulas:
+- Use $$...$$ for display math
+- Keep formulas clean and readable"""
 
-CRITICAL - JSON escaping:
-- All LaTeX backslashes inside JSON strings MUST be escaped
-- Use double backslashes in JSON: \\\\frac, \\\\sum, \\\\alpha, \\\\beta, \\\\eta, \\\\theta, \\\\cdot, \\\\cap
-- Never output single-backslash LaTeX inside JSON strings
-- Example: "answer_short": "Measures impurity.\\n\\n$$H(y) = \\\\sum_{j=1}^{J} \\\\alpha_j$$"
+FORMULA_INSTRUCTION = """This topic involves formulas.
 
-CRITICAL - LaTeX correctness:
-- Use proper LaTeX commands (\\\\sum, \\\\cdot, \\\\frac, \\\\sqrt), not plain words like 'sum', 'cdot', 'lambda'
-- Ensure formulas compile correctly in LaTeX/KaTeX"""
-
-FORMULA_INSTRUCTION = """This topic involves formulas or quantitative concepts.
-
-- Use LaTeX inside $$...$$
-- Return valid JSON only
-- Keep answers concise"""
+- Include formulas using LaTeX inside $$...$$
+- Keep answers short
+- Return valid JSON only"""
 
 NON_FORMULA_TOPICS = """NON-FORMULA TOPICS:
 - Provide a concise definition (1–2 sentences)
@@ -1655,7 +1444,7 @@ NON_FORMULA_TOPICS = """NON-FORMULA TOPICS:
 def _estimate_tokens_per_card(topic: str) -> int:
     """Estimate tokens per flashcard for truncation safety."""
     if _is_formula_topic(topic):
-        return 180  # Formulas + explanations need more space than plain cards
+        return 120
     return 80
 
 
@@ -1920,22 +1709,13 @@ async def generate_flashcards(
                     # Skip concept extraction for question-style topics; generate directly
                     try:
                         if _is_formula_topic(topic_str):
-                            total_batches = (num_cards + FORMULA_BATCH_SIZE - 1) // FORMULA_BATCH_SIZE
-
                             def _gen_question(batch_size: int, batch_index: int) -> str:
-                                batch_ctx = (
-                                    f"This is batch {batch_index + 1} of {total_batches}. "
-                                    "Generate DIFFERENT flashcards. Do not repeat cards from previous batches."
-                                    if batch_index > 0
-                                    else None
-                                )
                                 return _generate_flashcards_from_question_topic(
                                     topic_str,
                                     lang_hint,
                                     num_cards=batch_size,
                                     skip_cache=(batch_index > 0 or attempt > 0),
                                     max_tokens_override=retry_max_tokens,
-                                    batch_context=batch_ctx,
                                 )
 
                             response_text = _generate_flashcards_formula_batched(
@@ -2070,11 +1850,6 @@ async def generate_flashcards(
 
                                 def _gen_from_concepts(batch_size: int, batch_index: int) -> str:
                                     subset = concept_batches[batch_index] if batch_index < len(concept_batches) else concept_batches[-1]
-                                    batch_ctx = (
-                                        f"This is batch {batch_index + 1}. Generate DIFFERENT flashcards."
-                                        if batch_index > 0
-                                        else None
-                                    )
                                     return _generate_flashcards_from_concepts(
                                         subset,
                                         topic_str,
@@ -2083,7 +1858,6 @@ async def generate_flashcards(
                                         num_cards=batch_size,
                                         skip_cache=(batch_index > 0 or attempt > 0),
                                         max_tokens_override=retry_max_tokens,
-                                        batch_context=batch_ctx,
                                     )
 
                                 response_text = _generate_flashcards_formula_batched(
@@ -2226,16 +2000,7 @@ async def generate_flashcards(
 
                         try:
                             if is_formula:
-                                total_batches = (num_cards + FORMULA_BATCH_SIZE - 1) // FORMULA_BATCH_SIZE
-
                                 def _gen_fallback(batch_size: int, batch_index: int) -> str:
-                                    if batch_index > 0:
-                                        batch_context = (
-                                            f"\n    - This is batch {batch_index + 1} of {total_batches}. "
-                                            "Generate DIFFERENT flashcards. Do not repeat cards from previous batches."
-                                        )
-                                    else:
-                                        batch_context = ""
                                     prompt = f"""{JSON_HEADER}
     You are generating flashcards for studying.
 
@@ -2256,7 +2021,7 @@ async def generate_flashcards(
     {fallback_json}
 
     Rules:
-    - {_build_count_instruction(batch_size)}{batch_context}
+    - {_build_count_instruction(batch_size)}
     - Output MUST be valid JSON. No plain text, no Q/A format. Use double quotes. Escape newlines as \\n.
     {JSON_CLOSING_CONSTRAINT}"""
                                     return generate_completion(
@@ -2350,17 +2115,16 @@ async def generate_flashcards(
                 difficulty_str = "medium"
             difficulty = DIFFICULTY_TO_INT[difficulty_str]
 
-            # Normalize formula answers: wrap raw LaTeX in $$...$$ for proper rendering
-            answer_short = _normalize_formula_answer(str(answer_short))
+            answer_short = str(answer_short or "")[:1000]
             if answer_detailed:
-                answer_detailed = _normalize_formula_answer(str(answer_detailed))
+                answer_detailed = str(answer_detailed)[:10000]
 
             batch_normalized.add(norm)
             flashcard = Flashcard(
                 deck_id=deck_id_str,
                 question=str(question)[:10000],
-                answer_short=answer_short[:1000],
-                answer_detailed=(answer_detailed[:10000] if answer_detailed else None),
+                answer_short=answer_short,
+                answer_detailed=(answer_detailed if answer_detailed else None),
                 difficulty=difficulty,
             )
             db.add(flashcard)
