@@ -1340,18 +1340,6 @@ Rules:
     return generate_completion(prompt, skip_cache=skip_cache, max_tokens=max_tokens_override)
 
 
-SIMPLE_MODE_JSON_SCHEMA = '''{
-  "flashcards": [
-    {
-      "question": "<question>",
-      "answer_short": "<concise definition, 1-2 sentences>",
-      "answer_detailed": null,
-      "difficulty": "easy"
-    }
-  ]
-}'''
-
-
 def _generate_flashcards_simple(
     topic: str,
     language_hint: Optional[str] = None,
@@ -1359,26 +1347,32 @@ def _generate_flashcards_simple(
     skip_cache: bool = False,
     max_tokens_override: Optional[int] = None,
 ) -> str:
-    """Simple generation for non-formula topics. Minimal prompt, no LaTeX, no formula constraints."""
+    """Simple generation. Minimal prompt for formula and non-formula topics."""
     lang_instruction = build_language_instruction(topic, language_hint)
-    prompt = f"""{JSON_HEADER}
-Generate flashcards for studying.
+    prompt = f"""Return ONLY valid JSON.
 
-Topic:
-{topic}
+Generate flashcards for the topic: "{topic}"
 
 {lang_instruction}
 
-{CONTENT_RULES}
-
 {_build_count_instruction(num_cards)}
 
-Return ONLY this JSON structure (no other text):
-{SIMPLE_MODE_JSON_SCHEMA}
-
 Rules:
-- Output MUST be valid JSON. No plain text, no Q/A format. Use double quotes. Escape newlines as \\n.
-{JSON_CLOSING_CONSTRAINT}"""
+- Include formulas using LaTeX inside $$...$$
+- Keep answers short and clear
+- Each flashcard should test one concept
+
+Return this exact JSON format:
+{{
+  "flashcards": [
+    {{
+      "question": "<question>",
+      "answer_short": "<short explanation with formula if relevant>",
+      "answer_detailed": null,
+      "difficulty": "easy"
+    }}
+  ]
+}}"""
     return generate_completion(prompt, skip_cache=skip_cache, max_tokens=max_tokens_override)
 
 
