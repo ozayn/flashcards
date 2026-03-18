@@ -82,12 +82,28 @@ def _normalize_question(q: str) -> str:
     return s.strip()
 
 
+def _repair_latex_typos(text: str) -> str:
+    """Fix common LLM LaTeX mistakes (e.g. ^Mightarrow instead of \\Rightarrow)."""
+    return (
+        text.replace("^Mightarrow", r"\Rightarrow")
+        .replace("^Rightarrow", r"\Rightarrow")
+        .replace("^rightarrow", r"\rightarrow")
+        .replace("^Leftarrow", r"\Leftarrow")
+        .replace("^leftarrow", r"\leftarrow")
+    )
+
+
 def normalize_latex(text: str) -> str:
     """Convert single $...$ to $$...$$ for consistent block-math rendering. Does not touch existing $$...$$."""
     if not text:
         return text
     # (?<!\$) ensures we don't match $ that is part of $$ (opening); (?!\$) ensures we don't match $ that is part of $$ (closing)
-    return re.sub(r"(?<!\$)\$(?!\$)(.*?)\$(?!\$)", r"$$\1$$", text)
+    text = re.sub(r"(?<!\$)\$(?!\$)(.*?)\$(?!\$)", r"$$\1$$", text)
+    # Repair common LLM typos inside $$...$$ blocks
+    def _replacer(m: re.Match) -> str:
+        return m.group(1) + _repair_latex_typos(m.group(2)) + m.group(3)
+    text = re.sub(r"(\$\$)([\s\S]*?)(\$\$)", _replacer, text)
+    return text
 
 
 def _evidence_matches_passage(evidence: str, passage: str) -> bool:
@@ -1199,7 +1215,7 @@ def _generate_flashcards_from_question_topic(
     lang_instruction = build_language_instruction(topic, language_hint)
     wants_examples = _topic_wants_examples(topic)
     is_formula = _is_formula_topic(topic)
-    if is_formula:
+    if _is_formula_topic(topic):
         answer_format = FORMULA_INSTRUCTION
         json_schema = '''{
   "flashcards": [
@@ -1466,7 +1482,8 @@ CONTENT_RULES = """CONTENT RULES:
 - Questions must be clear and concise
 - Answers must be accurate and concise
 - Avoid repetition and duplicates
-- Ensure coverage across distinct concepts"""
+- Ensure coverage across distinct concepts
+- Do NOT generate mathematical formulas unless the topic is explicitly mathematical or scientific."""
 
 LATEX_INSTRUCTION = """When including formulas:
 - Use $$...$$ for display math
@@ -1539,34 +1556,39 @@ def _is_formula_topic(topic: str) -> bool:
     if not topic or not isinstance(topic, str):
         return False
     t = topic.lower()
-    return any(
-        k in t
-        for k in [
-            "formula",
-            "formulas",
-            "equation",
-            "equations",
-            "theorem",
-            "theorems",
-            "law",
-            "laws",
-            "probability",
-            "statistics",
-            "calculus",
-            "physics",
-            "math",
-        ]
-    )
+
+    # Must contain a math/science domain signal
+    math_signals = [
+        "math", "physics", "equation", "calculus",
+        "algebra", "probability", "statistics"
+    ]
+
+    formula_words = ["formula", "formulas", "equation", "equations"]
+
+    has_formula_word = any(k in t for k in formula_words)
+    has_math_context = any(k in t for k in math_signals)
+
+    non_math_topics = [
+        "fallacy", "fallacies",
+        "philosophy", "logic",
+        "cognitive bias", "biases"
+    ]
+
+    if any(k in t for k in non_math_topics):
+        return False
+
+    return has_formula_word and has_math_context
 
 
 LIGHTWEIGHT_KEYWORDS = ["simple", "basic", "intro", "easy", "quick", "concepts"]
 
 
 def _get_math_instruction(topic: str) -> str:
-    """Return FORMULA_INSTRUCTION for formula topics, else LATEX_INSTRUCTION."""
+    """Return FORMULA_INSTRUCTION for formula topics, else DEFINITION_ONLY_FORMAT."""
     if _is_formula_topic(topic):
         return FORMULA_INSTRUCTION
-    return LATEX_INSTRUCTION
+    # fallback to definition mode
+    return DEFINITION_ONLY_FORMAT
 
 EXAMPLE_FORMAT_REQUIREMENT = """
 ANSWER FORMAT (REQUIRED when examples requested):
@@ -2023,7 +2045,7 @@ async def generate_flashcards(
       ]
     }'''
                         else:
-                            if is_formula:
+                            if _is_formula_topic(topic_str):
                                 style_rules = FORMULA_INSTRUCTION
                                 fallback_json = '''{
       "flashcards": [

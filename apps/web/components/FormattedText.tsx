@@ -7,12 +7,23 @@ type Props = {
   className?: string;
 };
 
+/** Repair common LLM LaTeX mistakes (e.g. ^Mightarrow instead of \\Rightarrow). */
+function repairLatex(math: string): string {
+  return math
+    .replace(/\^Mightarrow/g, "\\Rightarrow")
+    .replace(/\^Rightarrow/g, "\\Rightarrow")
+    .replace(/\^rightarrow/g, "\\rightarrow")
+    .replace(/\^Leftarrow/g, "\\Leftarrow")
+    .replace(/\^leftarrow/g, "\\leftarrow");
+}
+
 /** Render text with $$...$$ as block math. No modification of formula content - backslashes preserved. */
 function renderMixed(text: string) {
   const parts = text.split(/(\$\$[\s\S]*?\$\$)/);
   return parts.map((part, i) => {
     if (part.startsWith("$$")) {
-      const math = part.replace(/\$\$/g, "").trim();
+      const raw = part.replace(/\$\$/g, "").trim();
+      const math = repairLatex(raw);
       return (
         <span key={i} className="katex-block overflow-visible my-2">
           <BlockMath
