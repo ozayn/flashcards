@@ -15,7 +15,6 @@ from app.models import Deck, Flashcard
 from app.models.enums import GenerationStatus, SourceType
 from app.schemas.flashcard import DIFFICULTY_TO_INT
 from app.utils.topic_analysis import (
-    build_language_instruction,
     build_language_rule,
     build_vocab_instruction,
     is_loanword_vocab_topic,
@@ -692,7 +691,6 @@ def _extract_concepts(
         # When users paste text (e.g., research papers), grounding strictness
         # matches strict_text_only: strict mode requires explicit support;
         # relaxed mode prefers text but allows implied/related concepts.
-        lang_instruction = build_language_instruction("", language_hint)
         text_preview = text[:6000].strip()
         if len(text) > 6000:
             text_preview += "\n\n[... text truncated ...]"
@@ -704,24 +702,21 @@ def _extract_concepts(
 - Do NOT expand using external knowledge.
 - Do NOT add generic background terms (e.g. dopamine, ion channels) unless the passage explicitly discusses them.
 - Prefer concrete terms that appear in the paragraph.
-- Concepts must be in the same language as the text.
 - Each extracted concept must have explicit support in the passage."""
         else:
             grounding_rules = """Rules:
 - Prefer concepts that appear in or are clearly implied by the text.
 - You may include related concepts that the passage suggests or builds on, but avoid pure external knowledge.
 - Do not require every concept to be explicitly stated; reasonable inference from the passage is acceptable.
-- Avoid concepts with no connection to the passage.
-- Concepts must be in the same language as the text."""
+- Avoid concepts with no connection to the passage."""
 
-        prompt = f"""You are identifying key learning concepts from the following text.
+        prompt = f"""{build_language_rule("", text, language_hint)}
+You are identifying key learning concepts from the following text.
 
 {USER_TEXT_SAFETY_INSTRUCTION}
 
 Text:
 {text_preview}
-
-{lang_instruction}
 
 Extract up to {num_cards} specific items from the text. If fewer concepts exist, extract fewer.
 
@@ -744,15 +739,13 @@ Return STRICT JSON only:
     else:
         # Topic mode
         topic_str = topic or ""
-        lang_instruction = build_language_instruction(topic_str, language_hint)
 
         if is_people_list:
-            prompt = f"""You are extracting notable individuals for a study deck.
+            prompt = f"""{build_language_rule(topic_str, "", language_hint)}
+You are extracting notable individuals for a study deck.
 
 Topic:
 {topic_str}
-
-{lang_instruction}
 
 Extract up to {num_cards} names of real notable people directly relevant to this topic. If fewer exist, extract fewer.
 
@@ -761,19 +754,17 @@ Rules:
 - Do not return abstract concepts
 - Do not return styles, themes, techniques, or fields
 - Prefer famous, historically significant individuals
-- Concepts must be in the same language as the topic
 
 Return STRICT JSON:
 {{
   "concepts": ["...", "...", "..."]
 }}"""
         else:
-            prompt = f"""You are extracting items that are DIRECT MEMBERS of the category described by the topic.
+            prompt = f"""{build_language_rule(topic_str, "", language_hint)}
+You are extracting items that are DIRECT MEMBERS of the category described by the topic.
 
 Topic:
 {topic_str}
-
-{lang_instruction}
 
 Extract up to {num_cards} distinct items that are DIRECT MEMBERS of the category. If fewer valid items exist, return all of them. If the topic is a class (e.g., "cognitive biases"):
 - ONLY include items that are instances of that class (e.g., Confirmation Bias, Anchoring Bias)
@@ -798,8 +789,7 @@ Return STRICT JSON:
 
 Rules:
 - If the topic asks for a class of things (biases, photographers, algorithms), extract only instances of that class.
-- If the topic asks for people (e.g., "well-known street photographers"), extract only person names.
-- Concepts must be in the same language as the topic."""
+- If the topic asks for people (e.g., "well-known street photographers"), extract only person names."""
 
     try:
         response_text = generate_completion(prompt)
@@ -849,7 +839,6 @@ def _generate_flashcards_from_text(
             max_tokens_override=max_tokens_override,
         )
     # Fallback: single-stage generation when concept extraction fails
-    lang_instruction = build_language_instruction("", language_hint)
     text_preview = text[:8000].strip()
     if len(text) > 8000:
         text_preview += "\n\n[... text truncated ...]"
@@ -950,14 +939,13 @@ Do NOT combine into a single paragraph. Include a blank line between definition 
 }'''
 
     prompt = f"""{JSON_HEADER}
+{build_language_rule(topic or "", text or "", language_hint)}
 You are generating flashcards from the following text.
 
 {USER_TEXT_SAFETY_INSTRUCTION}
 
 Text:
 {text_preview}
-
-{lang_instruction}
 
 {grounding_block}
 
@@ -979,7 +967,6 @@ Rules:
 {JSON_CLOSING_CONSTRAINT}"""
     if not _is_formula_topic(topic or text):
         prompt += NON_FORMULA_STRICT_RULE
-    prompt += build_language_rule(topic or "", text or "", language_hint)
 
     return generate_completion(prompt, skip_cache=skip_cache, max_tokens=max_tokens_override)
 
@@ -994,7 +981,6 @@ def _generate_flashcards_from_people_list(
 ) -> str:
     """Generate flashcards for list-of-people topics. Each card asks 'Who was [Name]?' with a 1–2 sentence answer."""
     concept_list = "\n".join(f"- {c}" for c in concepts)
-    lang_instruction = build_language_instruction(topic, language_hint)
     wants_examples = _topic_wants_examples(topic)
     if wants_examples:
         answer_rules = """- Each answer MUST include: (1) a concise definition of who they are, and (2) a concrete example (notable work, achievement, or contribution).
@@ -1031,6 +1017,7 @@ Example:
 }'''
 
     prompt = f"""{JSON_HEADER}
+{build_language_rule(topic, "", language_hint)}
 You are generating flashcards for studying notable individuals.
 
 Topic:
@@ -1038,8 +1025,6 @@ Topic:
 
 Names:
 {concept_list}
-
-{lang_instruction}
 
 {_build_count_instruction(num_cards)}
 If there are more names than needed, select the most important. If fewer, create multiple cards per person (e.g. definition, notable work).
@@ -1067,8 +1052,7 @@ Rules:
 - One flashcard per name.
 - Output MUST be valid JSON. No plain text, no Q/A format. Use double quotes. Escape newlines as \\n.
 {JSON_CLOSING_CONSTRAINT}
-{NON_FORMULA_STRICT_RULE}
-{build_language_rule(topic, "", language_hint)}"""
+{NON_FORMULA_STRICT_RULE}"""
 
     return generate_completion(prompt, skip_cache=skip_cache, max_tokens=max_tokens_override)
 
@@ -1087,7 +1071,6 @@ def _generate_flashcards_from_concepts(
 ) -> str:
     """Stage 2: Generate flashcards from concepts using LLM."""
     concept_list = "\n".join(f"- {c}" for c in concepts)
-    lang_instruction = build_language_instruction(topic, language_hint)
     anchors = extract_anchor_keywords(topic) if not is_vocab and not is_from_text else []
     anchors_str = str(anchors)
     wants_examples = _topic_wants_examples(topic)
@@ -1268,6 +1251,7 @@ Topical Grounding:
         json_rules = "- Output MUST be valid JSON. No plain text, no Q/A format, no markdown outside the JSON. Use double quotes for keys and values. Escape newlines as \\n in strings. Do NOT include 'Example:' or examples in answer_short."
 
     prompt = f"""{JSON_HEADER}
+{build_language_rule(topic, "", language_hint)}
 You are generating flashcards.
 
 Concepts:
@@ -1276,7 +1260,6 @@ Concepts:
 {source_label}
 {topic}
 {f'Anchor keywords:\n{anchors_str}\n' if anchors else ''}
-{lang_instruction}
 
 {_build_count_instruction(num_cards)}
 If there are more concepts than needed, select the most important. If fewer concepts, create multiple cards per concept (e.g. definition, example, application).
@@ -1296,8 +1279,7 @@ Rules:
 - One flashcard per concept when you have enough concepts. When fewer concepts, create multiple cards per concept.
 {json_rules}
 {JSON_CLOSING_CONSTRAINT}
-{NON_FORMULA_STRICT_RULE if not _is_formula_topic(topic) else ''}
-{build_language_rule(topic, "", language_hint)}"""
+{NON_FORMULA_STRICT_RULE if not _is_formula_topic(topic) else ''}"""
 
     return generate_completion(prompt, skip_cache=skip_cache, max_tokens=max_tokens_override)
 
@@ -1310,7 +1292,6 @@ def _generate_flashcards_from_question_topic(
     max_tokens_override: Optional[int] = None,
 ) -> str:
     """Generate flashcards directly from a question-style topic, skipping concept extraction."""
-    lang_instruction = build_language_instruction(topic, language_hint)
     wants_examples = _topic_wants_examples(topic)
     is_formula = _is_formula_topic(topic)
     if _is_formula_topic(topic):
@@ -1351,12 +1332,11 @@ def _generate_flashcards_from_question_topic(
 }'''
 
     prompt = f"""{JSON_HEADER}
+{build_language_rule(topic, "", language_hint)}
 You are generating flashcards for studying.
 
 Topic:
 {topic}
-
-{lang_instruction}
 
 Instructions:
 - Prefer specific facts, names, events, or individuals over abstract concepts.
@@ -1387,8 +1367,7 @@ Rules:
 - Output MUST be valid JSON. No plain text, no Q/A format, no markdown outside the JSON.
 - Use double quotes for keys and values. Escape newlines as \\n in strings.
 {JSON_CLOSING_CONSTRAINT}
-{NON_FORMULA_STRICT_RULE if not is_formula else ''}
-{build_language_rule(topic, "", language_hint)}"""
+{NON_FORMULA_STRICT_RULE if not is_formula else ''}"""
 
     return generate_completion(prompt, skip_cache=skip_cache, max_tokens=max_tokens_override)
 
@@ -1401,15 +1380,12 @@ def _generate_flashcards_from_loanword_vocab(
     max_tokens_override: Optional[int] = None,
 ) -> str:
     """Generate loanword flashcards (e.g. Persian word → French origin)."""
-    lang_instruction = build_language_instruction(topic, language_hint)
     prompt = f"""Return ONLY valid JSON.
-
+{build_language_rule(topic, "", language_hint)}
 You are generating flashcards for learning French loanwords used in Persian.
 
 Topic:
 {topic}
-
-{lang_instruction}
 
 Instructions:
 - This is NOT a translation task.
@@ -1453,8 +1429,7 @@ Rules:
 - No explanations
 - No formulas
 {JSON_CLOSING_CONSTRAINT}
-{NON_FORMULA_STRICT_RULE}
-{build_language_rule(topic, "", language_hint)}"""
+{NON_FORMULA_STRICT_RULE}"""
 
     return generate_completion(prompt, skip_cache=skip_cache, max_tokens=max_tokens_override)
 
@@ -1467,15 +1442,12 @@ def _generate_flashcards_from_translation_vocab(
     max_tokens_override: Optional[int] = None,
 ) -> str:
     """Generate translation flashcards: word/phrase in one language → translation in another."""
-    lang_instruction = build_language_instruction(topic, language_hint)
     prompt = f"""Return ONLY valid JSON.
-
+{build_language_rule(topic, "", language_hint)}
 You are generating vocabulary flashcards for language learning.
 
 Topic:
 {topic}
-
-{lang_instruction}
 
 Instructions:
 - This is a TRANSLATION task.
@@ -1522,8 +1494,7 @@ Rules:
 - No LaTeX
 - Escape newlines as \\n if needed
 {JSON_CLOSING_CONSTRAINT}
-{NON_FORMULA_STRICT_RULE}
-{build_language_rule(topic, "", language_hint)}"""
+{NON_FORMULA_STRICT_RULE}"""
 
     return generate_completion(prompt, skip_cache=skip_cache, max_tokens=max_tokens_override)
 
@@ -1536,15 +1507,12 @@ def _generate_flashcards_from_person_topic(
     max_tokens_override: Optional[int] = None,
 ) -> str:
     """Generate flashcards about a specific person."""
-    lang_instruction = build_language_instruction(topic, language_hint)
     prompt = f"""Return ONLY valid JSON.
-
+{build_language_rule(topic, "", language_hint)}
 You are generating flashcards about a specific person.
 
 Topic:
 {topic}
-
-{lang_instruction}
 
 Instructions:
 - The topic refers to a PERSON (real individual).
@@ -1595,8 +1563,7 @@ Rules:
 - No markdown
 - No explanations
 {JSON_CLOSING_CONSTRAINT}
-{NON_FORMULA_STRICT_RULE}
-{build_language_rule(topic, "", language_hint)}"""
+{NON_FORMULA_STRICT_RULE}"""
 
     return generate_completion(prompt, skip_cache=skip_cache, max_tokens=max_tokens_override)
 
@@ -1605,15 +1572,13 @@ def _generate_flashcards_from_mapping_topic(
     topic: str, language_hint: Optional[str] = None, num_cards: int = 10, skip_cache: bool = False, max_tokens_override: Optional[int] = None
 ) -> str:
     """Generate flashcards for learning mappings between two related items (e.g. A ↔ Alfa, symbol ↔ name)."""
-    lang_instruction = build_language_instruction(topic, language_hint)
     n = num_cards
     prompt = f"""{JSON_HEADER}
+{build_language_rule(topic, "", language_hint)}
 Generate approximately {n} flashcards for learning mappings between two related items.
 
 Topic:
 {topic}
-
-{lang_instruction}
 
 Format:
 Q: <item A>
@@ -1674,8 +1639,7 @@ Return ONLY this JSON structure (no other text):
 Rules:
 - Output MUST be valid JSON. No plain text, no Q/A format. Use double quotes. Escape newlines as \\n if needed.
 {JSON_CLOSING_CONSTRAINT}
-{NON_FORMULA_STRICT_RULE if not _is_formula_topic(topic) else ''}
-{build_language_rule(topic, "", language_hint)}"""
+{NON_FORMULA_STRICT_RULE if not _is_formula_topic(topic) else ''}"""
 
     return generate_completion(prompt, skip_cache=skip_cache, max_tokens=max_tokens_override)
 
@@ -1688,16 +1652,13 @@ def _generate_flashcards_simple(
     max_tokens_override: Optional[int] = None,
 ) -> str:
     """Simple generation. Minimal prompt for formula and non-formula topics."""
-    lang_instruction = build_language_instruction(topic, language_hint)
     is_formula = _is_formula_topic(topic)
 
     if is_formula:
         if num_cards == 1:
             prompt = f"""Return ONLY valid JSON.
-
+{build_language_rule(topic, "", language_hint)}
 Generate EXACTLY ONE flashcard for the topic: "{topic}"
-
-{lang_instruction}
 
 Rules:
 - Include formulas using LaTeX inside $$...$$
@@ -1724,10 +1685,8 @@ IMPORTANT:
 """
         else:
             prompt = f"""Return ONLY valid JSON.
-
+{build_language_rule(topic, "", language_hint)}
 Generate flashcards for the topic: "{topic}"
-
-{lang_instruction}
 
 {_build_count_instruction(num_cards)}
 
@@ -1758,10 +1717,8 @@ Return this exact JSON format:
 - Do NOT include symbols like =, Σ, ∑, μ, θ unless explicitly part of the topic"""
         if num_cards == 1:
             prompt = f"""Return ONLY valid JSON.
-
+{build_language_rule(topic, "", language_hint)}
 Generate EXACTLY ONE flashcard for the topic: "{topic}"
-
-{lang_instruction}
 
 Rules:
 {no_formula_rules}
@@ -1787,10 +1744,8 @@ IMPORTANT:
 """
         else:
             prompt = f"""Return ONLY valid JSON.
-
+{build_language_rule(topic, "", language_hint)}
 Generate flashcards for the topic: "{topic}"
-
-{lang_instruction}
 
 {_build_count_instruction(num_cards)}
 
@@ -1813,7 +1768,6 @@ Return this exact JSON format:
 }}
 {NON_FORMULA_STRICT_RULE}"""
 
-    prompt += build_language_rule(topic, "", language_hint)
     return generate_completion(prompt, skip_cache=skip_cache, max_tokens=max_tokens_override)
 
 
@@ -2331,7 +2285,6 @@ async def generate_flashcards(
                                 raise HTTPException(status_code=503, detail=str(e))
                         else:
                             # Fallback: single-stage generation
-                            lang_instruction = build_language_instruction(topic_str, lang_hint)
                             wants_ex = _topic_wants_examples(topic_str)
                             if wants_ex:
                                 style_rules = """Instructions:
@@ -2376,12 +2329,11 @@ async def generate_flashcards(
     }'''
 
                             fallback_prompt = f"""{JSON_HEADER}
+    {build_language_rule(topic_str, "", lang_hint)}
     You are generating flashcards for studying notable individuals.
 
     Topic:
     {topic_str}
-
-    {lang_instruction}
 
     {style_rules}
 
@@ -2398,8 +2350,7 @@ async def generate_flashcards(
     - {_build_count_instruction(num_cards)}
     - Output MUST be valid JSON. No plain text, no Q/A format. Use double quotes. Escape newlines as \\n.
     {JSON_CLOSING_CONSTRAINT}
-    {NON_FORMULA_STRICT_RULE}
-    {build_language_rule(topic_str, "", lang_hint)}"""
+    {NON_FORMULA_STRICT_RULE}"""
 
                             try:
                                 response_text = generate_completion(fallback_prompt, skip_cache=attempt > 0, max_tokens=retry_max_tokens)
@@ -2444,7 +2395,6 @@ async def generate_flashcards(
                             raise HTTPException(status_code=503, detail=str(e))
                     else:
                         # Fallback: single-stage generation when concept extraction fails
-                        lang_instruction = build_language_instruction(topic_str, lang_hint)
                         wants_ex = _topic_wants_examples(topic_str)
                         is_formula = _is_formula_topic(topic_str)
                         if is_vocab:
@@ -2548,12 +2498,11 @@ async def generate_flashcards(
     }'''
 
                         fallback_prompt = f"""{JSON_HEADER}
+    {build_language_rule(topic_str, "", lang_hint)}
     You are generating flashcards for studying.
 
     Topic:
     {topic_str}
-
-    {lang_instruction}
 
     {style_rules}
 
@@ -2570,19 +2519,17 @@ async def generate_flashcards(
     - {_build_count_instruction(num_cards)}
     - Output MUST be valid JSON. No plain text, no Q/A format. Use double quotes. Escape newlines as \\n.
     {JSON_CLOSING_CONSTRAINT}
-    {NON_FORMULA_STRICT_RULE}
-    {build_language_rule(topic_str, "", lang_hint)}"""
+    {NON_FORMULA_STRICT_RULE}"""
 
                         try:
                             if is_formula:
                                 def _gen_fallback(batch_size: int, batch_index: int) -> str:
                                     prompt = f"""{JSON_HEADER}
+    {build_language_rule(topic_str, "", lang_hint)}
     You are generating flashcards for studying.
 
     Topic:
     {topic_str}
-
-    {lang_instruction}
 
     {style_rules}
 
@@ -2598,8 +2545,7 @@ async def generate_flashcards(
     Rules:
     - {_build_count_instruction(batch_size)}
     - Output MUST be valid JSON. No plain text, no Q/A format. Use double quotes. Escape newlines as \\n.
-    {JSON_CLOSING_CONSTRAINT}
-    {build_language_rule(topic_str, "", lang_hint)}"""
+    {JSON_CLOSING_CONSTRAINT}"""
                                     return generate_completion(
                                         prompt,
                                         skip_cache=(batch_index > 0 or attempt > 0),

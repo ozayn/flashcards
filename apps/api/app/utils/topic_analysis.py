@@ -133,9 +133,8 @@ def is_language_learning_request(topic: str) -> bool:
 
 
 def build_language_rule(topic: str, text: str, language_hint: str | None) -> str:
-    """Build language rule for end of prompt. Monolingual unless language learning.
-    Returns rule string to append at END of prompt for highest priority.
-    Language detection: text (if >20 chars) over topic, since text reflects user intent more reliably."""
+    """Build language rule for TOP of prompt. Single source of truth for output language.
+    Place immediately after JSON_HEADER. Language detection: text (>20 chars) over topic."""
     if is_language_learning_request(topic or ""):
         return ""  # Bilingual allowed; vocab-specific instructions handle it
     text_str = (text or "").strip()
@@ -145,10 +144,13 @@ def build_language_rule(topic: str, text: str, language_hint: str | None) -> str
     lang = lang.lower()[:2]
     lang_name = LANG_NAMES.get(lang, lang)
     return f"""
-Language rule:
-- Generate BOTH questions and answers in {lang_name}
-- Do NOT translate to English unless explicitly requested
-- Preserve proper nouns (e.g., Post Hoc Ergo Propter Hoc)"""
+LANGUAGE REQUIREMENT (HIGHEST PRIORITY):
+- ALL output (questions AND answers) MUST be in {lang_name}
+- DO NOT use English unless explicitly requested
+- DO NOT mix languages
+- If the topic is {lang_name} → output MUST be {lang_name}
+- If you output in the wrong language, the response is INVALID
+"""
 
 
 def build_vocab_instruction(topic: str) -> str:
