@@ -1407,6 +1407,8 @@ Rules:
 - Answers must be VERY short (1 line max)
 - Use compact formulas only (no explanations inside formulas)
 - Each flashcard should test one concept
+- Avoid repeating the same question across flashcards.
+- Use different formulations (e.g. update rule, weight update, learning rule variants).
 
 Return this exact JSON format:
 {{
@@ -1715,7 +1717,7 @@ async def generate_flashcards(
 
                 # Formula topics: one card per call with retries (parse failure only)
                 if _is_formula_topic(topic_str):
-                    seen_questions = set()
+                    seen_questions: set[tuple[str, str]] = set()
                     all_cards = []
 
                     for i in range(num_cards):
@@ -1751,17 +1753,33 @@ async def generate_flashcards(
                         if not cards:
                             continue
 
-                        card = cards[0]  # CRITICAL: force 1 card only
+                        for card in cards:
+                            q_raw = card.get("question", "").strip()
+                            q = q_raw.lower()
+                            a = card.get("answer_short", "").strip()
 
-                        q = card.get("question", "").strip().lower()
-                        if not q or q in seen_questions:
-                            continue
+                            if not q:
+                                logger.warning("Skipping card with empty question")
+                                continue
 
-                        seen_questions.add(q)
-                        all_cards.append(card)
+                            # Allow same question if answer is different
+                            key = (q, a)
+
+                            if key in seen_questions:
+                                logger.warning("Skipping exact duplicate (q+a): %s", q)
+                                continue
+
+                            seen_questions.add(key)
+                            all_cards.append(card)
+                            break  # still keep one card per iteration
 
                     if len(all_cards) == 0:
-                        raise HTTPException(status_code=503, detail="No flashcards generated")
+                        logger.warning("All cards filtered out due to duplication — forcing first valid card")
+
+                        if parsed_json and parsed_json.get("flashcards"):
+                            all_cards = [parsed_json["flashcards"][0]]
+                        else:
+                            raise HTTPException(status_code=503, detail="No flashcards generated")
 
                     parsed_json = {"flashcards": all_cards}
                     break
@@ -2158,9 +2176,11 @@ async def generate_flashcards(
             break
 
         cards: list = parsed_json["flashcards"]
+        logger.info("Parsed cards preview: %s", cards[:2])
         logger.info("Generated %d candidate cards", len(cards))
 
-        # Accept partial results - only fail when we have zero cards (never fail for len(cards) < num_cards)
+        # RULE: If at least 1 valid card exists → SUCCESS. Only 503 when ZERO valid cards.
+        # Never fail for len(cards) < num_cards (partial results are accepted).
         if not cards:
             raise HTTPException(status_code=503, detail="No flashcards generated")
 
@@ -2176,9 +2196,8 @@ async def generate_flashcards(
             select(Flashcard.question).where(Flashcard.deck_id == deck_id_str)
         )
         existing_questions = [row[0] for row in existing_result.fetchall() if row[0]]
-        existing_normalized = {_normalize_question(q) for q in existing_questions}
         existing_exact = set(existing_questions)
-        batch_normalized: set[str] = set()
+        batch_normalized: set[tuple[str, str]] = set()
 
         created = 0
         for raw_card in cards:
@@ -2197,13 +2216,22 @@ async def generate_flashcards(
                 )
                 continue
 
+            logger.info("Processing card: %s", question[:100])
+
             norm = _normalize_question(question)
-            if norm and (norm in batch_normalized or norm in existing_normalized):
-                logger.debug("Skipping near-duplicate question: %s", question[:80])
+            answer = (answer_short or "").strip().lower()
+            dup_key = (norm, answer)
+
+            if norm and (dup_key in batch_normalized):
+                logger.warning("Skipping duplicate within batch: %s", question[:80])
                 continue
+
+            # Only block exact duplicates from DB (not fuzzy)
             if question in existing_exact:
-                logger.debug("Skipping exact duplicate question: %s", question[:80])
+                logger.warning("Skipping exact duplicate from DB: %s", question[:80])
                 continue
+
+            batch_normalized.add(dup_key)
 
             answer_detailed = raw_card.get("answer_detailed")
             difficulty_str = raw_card.get("difficulty", "medium")
@@ -2216,7 +2244,6 @@ async def generate_flashcards(
             if answer_detailed:
                 answer_detailed = str(answer_detailed)[:10000]
 
-            batch_normalized.add(norm)
             flashcard = Flashcard(
                 deck_id=deck_id_str,
                 question=str(question)[:10000],
@@ -2227,8 +2254,13 @@ async def generate_flashcards(
             db.add(flashcard)
             created += 1
 
+        # RULE: Only 503 when ZERO valid cards. created >= 1 → SUCCESS.
         if created == 0:
-            raise HTTPException(status_code=503, detail="No flashcards generated")
+            logger.error("All generated cards were filtered out or invalid")
+            raise HTTPException(
+                status_code=503,
+                detail="Generated cards were invalid or duplicates"
+            )
 
         deck.generation_status = GenerationStatus.completed.value
         await db.flush()
