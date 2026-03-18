@@ -351,9 +351,58 @@ def _extract_first_json(text: str):
 # Flexible formula pattern: captures across lines, allows extra spaces
 _FORMULA_CAPTURE = r"\$\$\s*([\s\S]*?)\s*\$\$"
 
+# Pseudo-LaTeX words to fix (plain text -> proper LaTeX). Order matters: more specific first.
+_PSEUDO_LATEX_REPLACEMENTS: list[tuple[str, str]] = [
+    ("sigma1", r"\sigma_1"),
+    ("sigma2", r"\sigma_2"),
+    ("sigmax", r"\sigma_x"),
+    ("sigmay", r"\sigma_y"),
+    ("sigma", r"\sigma"),
+    ("frac", r"\frac"),
+    ("sqrt", r"\sqrt"),
+    ("pm", r"\pm"),
+    ("left", r"\left"),
+    ("right", r"\right"),
+    ("lambda", r"\lambda"),
+    ("alpha", r"\alpha"),
+    ("beta", r"\beta"),
+    ("theta", r"\theta"),
+    ("eta", r"\eta"),
+    ("cdot", r"\cdot"),
+    ("sum", r"\sum"),
+    ("int", r"\int"),
+    ("mu", r"\mu"),
+]
+
+
+def _repair_pseudo_latex(text: str) -> str:
+    """Fix pseudo-LaTeX (plain words) to proper LaTeX inside $$...$$ blocks."""
+    if "$$" not in text:
+        return text
+
+    def _fix_formula(m: re.Match) -> str:
+        formula = m.group(1)
+        # "hat <var>" -> "\hat{<var>}" (valid LaTeX with braces)
+        formula = re.sub(r"\bhat\s+([a-zA-Z][a-zA-Z0-9_]*)", r"\\hat{\1}", formula)
+        # ||x|| -> \|x\|
+        formula = re.sub(r"\|\|([^\|]+)\|\|", r"\\|\1\\|", formula)
+        # fracP(X|C) -> \frac{P(X|C)}{P(C)}
+        formula = re.sub(r"fracP\(([^|]*)\|([^)]*)\)", r"\\frac{P(\1|\2)}{P(\2)}", formula)
+        # Greek letters: match when followed by _, {, (, space, or end (e.g. alpha_j, mu_{c(i)})
+        _GREEK = ("alpha", "beta", "theta", "eta", "sigma", "mu")
+        for plain, latex in _PSEUDO_LATEX_REPLACEMENTS:
+            repl = latex.replace("\\", "\\\\")  # escape for re.sub replacement
+            if plain in _GREEK:
+                formula = re.sub(rf"(?<!\\){re.escape(plain)}(?=\s|_|\{{|\(|$)", repl, formula)
+            else:
+                formula = re.sub(rf"(?<!\\){re.escape(plain)}(?!\w)", repl, formula)
+        return f"$${formula}$$"
+
+    return re.sub(r"\$\$([\s\S]*?)\$\$", _fix_formula, text)
+
 
 def _remove_inline_latex_before_block(text: str) -> str:
-    """Remove duplicate raw LaTeX before a $$...$$ block. Replace LaTeX with empty string, keep surrounding text."""
+    """Remove only duplicate LaTeX commands before $$ block. Do not touch =, +, -, *, or parentheses."""
     if "$$" not in text:
         return text
 
@@ -361,19 +410,14 @@ def _remove_inline_latex_before_block(text: str) -> str:
     before = text[:first_dd]
     after = text[first_dd:]
 
-    # 1. Remove LaTeX expressions with empty string (don't truncate)
+    # Remove only LaTeX command tokens (e.g. \omega_{j+1}, \cdot)
     latex_pattern = r"\\[a-zA-Z]+(?:\{[^{}]*\})*"
     clean_before = re.sub(latex_pattern, "", before)
 
-    # 2. Remove leftover math fragments (=, +, -, *, \cdot, and formula-like parentheses)
-    clean_before = re.sub(r"\s*\\cdot\s*", " ", clean_before)
-    clean_before = re.sub(r"\s*[=+\-*]\s*", " ", clean_before)
-    clean_before = re.sub(r"\s*\([^)]*[=+\-_\\][^)]*\)\s*", " ", clean_before)
-
-    # 3. Collapse multiple spaces
+    # Collapse whitespace
     clean_before = re.sub(r"\s+", " ", clean_before).strip()
 
-    # 4. Ensure sentence ends cleanly (add period if needed)
+    # Ensure sentence ends cleanly (add period if needed)
     if clean_before and not re.search(r"[.!?]$", clean_before):
         clean_before = clean_before.rstrip(" ,;") + "."
 
@@ -470,6 +514,7 @@ def _extract_json(text: str) -> dict:
         return {}
 
     text = _repair_bare_formula_json(text)
+    text = _repair_pseudo_latex(text)
     before_latex = text
     text, latex_repaired = _repair_unescaped_latex_json(text)
     if latex_repaired:
@@ -1466,7 +1511,11 @@ CRITICAL - JSON escaping:
 - All LaTeX backslashes inside JSON strings MUST be escaped
 - Use double backslashes in JSON: \\\\frac, \\\\sum, \\\\alpha, \\\\beta, \\\\eta, \\\\theta, \\\\cdot, \\\\cap
 - Never output single-backslash LaTeX inside JSON strings
-- Example: "answer_short": "Measures impurity.\\n\\n$$H(y) = \\\\sum_{j=1}^{J} \\\\alpha_j$$" """
+- Example: "answer_short": "Measures impurity.\\n\\n$$H(y) = \\\\sum_{j=1}^{J} \\\\alpha_j$$"
+
+CRITICAL - LaTeX correctness:
+- Use proper LaTeX commands (\\\\sum, \\\\cdot, \\\\frac, \\\\sqrt), not plain words like 'sum', 'cdot', 'lambda'
+- Ensure formulas compile correctly in LaTeX/KaTeX"""
 
 STRICT_FORMULA_INSTRUCTION = """This is a STRICT formula topic.
 
@@ -1493,6 +1542,17 @@ CRITICAL - JSON escaping:
 - Use double backslashes: \\\\frac, \\\\sum, \\\\alpha, \\\\beta, \\\\eta, \\\\theta, \\\\cdot, \\\\cap
 - Never output single-backslash LaTeX inside JSON strings
 
+CRITICAL - LaTeX correctness:
+- Use proper LaTeX commands (e.g., \\\\sum, \\\\cdot, \\\\frac, \\\\sqrt)
+- Do NOT use plain words like 'sum', 'cdot', 'lambda'
+- All mathematical operators must be valid LaTeX commands
+- Use standard mathematical notation, not approximations
+- Ensure the formula compiles correctly in LaTeX/KaTeX
+
+Examples:
+BAD: $$J = sum_{i=1}^{N} (y_i - \\\\hat{y}_i)^2 + lambda cdot ||w||^2$$
+GOOD: $$J = \\\\sum_{i=1}^{N} (y_i - \\\\hat{y}_i)^2 + \\\\lambda \\\\cdot \\\\|w\\\\|^2$$
+
 Correct format: "answer_short": "<short explanation>\\n\\n$$<latex formula>$$"
 
 Example: "answer_short": "Measures impurity.\\n\\n$$H(y) = \\\\sum_{j=1}^{J} \\\\alpha_j$$"
@@ -1500,7 +1560,8 @@ Example: "answer_short": "Measures impurity.\\n\\n$$H(y) = \\\\sum_{j=1}^{J} \\\
 Rules:
 - Every card MUST include a formula
 - Put explanation and formula BOTH inside the quoted answer_short value
-- Use \\n for newlines, \\\\ for backslashes in LaTeX"""
+- Use \\n for newlines, \\\\ for backslashes in LaTeX
+- Double-check that the LaTeX is valid before returning the answer."""
 
 FORMULA_INSTRUCTION = """This topic involves mathematical formulas.
 
@@ -1515,11 +1576,23 @@ CRITICAL - JSON escaping:
 - Never output single-backslash LaTeX inside JSON strings
 - Example: "answer_short": "Measures impurity.\\n\\n$$H(y) = \\\\sum_{j=1}^{J} \\\\alpha_j$$"
 
+CRITICAL - LaTeX correctness:
+- Use proper LaTeX commands (e.g., \\\\sum, \\\\cdot, \\\\frac, \\\\sqrt)
+- Do NOT use plain words like 'sum', 'cdot', 'lambda'
+- All mathematical operators must be valid LaTeX commands
+- Use standard mathematical notation, not approximations
+- Ensure the formula compiles correctly in LaTeX/KaTeX
+
+Examples:
+BAD: $$J = sum_{i=1}^{N} (y_i - \\\\hat{y}_i)^2 + lambda cdot ||w||^2$$
+GOOD: $$J = \\\\sum_{i=1}^{N} (y_i - \\\\hat{y}_i)^2 + \\\\lambda \\\\cdot \\\\|w\\\\|^2$$
+
 Rules:
 - Use $$...$$ for formulas
 - Put explanation and formula BOTH inside the quoted answer_short value
 - Use \\n for newlines, \\\\ for backslashes in LaTeX
-- Keep explanations brief"""
+- Keep explanations brief
+- Double-check that the LaTeX is valid before returning the answer."""
 
 NON_FORMULA_TOPICS = """NON-FORMULA TOPICS:
 - Provide a concise definition (1–2 sentences)
@@ -1993,16 +2066,6 @@ Rules:
 
         cards: list = parsed_json["flashcards"]
         logger.info("Generated %d candidate cards", len(cards))
-
-        # Remove duplicate inline LaTeX before $$ blocks in each card
-        for c in cards:
-            if isinstance(c, dict):
-                for key in ("answer_short", "answer", "back"):
-                    val = c.get(key)
-                    if isinstance(val, str) and "$$" in val:
-                        cleaned = _remove_inline_latex_before_block(val)
-                        if cleaned != val:
-                            c[key] = cleaned
 
         topic_str = (payload.topic or "").strip()
 
