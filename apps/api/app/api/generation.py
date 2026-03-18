@@ -296,9 +296,16 @@ def _extract_balanced_array(text: str) -> str | None:
     return None
 
 
+def _strip_llm_metadata(raw: str) -> str:
+    """Remove trailing LLM usage/metadata that may appear in responses."""
+    # Strip "LLM Usage" block (from cost_tracker or similar) if appended
+    raw = re.sub(r"\n\nLLM Usage\s*\n-+\s*[\s\S]*$", "", raw)
+    return raw.strip()
+
+
 def _isolate_json_chunk(raw: str) -> str | None:
     """Extract JSON from raw LLM response, isolating it from logs/metadata/extra text."""
-    raw = raw.strip()
+    raw = _strip_llm_metadata(raw.strip())
     # Try markdown code block first
     match = re.search(r"```(?:json)?\s*([\s\S]*?)```", raw)
     if match:
