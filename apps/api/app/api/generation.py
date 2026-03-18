@@ -306,6 +306,28 @@ def _is_identification_mode(topic: str) -> bool:
     return any(k in t for k in ["identify", "from examples", "quiz", "guess", "scenario"])
 
 
+def _is_mapping_mode(topic: str) -> bool:
+    """Return True if topic asks for mapping/pair cards (item A ↔ item B, e.g. phonetic alphabet, symbols)."""
+    if not topic or not isinstance(topic, str):
+        return False
+    t = topic.lower()
+    return any(
+        k in t
+        for k in [
+            "mapping",
+            "mappings",
+            "phonetic alphabet",
+            "pairs",
+            "symbol to",
+            "code to",
+            "letter to",
+            "element symbol",
+            "country code",
+            "chemical symbol",
+        ]
+    )
+
+
 def extract_anchor_keywords(topic: str) -> list[str]:
     """Extract 2–5 anchor keywords from the topic to enforce topical grounding."""
     if not topic or not topic.strip():
@@ -471,6 +493,7 @@ def _generate_flashcards_from_text(
     num_cards: int = 10,
     strict_text_only: bool = True,
     include_background: bool = False,
+    topic: Optional[str] = None,
 ) -> str:
     """Generate flashcards from text: extract concepts first, then generate from concepts."""
     concepts = _extract_concepts(
@@ -497,9 +520,11 @@ def _generate_flashcards_from_text(
     if len(text) > 8000:
         text_preview += "\n\n[... text truncated ...]"
 
+    wants_examples = _topic_wants_examples(topic or text)
     if strict_text_only:
         no_background = "" if include_background else "\n- Do NOT create generic background cards (e.g. 'What is dopamine?') unless the passage explicitly discusses them."
-        grounding_block = f"""{STRICT_TEXT_GROUNDING_RULES}
+        if wants_examples:
+            grounding_block = f"""{STRICT_TEXT_GROUNDING_RULES}
 {no_background}
 
 For each card: verify the answer is recoverable from the passage alone, without outside knowledge. If not, do not include it.
@@ -517,8 +542,21 @@ Example:
 <one concrete example from the passage when available>
 
 Do NOT combine into a single paragraph. Include a blank line between definition and Example. 2–3 sentences max."""
+        else:
+            grounding_block = f"""{STRICT_TEXT_GROUNDING_RULES}
+{no_background}
+
+For each card: verify the answer is recoverable from the passage alone, without outside knowledge. If not, do not include it.
+
+Example acceptable cards (passage-specific):
+- What frequency range defines theta rhythm in the passage?
+- Where is the theta rhythm coordinated according to the text?
+- What device recorded the intracranial activity?
+
+{DEFINITION_ONLY_FORMAT}"""
     else:
-        grounding_block = f"""{RELAXED_TEXT_GROUNDING_RULES}
+        if wants_examples:
+            grounding_block = f"""{RELAXED_TEXT_GROUNDING_RULES}
 
 ANSWER FORMAT: Format each answer as:
 Definition:
@@ -528,6 +566,30 @@ Example:
 <one concrete example>
 
 Do NOT combine into a single paragraph. Include a blank line between definition and Example. 2–3 sentences max."""
+        else:
+            grounding_block = f"""{RELAXED_TEXT_GROUNDING_RULES}
+
+{DEFINITION_ONLY_FORMAT}"""
+
+    json_schema = '''{
+  "flashcards": [
+    {
+      "question": "<question>",
+      "answer_short": "Definition:\\n\\n<definition>\\n\\nExample:\\n\\n<example>",
+      "answer_detailed": null,
+      "difficulty": "easy"
+    }
+  ]
+}''' if wants_examples else '''{
+  "flashcards": [
+    {
+      "question": "<question>",
+      "answer_short": "<concise definition only, 1-2 sentences>",
+      "answer_detailed": null,
+      "difficulty": "easy"
+    }
+  ]
+}'''
 
     prompt = f"""You are generating flashcards from the following text.
 
@@ -547,16 +609,7 @@ Extract key facts and create one flashcard per important point.
 {JSON_OUTPUT_REQUIREMENT}
 
 Return ONLY this JSON structure (no other text):
-{{
-  "flashcards": [
-    {{
-      "question": "<question>",
-      "answer_short": "Definition:\\n\\n<definition>\\n\\nExample:\\n\\n<example>",
-      "answer_detailed": null,
-      "difficulty": "easy"
-    }}
-  ]
-}}
+{json_schema}
 
 Rules:
 - Output MUST be valid JSON. No plain text, no Q/A format. Use double quotes. Escape newlines as \\n."""
@@ -573,6 +626,41 @@ def _generate_flashcards_from_people_list(
     """Generate flashcards for list-of-people topics. Each card asks 'Who was [Name]?' with a 1–2 sentence answer."""
     concept_list = "\n".join(f"- {c}" for c in concepts)
     lang_instruction = build_language_instruction(topic, language_hint)
+    wants_examples = _topic_wants_examples(topic)
+    if wants_examples:
+        answer_rules = """- Each answer MUST include: (1) a concise definition of who they are, and (2) a concrete example (notable work, achievement, or contribution).
+- Format the answer exactly as:
+
+Definition:
+<one concise sentence>
+
+Example:
+<one concrete example>
+
+- Do NOT combine into a single paragraph. Include a blank line between definition and Example. Every answer must include an example. 2–3 sentences max."""
+        json_schema = '''{
+  "flashcards": [
+    {
+      "question": "Who was <Name>?",
+      "answer_short": "Definition:\\n\\n<definition>\\n\\nExample:\\n\\n<example>",
+      "answer_detailed": null,
+      "difficulty": "easy"
+    }
+  ]
+}'''
+    else:
+        answer_rules = """- Each answer must be a concise definition only (1–2 sentences). Do NOT include examples."""
+        json_schema = '''{
+  "flashcards": [
+    {
+      "question": "Who was <Name>?",
+      "answer_short": "<concise definition only, 1-2 sentences>",
+      "answer_detailed": null,
+      "difficulty": "easy"
+    }
+  ]
+}'''
+
     prompt = f"""You are generating flashcards for studying notable individuals.
 
 Topic:
@@ -589,44 +677,17 @@ If there are more names than needed, select the most important. If fewer, create
 Rules:
 - Each question must be exactly in the style:
   'Who was [Name]?'
-- Each answer MUST include: (1) a concise definition of who they are, and (2) a concrete example (notable work, achievement, or contribution).
-- Format the answer exactly as:
-
-Definition:
-<one concise sentence>
-
-Example:
-<one concrete example>
-
-- Do NOT combine into a single paragraph. Include a blank line between definition and Example. Every answer must include an example. 2–3 sentences max.
+{answer_rules}
 - Focus on why the person is notable
 - Do not ask abstract or conceptual questions
 - Do not ask 'Why' or 'How' questions
 - Do not ask about the field in general
 - Each card must test one person only
 
-Example:
-Q: Who was Henri Cartier-Bresson?
-A:
-Definition:
-A French photographer considered a pioneer of street photography and known for the idea of the decisive moment.
-
-Example:
-His photograph "Behind the Gare Saint-Lazare" (1932) is one of the most iconic images in the history of photography.
-
 {JSON_OUTPUT_REQUIREMENT}
 
 Return ONLY this JSON structure (no other text):
-{{
-  "flashcards": [
-    {{
-      "question": "Who was <Name>?",
-      "answer_short": "Definition:\\n\\n<definition>\\n\\nExample:\\n\\n<example>",
-      "answer_detailed": null,
-      "difficulty": "easy"
-    }}
-  ]
-}}
+{json_schema}
 
 Rules:
 - One flashcard per name.
@@ -650,10 +711,12 @@ def _generate_flashcards_from_concepts(
     lang_instruction = build_language_instruction(topic, language_hint)
     anchors = extract_anchor_keywords(topic) if not is_vocab and not is_from_text else []
     anchors_str = str(anchors)
+    wants_examples = _topic_wants_examples(topic)
     if is_from_text:
         if strict_text_only:
             no_background = "" if include_background else "\n- Do NOT create generic background cards (e.g. 'What is dopamine?') unless the passage explicitly discusses them."
-            style_instruction = f"""{STRICT_TEXT_GROUNDING_RULES}
+            if wants_examples:
+                style_instruction = f"""{STRICT_TEXT_GROUNDING_RULES}
 {no_background}
 
 For each card: verify the answer is recoverable from the passage alone, without outside knowledge. If not, do not include it.
@@ -670,8 +733,20 @@ Example:
 <one concrete example from the passage when available>
 
 Do NOT combine into a single paragraph. Include a blank line between definition and Example. 2–3 sentences max."""
+            else:
+                style_instruction = f"""{STRICT_TEXT_GROUNDING_RULES}
+{no_background}
+
+For each card: verify the answer is recoverable from the passage alone, without outside knowledge. If not, do not include it.
+
+Example (passage-specific, not generic):
+Bad: What is dopamine? (generic)
+Good: What frequency range defines theta rhythm in the passage? (grounded)
+
+{DEFINITION_ONLY_FORMAT}"""
         else:
-            style_instruction = f"""{RELAXED_TEXT_GROUNDING_RULES}
+            if wants_examples:
+                style_instruction = f"""{RELAXED_TEXT_GROUNDING_RULES}
 
 ANSWER FORMAT: Format each answer as:
 Definition:
@@ -681,15 +756,24 @@ Example:
 <one concrete example>
 
 Do NOT combine into a single paragraph. Include a blank line between definition and Example. 2–3 sentences max."""
+            else:
+                style_instruction = f"""{RELAXED_TEXT_GROUNDING_RULES}
+
+{DEFINITION_ONLY_FORMAT}"""
     elif is_vocab:
         vocab_instruction = build_vocab_instruction(topic)
-        examples_required = " Examples are REQUIRED in every card." if _topic_wants_examples(topic) else ""
-        style_instruction = f"""For each flashcard:
+        if wants_examples:
+            style_instruction = f"""For each flashcard:
 - Question: Ask for the meaning or explanation of the concept.
 - Answer: Provide a clear definition plus a concrete example (e.g. example sentence or real-world use).
 {vocab_instruction}
-{EXAMPLE_FORMAT_REQUIREMENT}
-{examples_required}"""
+{EXAMPLE_FORMAT_REQUIREMENT}"""
+        else:
+            style_instruction = f"""For each flashcard:
+- Question: Ask for the meaning or explanation of the concept.
+- Answer: Provide a concise definition only (1–2 sentences). Do NOT include examples.
+{vocab_instruction}
+{DEFINITION_ONLY_FORMAT}"""
     elif _is_identification_mode(topic):
         style_instruction = """Generate flashcards where the user must identify the concept from a scenario.
 
@@ -705,8 +789,8 @@ Rules:
 - Scenarios must be realistic and varied.
 - Each question describes a situation; the answer is the single concept that fits."""
     else:
-        examples_required = " Examples are REQUIRED in every card." if _topic_wants_examples(topic) else ""
-        style_instruction = f"""Instructions:
+        if wants_examples:
+            style_instruction = f"""Instructions:
 - Each flashcard must be about a specific instance of the topic category.
 - Do NOT generate flashcards about: people (unless the topic asks for people), history, general explanations of the field.
 - Only generate flashcards about individual items within the category (e.g., for "cognitive biases" → cards about each bias, not about researchers or theories).
@@ -726,8 +810,29 @@ Topical Grounding:
 - If the topic references people, works, or events, include specific names in questions.
 - Avoid generic domain questions that could apply to any topic.
 
-{EXAMPLE_FORMAT_REQUIREMENT}
-{examples_required}"""
+{EXAMPLE_FORMAT_REQUIREMENT}"""
+        else:
+            style_instruction = f"""Instructions:
+- Each flashcard must be about a specific instance of the topic category.
+- Do NOT generate flashcards about: people (unless the topic asks for people), history, general explanations of the field.
+- Only generate flashcards about individual items within the category (e.g., for "cognitive biases" → cards about each bias, not about researchers or theories).
+- Prefer specific facts over abstract concepts.
+- Questions should be concise and suitable for active recall.
+- Each flashcard must test exactly ONE piece of knowledge.
+- Prefer questions that start with: Who, What, When, Where.
+- Avoid questions that start with: Why, How—unless absolutely necessary.
+- Avoid multi-part questions. Bad: "Who was Henri Cartier-Bresson and what was the decisive moment?" Good: "Who was Henri Cartier-Bresson?" / "What is the decisive moment in photography?"
+- Questions must be concise and focused on recall.
+
+When the topic asks for a class (e.g., "cognitive biases"), create cards about each instance—e.g. "What is confirmation bias?"—not about people (Daniel Kahneman) or theories (Prospect Theory).
+When the topic asks for people (e.g., "well-known street photographers"), create cards about those individuals—e.g. "Who was Henri Cartier-Bresson?".
+
+Topical Grounding:
+- Every flashcard must be directly related to the topic.
+- If the topic references people, works, or events, include specific names in questions.
+- Avoid generic domain questions that could apply to any topic.
+
+{DEFINITION_ONLY_FORMAT}"""
 
     source_label = "Source text (base flashcards ONLY on this):" if is_from_text else "Topic (stay focused on this):"
     is_identification = _is_identification_mode(topic)
@@ -743,7 +848,7 @@ Topical Grounding:
   ]
 }'''
         json_rules = "- Output MUST be valid JSON. No plain text, no Q/A format. Use double quotes for keys and values."
-    else:
+    elif wants_examples:
         json_schema = '''{
   "flashcards": [
     {
@@ -755,6 +860,18 @@ Topical Grounding:
   ]
 }'''
         json_rules = "- Output MUST be valid JSON. No plain text, no Q/A format, no markdown outside the JSON. Use double quotes for keys and values. Escape newlines as \\n in strings."
+    else:
+        json_schema = '''{
+  "flashcards": [
+    {
+      "question": "<question>",
+      "answer_short": "<concise definition only, 1-2 sentences>",
+      "answer_detailed": null,
+      "difficulty": "easy"
+    }
+  ]
+}'''
+        json_rules = "- Output MUST be valid JSON. No plain text, no Q/A format, no markdown outside the JSON. Use double quotes for keys and values. Escape newlines as \\n in strings. Do NOT include 'Example:' or examples in answer_short."
 
     prompt = f"""You are generating flashcards.
 
@@ -788,7 +905,32 @@ def _generate_flashcards_from_question_topic(
 ) -> str:
     """Generate flashcards directly from a question-style topic, skipping concept extraction."""
     lang_instruction = build_language_instruction(topic, language_hint)
-    examples_required = " Examples are REQUIRED in every card." if _topic_wants_examples(topic) else ""
+    wants_examples = _topic_wants_examples(topic)
+    if wants_examples:
+        answer_format = EXAMPLE_FORMAT_REQUIREMENT
+        json_schema = '''{
+  "flashcards": [
+    {
+      "question": "<question>",
+      "answer_short": "Definition:\\n\\n<definition>\\n\\nExample:\\n\\n<example>",
+      "answer_detailed": null,
+      "difficulty": "easy"
+    }
+  ]
+}'''
+    else:
+        answer_format = DEFINITION_ONLY_FORMAT
+        json_schema = '''{
+  "flashcards": [
+    {
+      "question": "<question>",
+      "answer_short": "<concise definition only, 1-2 sentences>",
+      "answer_detailed": null,
+      "difficulty": "easy"
+    }
+  ]
+}'''
+
     prompt = f"""You are generating flashcards for studying.
 
 Topic:
@@ -808,19 +950,65 @@ Instructions:
 - Questions must be concise and focused on recall.
 - Cards must be directly related to the topic.
 
-{EXAMPLE_FORMAT_REQUIREMENT}
-{examples_required}
+{answer_format}
 
 {_build_count_instruction(num_cards)}
 
 {JSON_OUTPUT_REQUIREMENT}
 
 Return ONLY this JSON structure (no other text):
+{json_schema}
+
+Rules:
+- Output MUST be valid JSON. No plain text, no Q/A format, no markdown outside the JSON.
+- Use double quotes for keys and values. Escape newlines as \\n in strings."""
+
+    return generate_completion(prompt)
+
+
+def _generate_flashcards_from_mapping_topic(
+    topic: str, language_hint: Optional[str] = None, num_cards: int = 10
+) -> str:
+    """Generate flashcards for learning mappings between two related items (e.g. A ↔ Alfa, symbol ↔ name)."""
+    lang_instruction = build_language_instruction(topic, language_hint)
+    prompt = f"""You are generating flashcards for learning mappings between two related items.
+
+Topic:
+{topic}
+
+{lang_instruction}
+
+Format:
+Q: <item A>
+A: <item B>
+
+Include reverse direction where appropriate (e.g. if you have A→Alfa, also include Alfa→A).
+
+Rules:
+- Do NOT use "What is..." questions.
+- Do NOT include definitions.
+- Do NOT include examples.
+- Keep answers very short (one word or short phrase).
+- Ensure variety: include both directions when useful (e.g. letter→name and name→letter).
+- Question is one item, answer is the paired item. No extra text.
+
+Examples:
+Q: A
+A: Alfa
+
+Q: Bravo
+A: B
+
+{_build_count_instruction(num_cards)}
+
+Return ONLY valid JSON. No plain text, no Q/A format. Use double quotes.
+
+Return ONLY this JSON structure (no other text):
 {{
   "flashcards": [
     {{
-      "question": "<question>",
-      "answer_short": "Definition:\\n\\n<definition>\\n\\nExample:\\n\\n<example>",
+      "question": "<item A>",
+      "answer_short": "<item B>",
       "answer_detailed": null,
       "difficulty": "easy"
     }}
@@ -828,8 +1016,7 @@ Return ONLY this JSON structure (no other text):
 }}
 
 Rules:
-- Output MUST be valid JSON. No plain text, no Q/A format, no markdown outside the JSON.
-- Use double quotes for keys and values. Escape newlines as \\n in strings."""
+- Output MUST be valid JSON. No plain text, no Q/A format. Use double quotes. Escape newlines as \\n if needed."""
 
     return generate_completion(prompt)
 
@@ -844,12 +1031,10 @@ OUTPUT FORMAT (CRITICAL):
 You MUST return valid JSON only. No plain text, no Q/A format, no explanations before or after.
 The output MUST be valid JSON. If the output is not valid JSON, it will be rejected.
 Use double quotes for all JSON keys and string values.
-Do not include any text outside the JSON object.
-Each answer_short must use this format (newlines as \\n in JSON):
-"Definition:\\n\\n<one sentence>\\n\\nExample:\\n\\n<one example>" """
+Do not include any text outside the JSON object."""
 
 EXAMPLE_FORMAT_REQUIREMENT = """
-ANSWER FORMAT (REQUIRED):
+ANSWER FORMAT (REQUIRED when examples requested):
 Format the answer exactly as:
 
 Definition:
@@ -860,26 +1045,24 @@ Example:
 
 - Do NOT combine definition and example into a single paragraph.
 - Include a blank line between the definition and the Example: section.
-- Every answer MUST include both definition and example. If an example is missing, the output is invalid.
-- Avoid generic or dictionary-style definitions without examples.
-- Each answer must be no more than 2–3 sentences total. Trim extra whitespace.
+- Every answer MUST include both definition and example.
+- Each answer must be no more than 2–3 sentences total. Trim extra whitespace."""
 
-Example:
-Q: What is Confirmation Bias?
-A:
-Definition:
-The tendency to favor information that confirms existing beliefs.
-
-Example:
-You only read news sources that agree with your opinions."""
+DEFINITION_ONLY_FORMAT = """
+ANSWER FORMAT (REQUIRED when examples NOT requested):
+Format the answer as a concise definition only:
+- One concise definition, 1–2 sentences max.
+- Do NOT include examples.
+- Do NOT include "Example:" label.
+- Definition only."""
 
 
 def _topic_wants_examples(topic: str) -> bool:
-    """Return True if topic explicitly asks for examples (e.g. 'with examples', 'examples')."""
+    """Return True only when topic explicitly contains 'example', 'examples', or 'with examples'."""
     if not topic or not isinstance(topic, str):
         return False
     t = topic.lower().strip()
-    return "with examples" in t or " with example" in t or "examples" in t
+    return any(phrase in t for phrase in ["example", "examples", "with examples"])
 
 
 def _build_count_instruction(num_cards: int) -> str:
@@ -953,7 +1136,7 @@ async def generate_flashcards(
         num_cards = max(1, min(payload.num_cards or 10, 50))
 
         if text_input:
-            # Text mode: generate only from pasted text. Ignore topic/deck name.
+            # Text mode: generate only from pasted text. Topic optional (e.g. deck name) for example detection.
             try:
                 response_text = _generate_flashcards_from_text(
                     text_input,
@@ -961,6 +1144,7 @@ async def generate_flashcards(
                     num_cards=num_cards,
                     strict_text_only=payload.strict_text_only,
                     include_background=payload.include_background,
+                    topic=payload.topic,
                 )
             except ValueError as e:
                 raise HTTPException(status_code=503, detail=str(e))
@@ -973,6 +1157,14 @@ async def generate_flashcards(
                 # Skip concept extraction for question-style topics; generate directly
                 try:
                     response_text = _generate_flashcards_from_question_topic(
+                        topic_str, lang_hint, num_cards=num_cards
+                    )
+                except ValueError as e:
+                    raise HTTPException(status_code=503, detail=str(e))
+            elif _is_mapping_mode(topic_str):
+                # Mapping topics: item A ↔ item B (e.g. phonetic alphabet, symbols)
+                try:
+                    response_text = _generate_flashcards_from_mapping_topic(
                         topic_str, lang_hint, num_cards=num_cards
                     )
                 except ValueError as e:
@@ -1003,7 +1195,9 @@ async def generate_flashcards(
                     else:
                         # Fallback: single-stage generation
                         lang_instruction = build_language_instruction(topic_str, lang_hint)
-                        style_rules = """Instructions:
+                        wants_ex = _topic_wants_examples(topic_str)
+                        if wants_ex:
+                            style_rules = """Instructions:
 - Prefer specific facts, names, events, or individuals over abstract concepts.
 - Prefer questions that start with: Who, What, When, Where.
 - Each question must be exactly: 'Who was [Name]?' for people-list topics.
@@ -1016,6 +1210,33 @@ Example:
 
 Do NOT combine into a single paragraph. Include a blank line between definition and Example. 2–3 sentences max.
 - Cards must be directly related to the topic."""
+                            json_schema = '''{
+  "flashcards": [
+    {
+      "question": "Who was <Name>?",
+      "answer_short": "Definition:\\n\\n<definition>\\n\\nExample:\\n\\n<example>",
+      "answer_detailed": null,
+      "difficulty": "easy"
+    }
+  ]
+}'''
+                        else:
+                            style_rules = """Instructions:
+- Prefer specific facts, names, events, or individuals over abstract concepts.
+- Prefer questions that start with: Who, What, When, Where.
+- Each question must be exactly: 'Who was [Name]?' for people-list topics.
+- Each answer must be a concise definition only (1–2 sentences). Do NOT include examples.
+- Cards must be directly related to the topic."""
+                            json_schema = '''{
+  "flashcards": [
+    {
+      "question": "Who was <Name>?",
+      "answer_short": "<concise definition only, 1-2 sentences>",
+      "answer_detailed": null,
+      "difficulty": "easy"
+    }
+  ]
+}'''
 
                         fallback_prompt = f"""You are generating flashcards for studying notable individuals.
 
@@ -1029,16 +1250,7 @@ Topic:
 {JSON_OUTPUT_REQUIREMENT}
 
 Return ONLY this JSON structure (no other text):
-{{
-  "flashcards": [
-    {{
-      "question": "Who was <Name>?",
-      "answer_short": "Definition:\\n\\n<definition>\\n\\nExample:\\n\\n<example>",
-      "answer_detailed": null,
-      "difficulty": "easy"
-    }}
-  ]
-}}
+{json_schema}
 
 Rules:
 - {_build_count_instruction(num_cards)}
@@ -1062,18 +1274,28 @@ Rules:
                 else:
                     # Fallback: single-stage generation when concept extraction fails
                     lang_instruction = build_language_instruction(topic_str, lang_hint)
+                    wants_ex = _topic_wants_examples(topic_str)
                     if is_vocab:
                         vocab_instruction = build_vocab_instruction(topic_str)
-                        style_rules = f"""Vocabulary Topics:
+                        if wants_ex:
+                            style_rules = f"""Vocabulary Topics:
 If the topic appears to be vocabulary, slang, or terminology:
 - Each flashcard should explain a specific word or phrase.
 - The question should ask for the meaning of the word.
 - The answer should define it clearly and include an example.
 {vocab_instruction}
 {EXAMPLE_FORMAT_REQUIREMENT}"""
+                        else:
+                            style_rules = f"""Vocabulary Topics:
+If the topic appears to be vocabulary, slang, or terminology:
+- Each flashcard should explain a specific word or phrase.
+- The question should ask for the meaning of the word.
+- The answer should be a concise definition only (1–2 sentences). Do NOT include examples.
+{vocab_instruction}
+{DEFINITION_ONLY_FORMAT}"""
                     else:
-                        examples_req = " Examples are REQUIRED in every card." if _topic_wants_examples(topic_str) else ""
-                        style_rules = f"""Instructions:
+                        if wants_ex:
+                            style_rules = f"""Instructions:
 - Prefer specific facts, names, events, or individuals over abstract concepts.
 - Avoid abstract explanations; focus on concrete, memorable facts.
 - Questions should be concise and suitable for active recall.
@@ -1085,8 +1307,41 @@ If the topic appears to be vocabulary, slang, or terminology:
 - Questions must be concise and focused on recall.
 - Cards must be directly related to the topic.
 
-{EXAMPLE_FORMAT_REQUIREMENT}
-{examples_req}"""
+{EXAMPLE_FORMAT_REQUIREMENT}"""
+                        else:
+                            style_rules = f"""Instructions:
+- Prefer specific facts, names, events, or individuals over abstract concepts.
+- Avoid abstract explanations; focus on concrete, memorable facts.
+- Questions should be concise and suitable for active recall.
+- Each flashcard must test exactly ONE piece of knowledge.
+- Prefer named entities (people, places, works, events) when possible.
+- Prefer questions that start with: Who, What, When, Where.
+- Avoid questions that start with: Why, How—unless absolutely necessary.
+- Avoid multi-part questions. Bad: "Who was Henri Cartier-Bresson and what was the decisive moment?" Good: "Who was Henri Cartier-Bresson?" / "What is the decisive moment in photography?"
+- Questions must be concise and focused on recall.
+- Cards must be directly related to the topic.
+
+{DEFINITION_ONLY_FORMAT}"""
+
+                    fallback_json = '''{
+  "flashcards": [
+    {
+      "question": "<question>",
+      "answer_short": "Definition:\\n\\n<definition>\\n\\nExample:\\n\\n<example>",
+      "answer_detailed": null,
+      "difficulty": "easy"
+    }
+  ]
+}''' if wants_ex else '''{
+  "flashcards": [
+    {
+      "question": "<question>",
+      "answer_short": "<concise definition only, 1-2 sentences>",
+      "answer_detailed": null,
+      "difficulty": "easy"
+    }
+  ]
+}'''
 
                     fallback_prompt = f"""You are generating flashcards for studying.
 
@@ -1100,16 +1355,7 @@ Topic:
 {JSON_OUTPUT_REQUIREMENT}
 
 Return ONLY this JSON structure (no other text):
-{{
-  "flashcards": [
-    {{
-      "question": "<question>",
-      "answer_short": "Definition:\\n\\n<definition>\\n\\nExample:\\n\\n<example>",
-      "answer_detailed": null,
-      "difficulty": "easy"
-    }}
-  ]
-}}
+{fallback_json}
 
 Rules:
 - {_build_count_instruction(num_cards)}
