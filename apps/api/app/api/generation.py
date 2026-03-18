@@ -294,6 +294,64 @@ def _extract_balanced_json(text: str) -> str | None:
     return None
 
 
+def _extract_balanced_array(text: str) -> str | None:
+    """Extract the first complete top-level JSON array using balanced bracket matching."""
+    start = text.find("[")
+    if start == -1:
+        return None
+
+    stack: list[str] = []
+    in_string = False
+    escape = False
+    i = start
+    while i < len(text):
+        char = text[i]
+        if escape:
+            escape = False
+            i += 1
+            continue
+        if in_string:
+            if char == "\\":
+                escape = True
+            elif char == '"':
+                in_string = False
+            i += 1
+            continue
+        if char == '"':
+            in_string = True
+            i += 1
+            continue
+        if char == "[":
+            stack.append("[")
+        elif char == "]":
+            if stack:
+                stack.pop()
+                if not stack:
+                    return text[start : i + 1]
+        i += 1
+    return None
+
+
+def _isolate_json_chunk(raw: str) -> str | None:
+    """Extract JSON from raw LLM response, isolating it from logs/metadata/extra text."""
+    raw = raw.strip()
+    # Try markdown code block first
+    match = re.search(r"```(?:json)?\s*([\s\S]*?)```", raw)
+    if match:
+        chunk = match.group(1).strip()
+        if chunk:
+            return chunk
+    # Try balanced object extraction
+    chunk = _extract_balanced_json(raw)
+    if chunk:
+        return chunk
+    # Try balanced array extraction
+    chunk = _extract_balanced_array(raw)
+    if chunk:
+        return chunk
+    return None
+
+
 def _extract_first_json(text: str):
     """Extract the first complete top-level JSON object or array from text. Returns parsed value or None."""
     start_obj = text.find("{")
@@ -465,16 +523,84 @@ def _repair_bare_formula_json(text: str) -> str:
     return text
 
 
-def _extract_json(text: str) -> dict:
-    """Extract JSON from LLM response, handling markdown code blocks and extra prose."""
-    text = text.strip()
-    match = re.search(r"```(?:json)?\s*([\s\S]*?)```", text)
-    if match:
-        text = match.group(1).strip()
-    if not text:
-        return {}
+def _is_balanced_json(text: str) -> bool:
+    """Check if brackets and braces are properly balanced (ignores content inside strings)."""
+    stack: list[str] = []
+    in_string = False
+    escape = False
 
-    text = _repair_bare_formula_json(text)
+    for char in text:
+        if escape:
+            escape = False
+            continue
+
+        if char == "\\":
+            escape = True
+            continue
+
+        if char == '"':
+            in_string = not in_string
+            continue
+
+        if in_string:
+            continue
+
+        if char in "{[":
+            stack.append(char)
+        elif char in "}]":
+            if not stack:
+                return False
+            open_char = stack.pop()
+            if (open_char, char) not in [("{", "}"), ("[", "]")]:
+                return False
+
+    return len(stack) == 0
+
+
+def _validate_flashcards_schema(data) -> bool:
+    """Validate that parsed data has usable flashcards structure."""
+    if not isinstance(data, dict):
+        return False
+
+    cards = data.get("flashcards") or data.get("cards")
+
+    if not isinstance(cards, list) or len(cards) == 0:
+        return False
+
+    for card in cards:
+        if not isinstance(card, dict):
+            return False
+        if "question" not in card or "answer_short" not in card:
+            return False
+
+    return True
+
+
+def _looks_like_complete_flashcards_json(text: str) -> bool:
+    """Check if extracted chunk appears to be complete (not truncated)."""
+    if not text or not text.strip():
+        return False
+    s = text.strip()
+    return (
+        ('"flashcards"' in text or '"cards"' in text)
+        and (s.endswith("}") or s.endswith("]"))
+        and text.count("{") >= 2
+    )
+
+
+def _extract_json(text: str) -> dict:
+    """Extract JSON from LLM response. Isolate JSON first, then repair, then parse."""
+    raw = text.strip()
+    # 1. FIRST extract JSON from raw (isolates from "LLM Usage", logs, metadata)
+    json_chunk = _isolate_json_chunk(raw)
+    if not json_chunk:
+        raise ValueError("No valid JSON found in LLM response")
+
+    if not _looks_like_complete_flashcards_json(json_chunk) or not _is_balanced_json(json_chunk):
+        raise ValueError("LLM response appears truncated")
+
+    # 2. THEN run repair steps on the isolated JSON only
+    text = _repair_bare_formula_json(json_chunk)
     text = _repair_pseudo_latex(text)
     before_latex = text
     text, latex_repaired = _repair_unescaped_latex_json(text)
@@ -490,6 +616,7 @@ def _extract_json(text: str) -> dict:
     if not (s.endswith("]}") or s.endswith("]")):
         raise ValueError("LLM response appears truncated")
 
+    # 3. THEN parse
     data = None
     try:
         data = json.loads(text)
@@ -499,19 +626,6 @@ def _extract_json(text: str) -> dict:
             data = json.loads(fixed)
         except json.JSONDecodeError:
             data = _extract_first_json(text)
-    if data is None:
-        # Fallback: balanced bracket extraction, then repair and parse
-        chunk = _extract_balanced_json(text)
-        if chunk:
-            chunk, _ = _repair_unescaped_latex_json(chunk)
-            try:
-                data = json.loads(chunk)
-            except json.JSONDecodeError:
-                fixed = re.sub(r",\s*([}\]])", r"\1", chunk)
-                try:
-                    data = json.loads(fixed)
-                except json.JSONDecodeError:
-                    data = _extract_first_json(chunk)
 
     if data is None and latex_repaired:
         logger.warning(
@@ -522,29 +636,32 @@ def _extract_json(text: str) -> dict:
     if data is None:
         return {}
     if isinstance(data, list):
-        return {"flashcards": data}
-    if not isinstance(data, dict):
+        result = {"flashcards": data}
+    elif not isinstance(data, dict):
         return {}
-    # Accept "cards" as alias for "flashcards"
-    if "flashcards" in data:
-        return data
-    if "cards" in data and isinstance(data["cards"], list):
-        return {"flashcards": data["cards"]}
-    return data
+    elif "flashcards" in data:
+        result = data
+    elif "cards" in data and isinstance(data["cards"], list):
+        result = {"flashcards": data["cards"]}
+    else:
+        return {}
+
+    if not _validate_flashcards_schema(result):
+        raise ValueError("Invalid flashcards schema")
+
+    return result
 
 
 def _extract_json_simple(text: str) -> dict:
     """Minimal JSON extraction for simple (non-formula) topics. No LaTeX repairs."""
-    text = text.strip()
-    match = re.search(r"```(?:json)?\s*([\s\S]*?)```", text)
-    if match:
-        text = match.group(1).strip()
-    if not text:
+    # Isolate JSON first (handles "LLM Usage", logs, metadata)
+    json_chunk = _isolate_json_chunk(text.strip())
+    if not json_chunk:
         return {}
     try:
-        data = json.loads(text)
+        data = json.loads(json_chunk)
     except json.JSONDecodeError:
-        fixed = re.sub(r",\s*([}\]])", r"\1", text)
+        fixed = re.sub(r",\s*([}\]])", r"\1", json_chunk)
         try:
             data = json.loads(fixed)
         except json.JSONDecodeError:
@@ -552,14 +669,20 @@ def _extract_json_simple(text: str) -> dict:
     if data is None:
         return {}
     if isinstance(data, list):
-        return {"flashcards": data}
-    if not isinstance(data, dict):
+        result = {"flashcards": data}
+    elif not isinstance(data, dict):
         return {}
-    if "flashcards" in data:
-        return data
-    if "cards" in data and isinstance(data["cards"], list):
-        return {"flashcards": data["cards"]}
-    return data
+    elif "flashcards" in data:
+        result = data
+    elif "cards" in data and isinstance(data["cards"], list):
+        result = {"flashcards": data["cards"]}
+    else:
+        return {}
+
+    if not _validate_flashcards_schema(result):
+        raise ValueError("Invalid flashcards schema")
+
+    return result
 
 
 def _is_question_style_topic(topic: str) -> bool:
@@ -1711,6 +1834,9 @@ def _is_formula_topic(topic: str) -> bool:
     )
 
 
+LIGHTWEIGHT_KEYWORDS = ["simple", "basic", "intro", "easy", "quick"]
+
+
 def _get_math_instruction(topic: str) -> str:
     """Return STRICT_FORMULA_INSTRUCTION, FORMULA_INSTRUCTION, or LATEX_INSTRUCTION."""
     if _is_strict_formula_topic(topic):
@@ -1826,6 +1952,7 @@ async def generate_flashcards(
             (text_input[:200] + "...") if text_input else ""
         )
 
+        used_simple_mode = False
         for attempt in range(3):
             if attempt == 1:
                 requested_cards = max(3, requested_cards - 2)
@@ -1864,7 +1991,17 @@ async def generate_flashcards(
                 topic_str = payload.topic or ""
                 is_vocab = is_vocabulary_topic(topic_str)
 
-                if not _is_formula_topic(topic_str):
+                # Use simple mode for non-formula topics OR lightweight formula topics (e.g. "basic formulas", "intro calculus")
+                is_lightweight_formula = (
+                    _is_formula_topic(topic_str)
+                    and any(k in topic_str.lower() for k in LIGHTWEIGHT_KEYWORDS)
+                )
+                use_simple_mode = (
+                    not _is_formula_topic(topic_str)
+                    or is_lightweight_formula
+                )
+                if use_simple_mode:
+                    used_simple_mode = True
                     # Simple generation mode: no LaTeX, minimal prompt, json.loads only
                     # Retry once with same prompt on parse failure (do not modify content)
                     parsed_json = {}
@@ -2188,8 +2325,8 @@ async def generate_flashcards(
 
         topic_str = (payload.topic or "").strip()
 
-        # Strict formula: filter to cards that include $$ in answer
-        if _is_strict_formula_topic(topic_str):
+        # Strict formula: filter to cards that include $$ in answer (skip when used simple mode - no LaTeX)
+        if not used_simple_mode and _is_strict_formula_topic(topic_str):
             before = len(cards)
             cards = [
                 c
