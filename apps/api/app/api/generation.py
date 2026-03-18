@@ -485,6 +485,11 @@ def _extract_json(text: str) -> dict:
             (text[:150] + "...") if len(text) > 150 else text,
         )
 
+    # Truncation detection: valid JSON should end with ]} (object) or ] (array)
+    s = text.strip()
+    if not (s.endswith("]}") or s.endswith("]")):
+        raise ValueError("LLM response appears truncated")
+
     data = None
     try:
         data = json.loads(text)
@@ -751,7 +756,7 @@ Rules:
         concepts = parsed.get("concepts", [])
         if isinstance(concepts, list) and all(isinstance(c, str) for c in concepts):
             return concepts[:num_cards]
-    except (json.JSONDecodeError, TypeError):
+    except (ValueError, json.JSONDecodeError, TypeError):
         pass
     return []
 
@@ -1562,7 +1567,7 @@ NON_FORMULA_TOPICS = """NON-FORMULA TOPICS:
 def _estimate_tokens_per_card(topic: str) -> int:
     """Estimate tokens per flashcard for truncation safety."""
     if _is_formula_topic(topic):
-        return 120
+        return 200  # Formula flashcards with LaTeX are significantly longer than plain text
     return 80
 
 
@@ -1732,296 +1737,309 @@ async def generate_flashcards(
         topic_for_estimate = (payload.topic or "") or (
             (text_input[:200] + "...") if text_input else ""
         )
-        num_cards, safe_max = _compute_safe_card_count(requested_cards, topic_for_estimate)
-        logger.info(
-            "Requested cards: %d, Safe max cards: %d, Final cards used: %d",
-            requested_cards,
-            safe_max,
-            num_cards,
-        )
 
-        if text_input:
-            # Text mode: generate only from pasted text. Topic optional (e.g. deck name) for example detection.
-            try:
-                response_text = _generate_flashcards_from_text(
-                    text_input,
-                    lang_hint,
-                    num_cards=num_cards,
-                    strict_text_only=payload.strict_text_only,
-                    include_background=payload.include_background,
-                    topic=payload.topic,
-                )
-            except ValueError as e:
-                raise HTTPException(status_code=503, detail=str(e))
-        else:
-            # Topic mode
-            topic_str = payload.topic or ""
-            is_vocab = is_vocabulary_topic(topic_str)
+        for attempt in range(2):
+            if attempt > 0:
+                requested_cards = max(3, requested_cards - 2)
+            num_cards, safe_max = _compute_safe_card_count(requested_cards, topic_for_estimate)
+            logger.info(
+                "Requested cards: %d, Safe max cards: %d, Final cards used: %d (attempt %d)",
+                requested_cards,
+                safe_max,
+                num_cards,
+                attempt + 1,
+            )
 
-            if _is_question_style_topic(topic_str):
-                # Skip concept extraction for question-style topics; generate directly
+            if text_input:
+                # Text mode: generate only from pasted text. Topic optional (e.g. deck name) for example detection.
                 try:
-                    response_text = _generate_flashcards_from_question_topic(
-                        topic_str, lang_hint, num_cards=num_cards
+                    response_text = _generate_flashcards_from_text(
+                        text_input,
+                        lang_hint,
+                        num_cards=num_cards,
+                        strict_text_only=payload.strict_text_only,
+                        include_background=payload.include_background,
+                        topic=payload.topic,
                     )
                 except ValueError as e:
                     raise HTTPException(status_code=503, detail=str(e))
-            elif _is_mapping_mode(topic_str):
-                # Mapping topics: item A ↔ item B (e.g. phonetic alphabet, symbols)
-                try:
-                    response_text = _generate_flashcards_from_mapping_topic(
-                        topic_str, lang_hint, num_cards=num_cards
-                    )
-                except ValueError as e:
-                    raise HTTPException(status_code=503, detail=str(e))
-            elif _is_people_list_topic(topic_str) and not is_vocab:
-                # List-of-people topics: use dedicated extraction + generation for "Who was X?" cards
-                # (vocabulary topics use generic path above)
-                concepts = _extract_concepts(
-                    topic=topic_str, language_hint=lang_hint, is_people_list=True, num_cards=num_cards
-                )
-                if concepts:
+            else:
+                # Topic mode
+                topic_str = payload.topic or ""
+                is_vocab = is_vocabulary_topic(topic_str)
+
+                if _is_question_style_topic(topic_str):
+                    # Skip concept extraction for question-style topics; generate directly
                     try:
-                        response_text = _generate_flashcards_from_people_list(
-                            concepts, topic_str, lang_hint, num_cards=num_cards
+                        response_text = _generate_flashcards_from_question_topic(
+                            topic_str, lang_hint, num_cards=num_cards
                         )
                     except ValueError as e:
                         raise HTTPException(status_code=503, detail=str(e))
-                else:
-                    # Fallback to generic generation if people extraction fails
-                    concepts = _extract_concepts(topic=topic_str, language_hint=lang_hint, num_cards=num_cards)
+                elif _is_mapping_mode(topic_str):
+                    # Mapping topics: item A ↔ item B (e.g. phonetic alphabet, symbols)
+                    try:
+                        response_text = _generate_flashcards_from_mapping_topic(
+                            topic_str, lang_hint, num_cards=num_cards
+                        )
+                    except ValueError as e:
+                        raise HTTPException(status_code=503, detail=str(e))
+                elif _is_people_list_topic(topic_str) and not is_vocab:
+                    # List-of-people topics: use dedicated extraction + generation for "Who was X?" cards
+                    # (vocabulary topics use generic path above)
+                    concepts = _extract_concepts(
+                        topic=topic_str, language_hint=lang_hint, is_people_list=True, num_cards=num_cards
+                    )
                     if concepts:
                         try:
-                            response_text = _generate_flashcards_from_concepts(
-                                concepts, topic_str, lang_hint, is_vocab=False, num_cards=num_cards
+                            response_text = _generate_flashcards_from_people_list(
+                                concepts, topic_str, lang_hint, num_cards=num_cards
                             )
                         except ValueError as e:
                             raise HTTPException(status_code=503, detail=str(e))
                     else:
-                        # Fallback: single-stage generation
+                        # Fallback to generic generation if people extraction fails
+                        concepts = _extract_concepts(topic=topic_str, language_hint=lang_hint, num_cards=num_cards)
+                        if concepts:
+                            try:
+                                response_text = _generate_flashcards_from_concepts(
+                                    concepts, topic_str, lang_hint, is_vocab=False, num_cards=num_cards
+                                )
+                            except ValueError as e:
+                                raise HTTPException(status_code=503, detail=str(e))
+                        else:
+                            # Fallback: single-stage generation
+                            lang_instruction = build_language_instruction(topic_str, lang_hint)
+                            wants_ex = _topic_wants_examples(topic_str)
+                            if wants_ex:
+                                style_rules = """Instructions:
+    - Prefer specific facts, names, events, or individuals over abstract concepts.
+    - Prefer questions that start with: Who, What, When, Where.
+    - Each question must be exactly: 'Who was [Name]?' for people-list topics.
+    - Format each answer as:
+    Definition:
+    <one concise sentence>
+
+    Example:
+    <one concrete example (notable work, achievement)>
+
+    Do NOT combine into a single paragraph. Include a blank line between definition and Example. 2–3 sentences max.
+    - Cards must be directly related to the topic."""
+                                json_schema = '''{
+      "flashcards": [
+        {
+          "question": "Who was <Name>?",
+          "answer_short": "Definition:\\n\\n<definition>\\n\\nExample:\\n\\n<example>",
+          "answer_detailed": null,
+          "difficulty": "easy"
+        }
+      ]
+    }'''
+                            else:
+                                style_rules = """Instructions:
+    - Prefer specific facts, names, events, or individuals over abstract concepts.
+    - Prefer questions that start with: Who, What, When, Where.
+    - Each question must be exactly: 'Who was [Name]?' for people-list topics.
+    - Each answer must be a concise definition only (1–2 sentences). Do NOT include examples.
+    - Cards must be directly related to the topic."""
+                                json_schema = '''{
+      "flashcards": [
+        {
+          "question": "Who was <Name>?",
+          "answer_short": "<concise definition only, 1-2 sentences>",
+          "answer_detailed": null,
+          "difficulty": "easy"
+        }
+      ]
+    }'''
+
+                            fallback_prompt = f"""{JSON_HEADER}
+    You are generating flashcards for studying notable individuals.
+
+    Topic:
+    {topic_str}
+
+    {lang_instruction}
+
+    {style_rules}
+
+    {CONTENT_RULES}
+
+    {_get_math_instruction(topic_str)}
+
+    {JSON_OUTPUT_REQUIREMENT}
+
+    Return ONLY this JSON structure (no other text):
+    {json_schema}
+
+    Rules:
+    - {_build_count_instruction(num_cards)}
+    - Output MUST be valid JSON. No plain text, no Q/A format. Use double quotes. Escape newlines as \\n.
+    {JSON_CLOSING_CONSTRAINT}"""
+
+                            try:
+                                response_text = generate_completion(fallback_prompt)
+                            except ValueError as e:
+                                raise HTTPException(status_code=503, detail=str(e))
+                else:
+                    # Extract concepts then generate (generic topics)
+                    concepts = _extract_concepts(topic=topic_str, language_hint=lang_hint, num_cards=num_cards)
+
+                    if concepts:
+                        try:
+                            response_text = _generate_flashcards_from_concepts(
+                                concepts, topic_str, lang_hint, is_vocab=is_vocab, num_cards=num_cards
+                            )
+                        except ValueError as e:
+                            raise HTTPException(status_code=503, detail=str(e))
+                    else:
+                        # Fallback: single-stage generation when concept extraction fails
                         lang_instruction = build_language_instruction(topic_str, lang_hint)
                         wants_ex = _topic_wants_examples(topic_str)
-                        if wants_ex:
-                            style_rules = """Instructions:
-- Prefer specific facts, names, events, or individuals over abstract concepts.
-- Prefer questions that start with: Who, What, When, Where.
-- Each question must be exactly: 'Who was [Name]?' for people-list topics.
-- Format each answer as:
-Definition:
-<one concise sentence>
-
-Example:
-<one concrete example (notable work, achievement)>
-
-Do NOT combine into a single paragraph. Include a blank line between definition and Example. 2–3 sentences max.
-- Cards must be directly related to the topic."""
-                            json_schema = '''{
-  "flashcards": [
-    {
-      "question": "Who was <Name>?",
-      "answer_short": "Definition:\\n\\n<definition>\\n\\nExample:\\n\\n<example>",
-      "answer_detailed": null,
-      "difficulty": "easy"
-    }
-  ]
-}'''
+                        if is_vocab:
+                            vocab_instruction = build_vocab_instruction(topic_str)
+                            if wants_ex:
+                                style_rules = f"""Vocabulary Topics:
+    If the topic appears to be vocabulary, slang, or terminology:
+    - Each flashcard should explain a specific word or phrase.
+    - The question should ask for the meaning of the word.
+    - The answer should define it clearly and include an example.
+    {vocab_instruction}
+    {EXAMPLE_FORMAT_REQUIREMENT}"""
+                            else:
+                                style_rules = f"""Vocabulary Topics:
+    If the topic appears to be vocabulary, slang, or terminology:
+    - Each flashcard should explain a specific word or phrase.
+    - The question should ask for the meaning of the word.
+    - The answer should be a concise definition only (1–2 sentences). Do NOT include examples.
+    {vocab_instruction}
+    {DEFINITION_ONLY_FORMAT}"""
                         else:
-                            style_rules = """Instructions:
-- Prefer specific facts, names, events, or individuals over abstract concepts.
-- Prefer questions that start with: Who, What, When, Where.
-- Each question must be exactly: 'Who was [Name]?' for people-list topics.
-- Each answer must be a concise definition only (1–2 sentences). Do NOT include examples.
-- Cards must be directly related to the topic."""
-                            json_schema = '''{
-  "flashcards": [
-    {
-      "question": "Who was <Name>?",
-      "answer_short": "<concise definition only, 1-2 sentences>",
-      "answer_detailed": null,
-      "difficulty": "easy"
-    }
-  ]
-}'''
+                            is_strict_formula = _is_strict_formula_topic(topic_str)
+                            is_formula = _is_formula_topic(topic_str)
+                            if is_strict_formula:
+                                style_rules = STRICT_FORMULA_INSTRUCTION
+                                fallback_json = '''{
+      "flashcards": [
+        {
+          "question": "<question>",
+          "answer_short": "<short explanation>\\n\\n$$<formula>$$",
+          "answer_detailed": null,
+          "difficulty": "easy"
+        }
+      ]
+    }'''
+                            elif is_formula:
+                                style_rules = FORMULA_INSTRUCTION
+                                fallback_json = '''{
+      "flashcards": [
+        {
+          "question": "<question>",
+          "answer_short": "<short explanation>\\n\\n$$<formula>$$",
+          "answer_detailed": null,
+          "difficulty": "easy"
+        }
+      ]
+    }'''
+                            elif wants_ex:
+                                style_rules = f"""Instructions:
+    - Prefer specific facts, names, events, or individuals over abstract concepts.
+    - Avoid abstract explanations; focus on concrete, memorable facts.
+    - Questions should be concise and suitable for active recall.
+    - Each flashcard must test exactly ONE piece of knowledge.
+    - Prefer named entities (people, places, works, events) when possible.
+    - Prefer questions that start with: Who, What, When, Where.
+    - Avoid questions that start with: Why, How—unless absolutely necessary.
+    - Avoid multi-part questions. Bad: "Who was Henri Cartier-Bresson and what was the decisive moment?" Good: "Who was Henri Cartier-Bresson?" / "What is the decisive moment in photography?"
+    - Questions must be concise and focused on recall.
+    - Cards must be directly related to the topic.
+
+    {EXAMPLE_FORMAT_REQUIREMENT}"""
+                                fallback_json = '''{
+      "flashcards": [
+        {
+          "question": "<question>",
+          "answer_short": "Definition:\\n\\n<definition>\\n\\nExample:\\n\\n<example>",
+          "answer_detailed": null,
+          "difficulty": "easy"
+        }
+      ]
+    }'''
+                            else:
+                                style_rules = f"""Instructions:
+    - Prefer specific facts, names, events, or individuals over abstract concepts.
+    - Avoid abstract explanations; focus on concrete, memorable facts.
+    - Questions should be concise and suitable for active recall.
+    - Each flashcard must test exactly ONE piece of knowledge.
+    - Prefer named entities (people, places, works, events) when possible.
+    - Prefer questions that start with: Who, What, When, Where.
+    - Avoid questions that start with: Why, How—unless absolutely necessary.
+    - Avoid multi-part questions. Bad: "Who was Henri Cartier-Bresson and what was the decisive moment?" Good: "Who was Henri Cartier-Bresson?" / "What is the decisive moment in photography?"
+    - Questions must be concise and focused on recall.
+    - Cards must be directly related to the topic.
+
+    {DEFINITION_ONLY_FORMAT}"""
+                                fallback_json = '''{
+      "flashcards": [
+        {
+          "question": "<question>",
+          "answer_short": "<concise definition only, 1-2 sentences>",
+          "answer_detailed": null,
+          "difficulty": "easy"
+        }
+      ]
+    }'''
 
                         fallback_prompt = f"""{JSON_HEADER}
-You are generating flashcards for studying notable individuals.
+    You are generating flashcards for studying.
 
-Topic:
-{topic_str}
+    Topic:
+    {topic_str}
 
-{lang_instruction}
+    {lang_instruction}
 
-{style_rules}
+    {style_rules}
 
-{CONTENT_RULES}
+    {CONTENT_RULES}
 
-{_get_math_instruction(topic_str)}
+    {_get_math_instruction(topic_str)}
 
-{JSON_OUTPUT_REQUIREMENT}
+    {JSON_OUTPUT_REQUIREMENT}
 
-Return ONLY this JSON structure (no other text):
-{json_schema}
+    Return ONLY this JSON structure (no other text):
+    {fallback_json}
 
-Rules:
-- {_build_count_instruction(num_cards)}
-- Output MUST be valid JSON. No plain text, no Q/A format. Use double quotes. Escape newlines as \\n.
-{JSON_CLOSING_CONSTRAINT}"""
+    Rules:
+    - {_build_count_instruction(num_cards)}
+    - Output MUST be valid JSON. No plain text, no Q/A format. Use double quotes. Escape newlines as \\n.
+    {JSON_CLOSING_CONSTRAINT}"""
 
                         try:
                             response_text = generate_completion(fallback_prompt)
                         except ValueError as e:
                             raise HTTPException(status_code=503, detail=str(e))
-            else:
-                # Extract concepts then generate (generic topics)
-                concepts = _extract_concepts(topic=topic_str, language_hint=lang_hint, num_cards=num_cards)
 
-                if concepts:
-                    try:
-                        response_text = _generate_flashcards_from_concepts(
-                            concepts, topic_str, lang_hint, is_vocab=is_vocab, num_cards=num_cards
-                        )
-                    except ValueError as e:
-                        raise HTTPException(status_code=503, detail=str(e))
-                else:
-                    # Fallback: single-stage generation when concept extraction fails
-                    lang_instruction = build_language_instruction(topic_str, lang_hint)
-                    wants_ex = _topic_wants_examples(topic_str)
-                    if is_vocab:
-                        vocab_instruction = build_vocab_instruction(topic_str)
-                        if wants_ex:
-                            style_rules = f"""Vocabulary Topics:
-If the topic appears to be vocabulary, slang, or terminology:
-- Each flashcard should explain a specific word or phrase.
-- The question should ask for the meaning of the word.
-- The answer should define it clearly and include an example.
-{vocab_instruction}
-{EXAMPLE_FORMAT_REQUIREMENT}"""
-                        else:
-                            style_rules = f"""Vocabulary Topics:
-If the topic appears to be vocabulary, slang, or terminology:
-- Each flashcard should explain a specific word or phrase.
-- The question should ask for the meaning of the word.
-- The answer should be a concise definition only (1–2 sentences). Do NOT include examples.
-{vocab_instruction}
-{DEFINITION_ONLY_FORMAT}"""
-                    else:
-                        is_strict_formula = _is_strict_formula_topic(topic_str)
-                        is_formula = _is_formula_topic(topic_str)
-                        if is_strict_formula:
-                            style_rules = STRICT_FORMULA_INSTRUCTION
-                            fallback_json = '''{
-  "flashcards": [
-    {
-      "question": "<question>",
-      "answer_short": "<short explanation>\\n\\n$$<formula>$$",
-      "answer_detailed": null,
-      "difficulty": "easy"
-    }
-  ]
-}'''
-                        elif is_formula:
-                            style_rules = FORMULA_INSTRUCTION
-                            fallback_json = '''{
-  "flashcards": [
-    {
-      "question": "<question>",
-      "answer_short": "<short explanation>\\n\\n$$<formula>$$",
-      "answer_detailed": null,
-      "difficulty": "easy"
-    }
-  ]
-}'''
-                        elif wants_ex:
-                            style_rules = f"""Instructions:
-- Prefer specific facts, names, events, or individuals over abstract concepts.
-- Avoid abstract explanations; focus on concrete, memorable facts.
-- Questions should be concise and suitable for active recall.
-- Each flashcard must test exactly ONE piece of knowledge.
-- Prefer named entities (people, places, works, events) when possible.
-- Prefer questions that start with: Who, What, When, Where.
-- Avoid questions that start with: Why, How—unless absolutely necessary.
-- Avoid multi-part questions. Bad: "Who was Henri Cartier-Bresson and what was the decisive moment?" Good: "Who was Henri Cartier-Bresson?" / "What is the decisive moment in photography?"
-- Questions must be concise and focused on recall.
-- Cards must be directly related to the topic.
-
-{EXAMPLE_FORMAT_REQUIREMENT}"""
-                            fallback_json = '''{
-  "flashcards": [
-    {
-      "question": "<question>",
-      "answer_short": "Definition:\\n\\n<definition>\\n\\nExample:\\n\\n<example>",
-      "answer_detailed": null,
-      "difficulty": "easy"
-    }
-  ]
-}'''
-                        else:
-                            style_rules = f"""Instructions:
-- Prefer specific facts, names, events, or individuals over abstract concepts.
-- Avoid abstract explanations; focus on concrete, memorable facts.
-- Questions should be concise and suitable for active recall.
-- Each flashcard must test exactly ONE piece of knowledge.
-- Prefer named entities (people, places, works, events) when possible.
-- Prefer questions that start with: Who, What, When, Where.
-- Avoid questions that start with: Why, How—unless absolutely necessary.
-- Avoid multi-part questions. Bad: "Who was Henri Cartier-Bresson and what was the decisive moment?" Good: "Who was Henri Cartier-Bresson?" / "What is the decisive moment in photography?"
-- Questions must be concise and focused on recall.
-- Cards must be directly related to the topic.
-
-{DEFINITION_ONLY_FORMAT}"""
-                            fallback_json = '''{
-  "flashcards": [
-    {
-      "question": "<question>",
-      "answer_short": "<concise definition only, 1-2 sentences>",
-      "answer_detailed": null,
-      "difficulty": "easy"
-    }
-  ]
-}'''
-
-                    fallback_prompt = f"""{JSON_HEADER}
-You are generating flashcards for studying.
-
-Topic:
-{topic_str}
-
-{lang_instruction}
-
-{style_rules}
-
-{CONTENT_RULES}
-
-{_get_math_instruction(topic_str)}
-
-{JSON_OUTPUT_REQUIREMENT}
-
-Return ONLY this JSON structure (no other text):
-{fallback_json}
-
-Rules:
-- {_build_count_instruction(num_cards)}
-- Output MUST be valid JSON. No plain text, no Q/A format. Use double quotes. Escape newlines as \\n.
-{JSON_CLOSING_CONSTRAINT}"""
-
-                    try:
-                        response_text = generate_completion(fallback_prompt)
-                    except ValueError as e:
-                        raise HTTPException(status_code=503, detail=str(e))
-
-        parsed_json = _extract_json(response_text)
-        if "flashcards" not in parsed_json or not isinstance(
-            parsed_json.get("flashcards"), list
-        ):
-            preview = (response_text or "")[:500].replace("\n", " ")
-            logger.error(
-                "Failed to parse LLM response: expected flashcards JSON. Preview: %s",
-                preview,
-            )
-            raise HTTPException(
-                status_code=502,
-                detail="Failed to parse LLM response as JSON",
-            )
+            try:
+                parsed_json = _extract_json(response_text)
+            except ValueError as e:
+                if "truncated" in str(e).lower() and attempt == 0:
+                    continue
+                raise HTTPException(status_code=503, detail=str(e))
+            if "flashcards" not in parsed_json or not isinstance(
+                parsed_json.get("flashcards"), list
+            ):
+                if attempt == 0:
+                    continue
+                preview = (response_text or "")[:500].replace("\n", " ")
+                logger.error(
+                    "Failed to parse LLM response: expected flashcards JSON. Preview: %s",
+                    preview,
+                )
+                raise HTTPException(
+                    status_code=502,
+                    detail="Failed to parse LLM response as JSON",
+                )
+            break
 
         cards: list = parsed_json["flashcards"]
         logger.info("Generated %d candidate cards", len(cards))
