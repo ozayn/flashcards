@@ -17,6 +17,8 @@ from app.schemas.flashcard import DIFFICULTY_TO_INT
 from app.utils.topic_analysis import (
     build_language_instruction,
     build_vocab_instruction,
+    is_loanword_vocab_topic,
+    is_translation_vocab_topic,
     is_vocabulary_topic,
 )
 
@@ -303,6 +305,44 @@ def _strip_llm_metadata(raw: str) -> str:
     return raw.strip()
 
 
+def _try_repair_truncated_json(raw: str) -> str | None:
+    """Attempt to repair truncated JSON (e.g. missing ]} at end)."""
+    idx = raw.find('{"flashcards"')
+    if idx < 0:
+        idx = raw.find('{"cards"')
+    if idx < 0:
+        return None
+    chunk = raw[idx:].strip()
+    if not chunk or chunk[-1] in "}]":
+        return chunk
+    chunk = re.sub(r",\s*$", "", chunk)
+    # Track unclosed brackets (ignore inside strings); append closers in reverse order
+    stack: list[str] = []
+    in_str = False
+    escape = False
+    for c in chunk:
+        if escape:
+            escape = False
+            continue
+        if in_str:
+            if c == '"':
+                in_str = False
+            elif c == "\\":
+                escape = True
+            continue
+        if c == '"':
+            in_str = True
+        elif c == "{":
+            stack.append("}")
+        elif c == "[":
+            stack.append("]")
+        elif c in "}]" and stack:
+            stack.pop()
+    if stack:
+        chunk += "".join(reversed(stack))
+    return chunk
+
+
 def _isolate_json_chunk(raw: str) -> str | None:
     """Extract JSON from raw LLM response, isolating it from logs/metadata/extra text."""
     raw = _strip_llm_metadata(raw.strip())
@@ -320,7 +360,8 @@ def _isolate_json_chunk(raw: str) -> str | None:
     chunk = _extract_balanced_array(raw)
     if chunk:
         return chunk
-    return None
+    # Fallback: try to repair truncated JSON
+    return _try_repair_truncated_json(raw)
 
 
 def _extract_first_json(text: str):
@@ -430,8 +471,14 @@ def _validate_flashcards_schema(data) -> bool:
     return True
 
 
+def _repair_json_latex_escapes(text: str) -> str:
+    """Fix invalid JSON escapes from LaTeX (e.g. \\sum, \\mathbf). LLMs often output \\sum which is invalid JSON."""
+    # Valid JSON escapes: \", \\, \/, \b, \f, \n, \r, \t, \uXXXX. Others (e.g. \s, \m, \c) are invalid.
+    return re.sub(r'\\(?!["\\/bfnrt]|u[0-9a-fA-F]{4})', r"\\\\", text)
+
+
 def _extract_json(text: str) -> dict:
-    """Extract JSON from LLM response. Isolate, parse, validate. No LaTeX modification - preserve backslashes exactly."""
+    """Extract JSON from LLM response. Isolate, parse, validate."""
     raw = text.strip()
 
     json_chunk = _isolate_json_chunk(raw)
@@ -445,6 +492,9 @@ def _extract_json(text: str) -> dict:
 
     logger.debug("RAW BEFORE PARSE: %s", json_chunk[:500])
 
+    # Repair invalid LaTeX escapes (e.g. \sum -> \\sum) so JSON parses
+    json_chunk = _repair_json_latex_escapes(json_chunk)
+
     try:
         data = json.loads(json_chunk)
     except Exception:
@@ -452,8 +502,12 @@ def _extract_json(text: str) -> dict:
         try:
             data = json.loads(fixed)
         except Exception:
-            logger.debug("RAW LLM RESPONSE: %s", raw[:500])
-            raise ValueError("Failed to parse JSON")
+            try:
+                from json_repair import repair_json
+                data = json.loads(repair_json(json_chunk))
+            except Exception:
+                logger.debug("RAW LLM RESPONSE: %s", raw[:500])
+                raise ValueError("Failed to parse JSON")
 
     if isinstance(data, list):
         result = {"flashcards": data}
@@ -481,11 +535,11 @@ def _extract_json(text: str) -> dict:
 
 
 def _extract_json_simple(text: str) -> dict:
-    """Minimal JSON extraction for simple (non-formula) topics. No LaTeX repairs."""
-    # Isolate JSON first (handles "LLM Usage", logs, metadata)
+    """Minimal JSON extraction for simple (non-formula) topics."""
     json_chunk = _isolate_json_chunk(text.strip())
     if not json_chunk:
         return {}
+    json_chunk = _repair_json_latex_escapes(json_chunk)
     try:
         data = json.loads(json_chunk)
     except json.JSONDecodeError:
@@ -493,7 +547,11 @@ def _extract_json_simple(text: str) -> dict:
         try:
             data = json.loads(fixed)
         except json.JSONDecodeError:
-            return {}
+            try:
+                from json_repair import repair_json
+                data = json.loads(repair_json(json_chunk))
+            except Exception:
+                return {}
     if data is None:
         return {}
     if isinstance(data, list):
@@ -550,6 +608,22 @@ def _is_people_list_topic(topic: str) -> bool:
     ]
     topic_lower = topic.lower().strip()
     return any(word in topic_lower for word in PEOPLE_LIST_HINTS)
+
+
+SINGLE_PERSON_HINTS = (
+    "who is", "about", "biography", "life of", "life and works",
+    "about the poet", "about the author", "about the artist",
+)
+
+
+def _is_single_person_topic(topic: str) -> bool:
+    """Return True if topic is about one specific person (e.g. Hafez, Who is Hafez?)."""
+    if not topic or not isinstance(topic, str):
+        return False
+    t = topic.lower().strip()
+    if _is_people_list_topic(topic):
+        return False  # "famous poets" is list, not single
+    return any(h in t for h in SINGLE_PERSON_HINTS)
 
 
 def _is_identification_mode(topic: str) -> bool:
@@ -1308,6 +1382,208 @@ Rules:
     return generate_completion(prompt, skip_cache=skip_cache, max_tokens=max_tokens_override)
 
 
+def _generate_flashcards_from_loanword_vocab(
+    topic: str,
+    language_hint: Optional[str] = None,
+    num_cards: int = 10,
+    skip_cache: bool = False,
+    max_tokens_override: Optional[int] = None,
+) -> str:
+    """Generate loanword flashcards (e.g. Persian word → French origin)."""
+    lang_instruction = build_language_instruction(topic, language_hint)
+    prompt = f"""Return ONLY valid JSON.
+
+You are generating flashcards for learning French loanwords used in Persian.
+
+Topic:
+{topic}
+
+{lang_instruction}
+
+Instructions:
+- This is NOT a translation task.
+- Generate words of French origin that are commonly used in Persian.
+- These are borrowed words (loanwords), not translations.
+
+Examples of correct words:
+- مرسی (merci)
+- آسانسور (ascenseur)
+- مانتو (manteau)
+- پالتو (paletot)
+
+Format:
+- Question: the Persian word
+- Answer: the original French word (and optionally meaning)
+
+Rules:
+- Only include real, commonly used loanwords in Persian
+- Do NOT generate technical, scientific, or machine learning terms
+- Do NOT generate translations like "learning rate"
+- Do NOT generate formulas or symbols
+- Prefer everyday vocabulary
+
+{_build_count_instruction(num_cards)}
+
+Return ONLY this JSON structure (no other text):
+{{
+  "flashcards": [
+    {{
+      "question": "<Persian word>",
+      "answer_short": "<French origin word>",
+      "answer_detailed": null,
+      "difficulty": "easy"
+    }}
+  ]
+}}
+
+Rules:
+- Output MUST be valid JSON
+- No markdown
+- No explanations
+- No formulas
+{JSON_CLOSING_CONSTRAINT}"""
+
+    return generate_completion(prompt, skip_cache=skip_cache, max_tokens=max_tokens_override)
+
+
+def _generate_flashcards_from_translation_vocab(
+    topic: str,
+    language_hint: Optional[str] = None,
+    num_cards: int = 10,
+    skip_cache: bool = False,
+    max_tokens_override: Optional[int] = None,
+) -> str:
+    """Generate translation flashcards: word/phrase in one language → translation in another."""
+    lang_instruction = build_language_instruction(topic, language_hint)
+    prompt = f"""Return ONLY valid JSON.
+
+You are generating vocabulary flashcards for language learning.
+
+Topic:
+{topic}
+
+{lang_instruction}
+
+Instructions:
+- This is a TRANSLATION task.
+- Each flashcard must test translation between languages.
+- Do NOT generate formulas, symbols, or technical notation.
+- Do NOT generate scientific or machine learning content.
+- Only generate real words or phrases.
+
+Format:
+- Question: a word or phrase in one language
+- Answer: its correct translation in the other language
+
+Language rules:
+- Detect the languages from the topic automatically.
+- If the topic contains Persian, Arabic, or non-Latin text, preserve it.
+- Do NOT translate everything into English unless clearly requested.
+- Keep translations natural and commonly used.
+
+Card quality:
+- Use common, useful vocabulary (not obscure words)
+- Avoid duplicates
+- Each card must be different
+- Prefer single words or short phrases
+
+{_build_count_instruction(num_cards)}
+
+Return ONLY this JSON structure (no other text):
+{{
+  "flashcards": [
+    {{
+      "question": "<word or phrase>",
+      "answer_short": "<translation>",
+      "answer_detailed": null,
+      "difficulty": "easy"
+    }}
+  ]
+}}
+
+Rules:
+- Output MUST be valid JSON
+- No markdown
+- No explanations
+- No formulas
+- No LaTeX
+- Escape newlines as \\n if needed
+{JSON_CLOSING_CONSTRAINT}"""
+
+    return generate_completion(prompt, skip_cache=skip_cache, max_tokens=max_tokens_override)
+
+
+def _generate_flashcards_from_person_topic(
+    topic: str,
+    language_hint: Optional[str] = None,
+    num_cards: int = 10,
+    skip_cache: bool = False,
+    max_tokens_override: Optional[int] = None,
+) -> str:
+    """Generate flashcards about a specific person."""
+    lang_instruction = build_language_instruction(topic, language_hint)
+    prompt = f"""Return ONLY valid JSON.
+
+You are generating flashcards about a specific person.
+
+Topic:
+{topic}
+
+{lang_instruction}
+
+Instructions:
+- The topic refers to a PERSON (real individual).
+- Generate factual flashcards about this person.
+
+Content:
+- identity (who they are)
+- profession / role
+- notable works
+- achievements
+- ideas or contributions
+
+Question style:
+- Who is <name>?
+- What is <name> known for?
+- What did <name> write/do?
+- When relevant: dates, works, fields
+
+Answer style:
+- Clear, concise factual statements
+- 1–2 sentences per card
+- No formulas
+- No technical notation
+- No hallucinated scientific content
+
+Rules:
+- Stay strictly about the person
+- Do NOT invent algorithms, formulas, or scientific terms
+- Do NOT drift into unrelated topics
+- Use correct cultural/language context (Persian if needed)
+
+{_build_count_instruction(num_cards)}
+
+Return ONLY this JSON structure (no other text):
+{{
+  "flashcards": [
+    {{
+      "question": "<question>",
+      "answer_short": "<concise factual answer>",
+      "answer_detailed": null,
+      "difficulty": "easy"
+    }}
+  ]
+}}
+
+Rules:
+- Output MUST be valid JSON
+- No markdown
+- No explanations
+{JSON_CLOSING_CONSTRAINT}"""
+
+    return generate_completion(prompt, skip_cache=skip_cache, max_tokens=max_tokens_override)
+
+
 def _generate_flashcards_from_mapping_topic(
     topic: str, language_hint: Optional[str] = None, num_cards: int = 10, skip_cache: bool = False, max_tokens_override: Optional[int] = None
 ) -> str:
@@ -1404,6 +1680,7 @@ Generate EXACTLY ONE flashcard for the topic: "{topic}"
 
 Rules:
 - Include formulas using LaTeX inside $$...$$
+- In JSON strings, escape backslashes: use \\\\sum for \\sum, \\\\frac for \\frac, etc.
 - Answers must be VERY short (1 line max)
 - Use compact formulas only
 - Each flashcard should test one DIFFERENT concept
@@ -1435,6 +1712,7 @@ Generate flashcards for the topic: "{topic}"
 
 Rules:
 - Include formulas using LaTeX inside $$...$$
+- In JSON strings, escape backslashes: use \\\\sum for \\sum, \\\\frac for \\frac, etc.
 - Answers must be VERY short (1 line max)
 - Use compact formulas only (no explanations inside formulas)
 - Each flashcard should test one concept
@@ -1757,7 +2035,7 @@ async def generate_flashcards(
                                     lang_hint,
                                     num_cards=1,
                                     skip_cache=(attempt > 0 or i > 0),
-                                    max_tokens_override=400,
+                                    max_tokens_override=512,
                                 )
 
                                 result = _extract_json(response_text)
@@ -1769,9 +2047,11 @@ async def generate_flashcards(
                                 parsed_json = {"flashcards": cards}
                                 break
 
-                            except Exception:
+                            except Exception as e:
                                 if attempt == 2:
-                                    raise HTTPException(status_code=503, detail="Failed to generate flashcard")
+                                    msg = str(e) if str(e) else "Failed to generate flashcard"
+                                    logger.warning("Formula generation failed after 3 attempts: %s", msg)
+                                    raise HTTPException(status_code=503, detail=msg)
 
                         if not parsed_json:
                             continue
@@ -1811,6 +2091,36 @@ async def generate_flashcards(
                     parsed_json = {"flashcards": all_cards}
                     break
 
+                # Loanword vocabulary: Persian word → French origin (e.g. French loanwords in Persian)
+                if is_vocab and is_loanword_vocab_topic(topic_str):
+                    try:
+                        response_text = _generate_flashcards_from_loanword_vocab(
+                            topic_str,
+                            lang_hint,
+                            num_cards=num_cards,
+                            skip_cache=attempt > 0,
+                            max_tokens_override=retry_max_tokens,
+                        )
+                        parsed_json = _extract_json(response_text)
+                        break
+                    except ValueError as e:
+                        raise HTTPException(status_code=503, detail=str(e))
+
+                # Translation vocabulary: direct generation (word → translation)
+                if is_vocab and is_translation_vocab_topic(topic_str):
+                    try:
+                        response_text = _generate_flashcards_from_translation_vocab(
+                            topic_str,
+                            lang_hint,
+                            num_cards=num_cards,
+                            skip_cache=attempt > 0,
+                            max_tokens_override=retry_max_tokens,
+                        )
+                        parsed_json = _extract_json(response_text)
+                        break
+                    except ValueError as e:
+                        raise HTTPException(status_code=503, detail=str(e))
+
                 # Use simple mode only for non-formula topics. Formula topics (including "simple formulas")
                 # use the per-card path to avoid truncation when LaTeX-heavy responses exceed token limits.
                 use_simple_mode = not _is_formula_topic(topic_str)
@@ -1819,10 +2129,12 @@ async def generate_flashcards(
                     # Simple generation mode: no LaTeX, minimal prompt, json.loads only
                     # Retry once with same prompt on parse failure (do not modify content)
                     parsed_json = {}
+                    # Use higher max_tokens for multi-card to reduce truncation
+                    simple_max = max(_get_default_max_tokens(), 120 * num_cards + 600)
                     for parse_attempt in range(2):
                         try:
                             response_text = _generate_flashcards_simple(
-                                topic_str, lang_hint, num_cards=num_cards, skip_cache=parse_attempt > 0, max_tokens_override=None
+                                topic_str, lang_hint, num_cards=num_cards, skip_cache=parse_attempt > 0, max_tokens_override=simple_max
                             )
                             parsed_json = _extract_json_simple(response_text)
                             if "flashcards" in parsed_json and isinstance(parsed_json.get("flashcards"), list):
@@ -1836,6 +2148,14 @@ async def generate_flashcards(
                         logger.error("Simple mode parse failed after retry. Preview: %s", preview)
                         raise HTTPException(status_code=502, detail="Failed to parse LLM response as JSON")
                     break
+                elif _is_single_person_topic(topic_str):
+                    # Single-person topics: identity, works, achievements (e.g. Hafez, Who is Hafez?)
+                    try:
+                        response_text = _generate_flashcards_from_person_topic(
+                            topic_str, lang_hint, num_cards=num_cards, skip_cache=attempt > 0, max_tokens_override=retry_max_tokens
+                        )
+                    except ValueError as e:
+                        raise HTTPException(status_code=503, detail=str(e))
                 elif _is_question_style_topic(topic_str):
                     # Skip concept extraction for question-style topics; generate directly
                     try:

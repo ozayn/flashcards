@@ -55,6 +55,41 @@ def is_vocabulary_topic(topic: str) -> bool:
     return False
 
 
+TRANSLATION_VOCAB_HINTS = (
+    "translate", "translation", "to english", "to spanish", "to french", "to german",
+    "to persian", "to arabic", "english to", "spanish to", "french to", "german to",
+    "persian vocabulary", "spanish vocabulary", "french vocabulary", "german vocabulary",
+    "arabic vocabulary", "english vocabulary",
+)
+
+
+def is_translation_vocab_topic(topic: str) -> bool:
+    """Return True if the topic suggests translation flashcards (word in L1 → translation in L2)."""
+    if not topic:
+        return False
+    lower = topic.lower().strip()
+    if not any(kw in lower for kw in VOCAB_KEYWORDS):
+        return False
+    return any(h in lower for h in TRANSLATION_VOCAB_HINTS)
+
+
+LOANWORD_VOCAB_HINTS = (
+    "loanword", "loanwords", "loan word", "borrowed", "borrowed words",
+    "french loanwords", "french loanwords in persian", "french origin",
+    "persian loanwords", "words of french origin",
+)
+
+
+def is_loanword_vocab_topic(topic: str) -> bool:
+    """Return True if the topic suggests loanword flashcards (e.g. Persian word → French origin)."""
+    if not topic:
+        return False
+    lower = topic.lower().strip()
+    if not any(kw in lower for kw in VOCAB_KEYWORDS):
+        return False
+    return any(h in lower for h in LOANWORD_VOCAB_HINTS)
+
+
 # RTL language codes - when detected, keep output in that language
 RTL_LANGS = {"ar", "fa", "he", "ur"}
 
