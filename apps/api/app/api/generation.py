@@ -985,8 +985,7 @@ A: <item B>
 
 Rules:
 - Do NOT use "What is..."
-- Do NOT include definitions or explanations
-- Do NOT include examples
+- Do NOT include definitions, explanations, or examples
 - Answers must be short (1–3 words max)
 - Each card must contain only a direct mapping
 
@@ -994,22 +993,31 @@ Card count:
 - Aim for {n} total flashcards
 - It is acceptable to return between {n - 3} and {n + 3}
 - Do NOT significantly exceed {n}
-- If the full dataset would exceed this number, include only a subset of mappings
+- If the full dataset would exceed this number, include only a subset
 
-Direction:
-- Use the most natural and commonly used direction for this mapping
-- Prefer letter → phonetic word (e.g., A → Alfa)
-- Do NOT include reverse mappings unless clearly useful
-- Avoid confusing or unnatural cards
+Direction (IMPORTANT):
+- First, determine the most natural learning direction for this topic
+- If the mapping is typically learned in one direction (e.g., alphabets, vocabulary, translations), use ONLY that direction
+- If both directions are commonly useful (e.g., symbols, codes), include both directions
+- Avoid unnatural or confusing cards
 
-Variety:
+Examples of direction:
+- NATO phonetic alphabet → use letter → phonetic word ONLY (A → Alfa)
+- Language vocabulary → use native → target language ONLY
+- Chemical symbols → both directions are acceptable
+
+Quality:
 - Avoid duplicates
 - Ensure coverage across different items
+- Prefer the most commonly used or important mappings
 
 Example:
 
 Q: A
 A: Alfa
+
+Q: B
+A: Bravo
 
 Return ONLY valid JSON in the required schema.
 
