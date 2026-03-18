@@ -4,8 +4,10 @@ Primary: Groq → Gemini → OpenRouter → OpenAI
 """
 from __future__ import annotations
 
+import json
 import logging
 import os
+import re
 
 import requests
 
@@ -260,23 +262,45 @@ def _get_default_max_tokens() -> int:
     return max(1200, val)
 
 
+def _is_valid_json_for_cache(text: str) -> bool:
+    """Return True if text parses as valid JSON. Used to avoid caching truncated/malformed responses."""
+    text = text.strip()
+    match = re.search(r"```(?:json)?\s*([\s\S]*?)```", text)
+    if match:
+        text = match.group(1).strip()
+    if not text:
+        return False
+    try:
+        json.loads(text)
+        return True
+    except json.JSONDecodeError:
+        fixed = re.sub(r",\s*([}\]])", r"\1", text)
+        try:
+            json.loads(fixed)
+            return True
+        except json.JSONDecodeError:
+            return False
+
+
 def generate_completion(
     prompt: str,
     temperature: float | None = None,
     max_tokens: int | None = None,
+    skip_cache: bool = False,
 ) -> str:
     """
     Generate completion using primary provider with fallback.
     Tries providers in order until one succeeds.
     """
-    try:
-        cached = get_cached_response(prompt)
-        if cached is not None:
-            print("Using cached LLM response")
-            print("LLM cache hit")
-            return cached
-    except Exception as e:
-        logger.warning("LLM cache check failed: %s", e)
+    if not skip_cache:
+        try:
+            cached = get_cached_response(prompt)
+            if cached is not None:
+                print("Using cached LLM response")
+                print("LLM cache hit")
+                return cached
+        except Exception as e:
+            logger.warning("LLM cache check failed: %s", e)
 
     temp = temperature if temperature is not None else _get_default_temperature()
     max_tok = max_tokens if max_tokens is not None else _get_default_max_tokens()
@@ -292,10 +316,13 @@ def generate_completion(
         logger.info("Model: %s", model)
         try:
             response_text = fn(prompt, temp, max_tok)
-            try:
-                save_cached_response(prompt, response_text)
-            except Exception as e:
-                logger.warning("LLM cache save failed: %s", e)
+            if _is_valid_json_for_cache(response_text):
+                try:
+                    save_cached_response(prompt, response_text)
+                except Exception as e:
+                    logger.warning("LLM cache save failed: %s", e)
+            else:
+                logger.info("Skipping cache: response did not parse as valid JSON")
             logger.info("LLM provider used: %s", provider)
             return response_text
         except Exception as e:
