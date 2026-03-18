@@ -82,6 +82,13 @@ def _normalize_question(q: str) -> str:
     return s.strip()
 
 
+# LaTeX commands that need escaping in JSON (single \ -> \\)
+_LATEX_ESCAPE_COMMANDS = (
+    "frac", "sum", "int", "sqrt", "alpha", "beta", "gamma", "theta", "eta",
+    "pi", "cdot", "cap", "cup", "log", "exp", "sigma", "mu", "lambda",
+    "partial", "nabla", "times", "pm", "leq", "geq",
+)
+
 # LaTeX commands that indicate raw formula content (without $ delimiters)
 _RAW_LATEX_PATTERNS = (
     r"\\frac",
@@ -345,6 +352,17 @@ def _extract_first_json(text: str):
 _FORMULA_CAPTURE = r"\$\$\s*([\s\S]*?)\s*\$\$"
 
 
+def _repair_unescaped_latex_json(text: str) -> tuple[str, bool]:
+    """Fix unescaped LaTeX backslashes in JSON strings. Returns (repaired_text, changed)."""
+    pattern = (
+        r"(?<!\\)\\("
+        + "|".join(re.escape(c) for c in _LATEX_ESCAPE_COMMANDS)
+        + r")(?=[^a-zA-Z]|$)"
+    )
+    repaired = re.sub(pattern, r"\\\\\1", text)
+    return (repaired, repaired != text)
+
+
 def _repair_bare_formula_json(text: str) -> str:
     """Fix LLM output where formula is outside answer_short. Handles multiple malformed patterns."""
 
@@ -407,8 +425,17 @@ def _extract_json(text: str) -> dict:
     if not text:
         return {}
 
-    data = None
     text = _repair_bare_formula_json(text)
+    before_latex = text
+    text, latex_repaired = _repair_unescaped_latex_json(text)
+    if latex_repaired:
+        logger.info(
+            "Repaired unescaped LaTeX in JSON. Before: %s... After: %s...",
+            (before_latex[:150] + "...") if len(before_latex) > 150 else before_latex,
+            (text[:150] + "...") if len(text) > 150 else text,
+        )
+
+    data = None
     try:
         data = json.loads(text)
     except json.JSONDecodeError:
@@ -418,9 +445,10 @@ def _extract_json(text: str) -> dict:
         except json.JSONDecodeError:
             data = _extract_first_json(text)
     if data is None:
-        # Fallback: balanced bracket extraction
+        # Fallback: balanced bracket extraction, then repair and parse
         chunk = _extract_balanced_json(text)
         if chunk:
+            chunk, _ = _repair_unescaped_latex_json(chunk)
             try:
                 data = json.loads(chunk)
             except json.JSONDecodeError:
@@ -429,6 +457,12 @@ def _extract_json(text: str) -> dict:
                     data = json.loads(fixed)
                 except json.JSONDecodeError:
                     data = _extract_first_json(chunk)
+
+    if data is None and latex_repaired:
+        logger.warning(
+            "JSON parsing failed after LaTeX repair. Preview: %s",
+            (text[:400] + "...") if len(text) > 400 else text,
+        )
 
     if data is None:
         return {}
@@ -1380,8 +1414,13 @@ CONTENT_RULES = """CONTENT RULES:
 LATEX_INSTRUCTION = """When including LaTeX:
 - Use $...$ only for very short inline expressions if needed
 - Use $$...$$ for formulas on their own line
-- Escape backslashes properly for JSON (use \\\\ instead of \\)
-- CRITICAL: Put ALL content (explanation + formula) inside the answer_short string. Never output bare LaTeX outside quoted strings."""
+- CRITICAL: Put ALL content (explanation + formula) inside the answer_short string. Never output bare LaTeX outside quoted strings.
+
+CRITICAL - JSON escaping:
+- All LaTeX backslashes inside JSON strings MUST be escaped
+- Use double backslashes in JSON: \\\\frac, \\\\sum, \\\\alpha, \\\\beta, \\\\eta, \\\\theta, \\\\cdot, \\\\cap
+- Never output single-backslash LaTeX inside JSON strings
+- Example: "answer_short": "Measures impurity.\\n\\n$$H(y) = \\\\sum_{j=1}^{J} \\\\alpha_j$$" """
 
 STRICT_FORMULA_INSTRUCTION = """This is a STRICT formula topic.
 
@@ -1403,9 +1442,14 @@ QUESTION CONSTRAINTS:
 
 CRITICAL: The formula MUST be inside the answer_short string value. Never output bare $$...$$ as a separate line—that breaks JSON.
 
-Correct format for answer_short: "<short explanation>\\n\\n$$<latex formula>$$"
+CRITICAL - JSON escaping:
+- All LaTeX backslashes inside JSON strings MUST be escaped
+- Use double backslashes: \\\\frac, \\\\sum, \\\\alpha, \\\\beta, \\\\eta, \\\\theta, \\\\cdot, \\\\cap
+- Never output single-backslash LaTeX inside JSON strings
 
-Example: "answer_short": "Updates probability based on new evidence.\\n\\n$$P(A|B) = \\\\frac{P(B|A) \\\\cdot P(A)}{P(B)}$$"
+Correct format: "answer_short": "<short explanation>\\n\\n$$<latex formula>$$"
+
+Example: "answer_short": "Measures impurity.\\n\\n$$H(y) = \\\\sum_{j=1}^{J} \\\\alpha_j$$"
 
 Rules:
 - Every card MUST include a formula
@@ -1419,7 +1463,11 @@ FORMULA_INSTRUCTION = """This topic involves mathematical formulas.
 
 CRITICAL: The formula MUST be inside the answer_short string value. Never output bare $$...$$ as a separate line—that breaks JSON.
 
-Correct format: "answer_short": "<short explanation>\\n\\n$$<formula>$$"
+CRITICAL - JSON escaping:
+- All LaTeX backslashes inside JSON strings MUST be escaped
+- Use double backslashes: \\\\frac, \\\\sum, \\\\alpha, \\\\beta, \\\\eta, \\\\theta, \\\\cdot, \\\\cap
+- Never output single-backslash LaTeX inside JSON strings
+- Example: "answer_short": "Measures impurity.\\n\\n$$H(y) = \\\\sum_{j=1}^{J} \\\\alpha_j$$"
 
 Rules:
 - Use $$...$$ for formulas
