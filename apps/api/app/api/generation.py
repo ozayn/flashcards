@@ -16,6 +16,7 @@ from app.models.enums import GenerationStatus, SourceType
 from app.schemas.flashcard import DIFFICULTY_TO_INT
 from app.utils.topic_analysis import (
     build_language_instruction,
+    build_language_rule,
     build_vocab_instruction,
     is_loanword_vocab_topic,
     is_translation_vocab_topic,
@@ -978,6 +979,7 @@ Rules:
 {JSON_CLOSING_CONSTRAINT}"""
     if not _is_formula_topic(topic or text):
         prompt += NON_FORMULA_STRICT_RULE
+    prompt += build_language_rule(topic or "", text or "", language_hint)
 
     return generate_completion(prompt, skip_cache=skip_cache, max_tokens=max_tokens_override)
 
@@ -1065,7 +1067,8 @@ Rules:
 - One flashcard per name.
 - Output MUST be valid JSON. No plain text, no Q/A format. Use double quotes. Escape newlines as \\n.
 {JSON_CLOSING_CONSTRAINT}
-{NON_FORMULA_STRICT_RULE}"""
+{NON_FORMULA_STRICT_RULE}
+{build_language_rule(topic, "", language_hint)}"""
 
     return generate_completion(prompt, skip_cache=skip_cache, max_tokens=max_tokens_override)
 
@@ -1293,7 +1296,8 @@ Rules:
 - One flashcard per concept when you have enough concepts. When fewer concepts, create multiple cards per concept.
 {json_rules}
 {JSON_CLOSING_CONSTRAINT}
-{NON_FORMULA_STRICT_RULE if not _is_formula_topic(topic) else ''}"""
+{NON_FORMULA_STRICT_RULE if not _is_formula_topic(topic) else ''}
+{build_language_rule(topic, "", language_hint)}"""
 
     return generate_completion(prompt, skip_cache=skip_cache, max_tokens=max_tokens_override)
 
@@ -1383,7 +1387,8 @@ Rules:
 - Output MUST be valid JSON. No plain text, no Q/A format, no markdown outside the JSON.
 - Use double quotes for keys and values. Escape newlines as \\n in strings.
 {JSON_CLOSING_CONSTRAINT}
-{NON_FORMULA_STRICT_RULE if not is_formula else ''}"""
+{NON_FORMULA_STRICT_RULE if not is_formula else ''}
+{build_language_rule(topic, "", language_hint)}"""
 
     return generate_completion(prompt, skip_cache=skip_cache, max_tokens=max_tokens_override)
 
@@ -1448,7 +1453,8 @@ Rules:
 - No explanations
 - No formulas
 {JSON_CLOSING_CONSTRAINT}
-{NON_FORMULA_STRICT_RULE}"""
+{NON_FORMULA_STRICT_RULE}
+{build_language_rule(topic, "", language_hint)}"""
 
     return generate_completion(prompt, skip_cache=skip_cache, max_tokens=max_tokens_override)
 
@@ -1516,7 +1522,8 @@ Rules:
 - No LaTeX
 - Escape newlines as \\n if needed
 {JSON_CLOSING_CONSTRAINT}
-{NON_FORMULA_STRICT_RULE}"""
+{NON_FORMULA_STRICT_RULE}
+{build_language_rule(topic, "", language_hint)}"""
 
     return generate_completion(prompt, skip_cache=skip_cache, max_tokens=max_tokens_override)
 
@@ -1588,7 +1595,8 @@ Rules:
 - No markdown
 - No explanations
 {JSON_CLOSING_CONSTRAINT}
-{NON_FORMULA_STRICT_RULE}"""
+{NON_FORMULA_STRICT_RULE}
+{build_language_rule(topic, "", language_hint)}"""
 
     return generate_completion(prompt, skip_cache=skip_cache, max_tokens=max_tokens_override)
 
@@ -1666,7 +1674,8 @@ Return ONLY this JSON structure (no other text):
 Rules:
 - Output MUST be valid JSON. No plain text, no Q/A format. Use double quotes. Escape newlines as \\n if needed.
 {JSON_CLOSING_CONSTRAINT}
-{NON_FORMULA_STRICT_RULE if not _is_formula_topic(topic) else ''}"""
+{NON_FORMULA_STRICT_RULE if not _is_formula_topic(topic) else ''}
+{build_language_rule(topic, "", language_hint)}"""
 
     return generate_completion(prompt, skip_cache=skip_cache, max_tokens=max_tokens_override)
 
@@ -1804,6 +1813,7 @@ Return this exact JSON format:
 }}
 {NON_FORMULA_STRICT_RULE}"""
 
+    prompt += build_language_rule(topic, "", language_hint)
     return generate_completion(prompt, skip_cache=skip_cache, max_tokens=max_tokens_override)
 
 
@@ -2388,7 +2398,8 @@ async def generate_flashcards(
     - {_build_count_instruction(num_cards)}
     - Output MUST be valid JSON. No plain text, no Q/A format. Use double quotes. Escape newlines as \\n.
     {JSON_CLOSING_CONSTRAINT}
-    {NON_FORMULA_STRICT_RULE}"""
+    {NON_FORMULA_STRICT_RULE}
+    {build_language_rule(topic_str, "", lang_hint)}"""
 
                             try:
                                 response_text = generate_completion(fallback_prompt, skip_cache=attempt > 0, max_tokens=retry_max_tokens)
@@ -2559,7 +2570,8 @@ async def generate_flashcards(
     - {_build_count_instruction(num_cards)}
     - Output MUST be valid JSON. No plain text, no Q/A format. Use double quotes. Escape newlines as \\n.
     {JSON_CLOSING_CONSTRAINT}
-    {NON_FORMULA_STRICT_RULE}"""
+    {NON_FORMULA_STRICT_RULE}
+    {build_language_rule(topic_str, "", lang_hint)}"""
 
                         try:
                             if is_formula:
@@ -2586,7 +2598,8 @@ async def generate_flashcards(
     Rules:
     - {_build_count_instruction(batch_size)}
     - Output MUST be valid JSON. No plain text, no Q/A format. Use double quotes. Escape newlines as \\n.
-    {JSON_CLOSING_CONSTRAINT}"""
+    {JSON_CLOSING_CONSTRAINT}
+    {build_language_rule(topic_str, "", lang_hint)}"""
                                     return generate_completion(
                                         prompt,
                                         skip_cache=(batch_index > 0 or attempt > 0),

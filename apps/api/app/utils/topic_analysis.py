@@ -127,6 +127,30 @@ def build_language_instruction(topic: str, language_hint: str | None = None) -> 
     return f"Generate ALL flashcards in {lang_name}."
 
 
+def is_language_learning_request(topic: str) -> bool:
+    """Return True if topic explicitly asks for language learning (translation, loanwords). Allow bilingual output."""
+    return is_translation_vocab_topic(topic) or is_loanword_vocab_topic(topic)
+
+
+def build_language_rule(topic: str, text: str, language_hint: str | None) -> str:
+    """Build language rule for end of prompt. Monolingual unless language learning.
+    Returns rule string to append at END of prompt for highest priority.
+    Language detection: text (if >20 chars) over topic, since text reflects user intent more reliably."""
+    if is_language_learning_request(topic or ""):
+        return ""  # Bilingual allowed; vocab-specific instructions handle it
+    text_str = (text or "").strip()
+    topic_str = (topic or "").strip()
+    source = text_str if len(text_str) > 20 else (topic_str or text_str)
+    lang = (language_hint or (detect_language(source) if source else None)) or "en"
+    lang = lang.lower()[:2]
+    lang_name = LANG_NAMES.get(lang, lang)
+    return f"""
+Language rule:
+- Generate BOTH questions and answers in {lang_name}
+- Do NOT translate to English unless explicitly requested
+- Preserve proper nouns (e.g., Post Hoc Ergo Propter Hoc)"""
+
+
 def build_vocab_instruction(topic: str) -> str:
     """Build vocabulary/definition-style instruction if the topic suggests it."""
     if not is_vocabulary_topic(topic):
