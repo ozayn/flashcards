@@ -1806,15 +1806,9 @@ async def generate_flashcards(
                     parsed_json = {"flashcards": all_cards}
                     break
 
-                # Use simple mode for non-formula topics OR lightweight formula topics (e.g. "basic formulas", "intro calculus")
-                is_lightweight_formula = (
-                    _is_formula_topic(topic_str)
-                    and any(k in topic_str.lower() for k in LIGHTWEIGHT_KEYWORDS)
-                )
-                use_simple_mode = (
-                    not _is_formula_topic(topic_str)
-                    or is_lightweight_formula
-                )
+                # Use simple mode only for non-formula topics. Formula topics (including "simple formulas")
+                # use the per-card path to avoid truncation when LaTeX-heavy responses exceed token limits.
+                use_simple_mode = not _is_formula_topic(topic_str)
                 if use_simple_mode:
                     used_simple_mode = True
                     # Simple generation mode: no LaTeX, minimal prompt, json.loads only
