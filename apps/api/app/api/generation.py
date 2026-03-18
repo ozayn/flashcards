@@ -1,7 +1,7 @@
 import json
 import logging
 import re
-from typing import Optional
+from typing import Callable, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -951,24 +951,14 @@ def _generate_flashcards_from_text(
         text_preview += "\n\n[... text truncated ...]"
 
     wants_examples = _topic_wants_examples(topic or text)
-    is_strict_formula = _is_strict_formula_topic(topic or text)
     is_formula = _is_formula_topic(topic or text)
     if strict_text_only:
         no_background = "" if include_background else "\n- Do NOT create generic background cards (e.g. 'What is dopamine?') unless the passage explicitly discusses them."
-        if is_strict_formula:
+        if is_formula:
             grounding_block = f"""{STRICT_TEXT_GROUNDING_RULES}
 {no_background}
 
-For each card: verify the answer is recoverable from the passage. When formulas appear, EVERY card MUST include a formula.
-- Answer format: one short explanation, blank line, then formula in $$...$$
-- Wrap all formulas in $$...$$"""
-        elif is_formula:
-            grounding_block = f"""{STRICT_TEXT_GROUNDING_RULES}
-{no_background}
-
-For each card: verify the answer is recoverable from the passage. When formulas appear in the passage, include them.
-- Answer format: one short explanation, blank line, then formula in $$...$$
-- Wrap all formulas in $$...$$"""
+For each card: verify the answer is recoverable from the passage. When formulas appear in the passage, include them. Use simple math notation or LaTeX. Keep formulas concise."""
         elif wants_examples:
             grounding_block = f"""{STRICT_TEXT_GROUNDING_RULES}
 {no_background}
@@ -1001,14 +991,10 @@ Example acceptable cards (passage-specific):
 
 {DEFINITION_ONLY_FORMAT}"""
     else:
-        if is_strict_formula:
+        if is_formula:
             grounding_block = f"""{RELAXED_TEXT_GROUNDING_RULES}
 
-This is a formula sheet. EVERY card MUST include a formula. Format: one short explanation, blank line, then formula in $$...$$"""
-        elif is_formula:
-            grounding_block = f"""{RELAXED_TEXT_GROUNDING_RULES}
-
-When the passage contains formulas, include them. Format: one short explanation, blank line, then formula in $$...$$"""
+When the passage contains formulas, include them. Use simple math notation or LaTeX. Keep formulas concise."""
         elif wants_examples:
             grounding_block = f"""{RELAXED_TEXT_GROUNDING_RULES}
 
@@ -1025,12 +1011,12 @@ Do NOT combine into a single paragraph. Include a blank line between definition 
 
 {DEFINITION_ONLY_FORMAT}"""
 
-    if is_strict_formula or is_formula:
+    if is_formula:
         json_schema = '''{
   "flashcards": [
     {
       "question": "<question>",
-      "answer_short": "<short explanation>\\n\\n$$<formula>$$",
+      "answer_short": "<short explanation, formula when appropriate>",
       "answer_detailed": null,
       "difficulty": "easy"
     }
@@ -1272,8 +1258,6 @@ Rules:
 - Answers must be short (just the concept name).
 - Scenarios must be realistic and varied.
 - Each question describes a situation; the answer is the single concept that fits."""
-    elif _is_strict_formula_topic(topic):
-        style_instruction = STRICT_FORMULA_INSTRUCTION
     elif _is_formula_topic(topic):
         style_instruction = FORMULA_INSTRUCTION
     else:
@@ -1324,7 +1308,6 @@ Topical Grounding:
 
     source_label = "Source text (base flashcards ONLY on this):" if is_from_text else "Topic (stay focused on this):"
     is_identification = _is_identification_mode(topic)
-    is_strict_formula = _is_strict_formula_topic(topic)
     is_formula = _is_formula_topic(topic)
     if is_identification:
         json_schema = '''{
@@ -1338,18 +1321,18 @@ Topical Grounding:
   ]
 }'''
         json_rules = "- Output MUST be valid JSON. No plain text, no Q/A format. Use double quotes for keys and values."
-    elif is_strict_formula or is_formula:
+    elif is_formula:
         json_schema = '''{
   "flashcards": [
     {
       "question": "<question>",
-      "answer_short": "<short explanation>\\n\\n$$<formula>$$",
+      "answer_short": "<short explanation, formula when appropriate>",
       "answer_detailed": null,
       "difficulty": "easy"
     }
   ]
 }'''
-        json_rules = "- Output MUST be valid JSON. Put formula INSIDE answer_short. Use \\n for newlines, \\\\ for LaTeX backslashes."
+        json_rules = "- Output MUST be valid JSON. No plain text, no Q/A format. Use double quotes. Escape newlines as \\n."
     elif wants_examples:
         json_schema = '''{
   "flashcards": [
@@ -1409,32 +1392,24 @@ Rules:
 
 
 def _generate_flashcards_from_question_topic(
-    topic: str, language_hint: Optional[str] = None, num_cards: int = 10, skip_cache: bool = False, max_tokens_override: Optional[int] = None
+    topic: str,
+    language_hint: Optional[str] = None,
+    num_cards: int = 10,
+    skip_cache: bool = False,
+    max_tokens_override: Optional[int] = None,
+    batch_context: Optional[str] = None,
 ) -> str:
     """Generate flashcards directly from a question-style topic, skipping concept extraction."""
     lang_instruction = build_language_instruction(topic, language_hint)
     wants_examples = _topic_wants_examples(topic)
-    is_strict_formula = _is_strict_formula_topic(topic)
     is_formula = _is_formula_topic(topic)
-    if is_strict_formula:
-        answer_format = STRICT_FORMULA_INSTRUCTION
-        json_schema = '''{
-  "flashcards": [
-    {
-      "question": "<question>",
-      "answer_short": "<short explanation>\\n\\n$$<formula>$$",
-      "answer_detailed": null,
-      "difficulty": "easy"
-    }
-  ]
-}'''
-    elif is_formula:
+    if is_formula:
         answer_format = FORMULA_INSTRUCTION
         json_schema = '''{
   "flashcards": [
     {
       "question": "<question>",
-      "answer_short": "<short explanation>\\n\\n$$<formula>$$",
+      "answer_short": "<short explanation, formula when appropriate>",
       "answer_detailed": null,
       "difficulty": "easy"
     }
@@ -1501,6 +1476,7 @@ Return ONLY this JSON structure (no other text):
 Rules:
 - Output MUST be valid JSON. No plain text, no Q/A format, no markdown outside the JSON.
 - Use double quotes for keys and values. Escape newlines as \\n in strings.
+{f'- {batch_context}' if batch_context else ''}
 {JSON_CLOSING_CONSTRAINT}"""
 
     return generate_completion(prompt, skip_cache=skip_cache, max_tokens=max_tokens_override)
@@ -1683,82 +1659,14 @@ CRITICAL - LaTeX correctness:
 - Use proper LaTeX commands (\\\\sum, \\\\cdot, \\\\frac, \\\\sqrt), not plain words like 'sum', 'cdot', 'lambda'
 - Ensure formulas compile correctly in LaTeX/KaTeX"""
 
-STRICT_FORMULA_INSTRUCTION = """This is a STRICT formula topic.
+FORMULA_INSTRUCTION = """This topic involves formulas or quantitative concepts.
 
-EVERY flashcard MUST include a formula.
-
-Do NOT generate:
-- definition-only answers
-- usage-only answers
-- conceptual descriptions without formulas
-
-If a question does not naturally include a formula, DO NOT generate that question.
-
-Only include concepts that have a standard mathematical formula.
-
-QUESTION CONSTRAINTS:
-- Generate ONLY questions that correspond to known formulas
-- Avoid questions like: "What is it used for?", "Why is it important?", "Where is it applied?"
-- Only generate: definition of formula, direct formula-related concepts
-
-CRITICAL: The formula MUST be inside the answer_short string value. Never output bare $$...$$ as a separate line—that breaks JSON.
-
-CRITICAL - JSON escaping:
-- All LaTeX backslashes inside JSON strings MUST be escaped
-- Use double backslashes: \\\\frac, \\\\sum, \\\\alpha, \\\\beta, \\\\eta, \\\\theta, \\\\cdot, \\\\cap
-- Never output single-backslash LaTeX inside JSON strings
-
-CRITICAL - LaTeX correctness:
-- Use proper LaTeX commands (e.g., \\\\sum, \\\\cdot, \\\\frac, \\\\sqrt)
-- Do NOT use plain words like 'sum', 'cdot', 'lambda'
-- All mathematical operators must be valid LaTeX commands
-- Use standard mathematical notation, not approximations
-- Ensure the formula compiles correctly in LaTeX/KaTeX
-
-Examples:
-BAD: $$J = sum_{i=1}^{N} (y_i - \\\\hat{y}_i)^2 + lambda cdot ||w||^2$$
-GOOD: $$J = \\\\sum_{i=1}^{N} (y_i - \\\\hat{y}_i)^2 + \\\\lambda \\\\cdot \\\\|w\\\\|^2$$
-
-Correct format: "answer_short": "<short explanation>\\n\\n$$<latex formula>$$"
-
-Example: "answer_short": "Measures impurity.\\n\\n$$H(y) = \\\\sum_{j=1}^{J} \\\\alpha_j$$"
-
-Rules:
-- Every card MUST include a formula
-- Put explanation and formula BOTH inside the quoted answer_short value
-- Use \\n for newlines, \\\\ for backslashes in LaTeX
-- Double-check that the LaTeX is valid before returning the answer."""
-
-FORMULA_INSTRUCTION = """This topic involves mathematical formulas.
-
-- Include a formula whenever the concept has one
-- If no standard formula exists, provide a definition instead
-
-CRITICAL: The formula MUST be inside the answer_short string value. Never output bare $$...$$ as a separate line—that breaks JSON.
-
-CRITICAL - JSON escaping:
-- All LaTeX backslashes inside JSON strings MUST be escaped
-- Use double backslashes: \\\\frac, \\\\sum, \\\\alpha, \\\\beta, \\\\eta, \\\\theta, \\\\cdot, \\\\cap
-- Never output single-backslash LaTeX inside JSON strings
-- Example: "answer_short": "Measures impurity.\\n\\n$$H(y) = \\\\sum_{j=1}^{J} \\\\alpha_j$$"
-
-CRITICAL - LaTeX correctness:
-- Use proper LaTeX commands (e.g., \\\\sum, \\\\cdot, \\\\frac, \\\\sqrt)
-- Do NOT use plain words like 'sum', 'cdot', 'lambda'
-- All mathematical operators must be valid LaTeX commands
-- Use standard mathematical notation, not approximations
-- Ensure the formula compiles correctly in LaTeX/KaTeX
-
-Examples:
-BAD: $$J = sum_{i=1}^{N} (y_i - \\\\hat{y}_i)^2 + lambda cdot ||w||^2$$
-GOOD: $$J = \\\\sum_{i=1}^{N} (y_i - \\\\hat{y}_i)^2 + \\\\lambda \\\\cdot \\\\|w\\\\|^2$$
-
-Rules:
-- Use $$...$$ for formulas
-- Put explanation and formula BOTH inside the quoted answer_short value
-- Use \\n for newlines, \\\\ for backslashes in LaTeX
-- Keep explanations brief
-- Double-check that the LaTeX is valid before returning the answer."""
+- Include a formula when appropriate.
+- Use simple math notation or LaTeX. Keep formulas concise.
+- Avoid very long or complex expressions.
+- Prefer simple forms when possible.
+- Put formula inside the answer_short string. Escape newlines as \\n.
+- Output valid JSON only. Use double quotes."""
 
 NON_FORMULA_TOPICS = """NON-FORMULA TOPICS:
 - Provide a concise definition (1–2 sentences)
@@ -1769,7 +1677,7 @@ NON_FORMULA_TOPICS = """NON-FORMULA TOPICS:
 def _estimate_tokens_per_card(topic: str) -> int:
     """Estimate tokens per flashcard for truncation safety."""
     if _is_formula_topic(topic):
-        return 250  # Formula flashcards with LaTeX are significantly longer than plain text
+        return 140  # Formulas + explanations need more space than plain cards
     return 80
 
 
@@ -1791,22 +1699,29 @@ def _compute_safe_card_count(
     return (final, safe_max)
 
 
-def _is_strict_formula_topic(topic: str) -> bool:
-    """Return True if topic explicitly requests formulas (e.g. 'formulas', 'formula sheet', 'theorem')."""
-    if not topic or not isinstance(topic, str):
-        return False
-    t = topic.lower()
-    return any(
-        k in t
-        for k in [
-            "formulas",
-            "formula sheet",
-            "equations",
-            "equation list",
-            "theorem",
-            "theorems",
-        ]
-    )
+FORMULA_BATCH_SIZE = 2
+
+
+def _generate_flashcards_formula_batched(
+    generator: Callable[[int, int], str],
+    requested_cards: int,
+    num_batches: Optional[int] = None,
+) -> str:
+    """Generate formula flashcards in small batches to avoid truncation.
+    Each batch uses content-aware prompts (concept subsets or batch context) to avoid duplicates."""
+    if num_batches is None:
+        num_batches = (requested_cards + FORMULA_BATCH_SIZE - 1) // FORMULA_BATCH_SIZE
+    results: list = []
+    for batch_index in range(num_batches):
+        batch_size = min(FORMULA_BATCH_SIZE, requested_cards - len(results))
+        if batch_size <= 0:
+            break
+        response = generator(batch_size, batch_index)
+        parsed = _extract_json(response)
+        cards = parsed.get("flashcards", [])
+        if isinstance(cards, list):
+            results.extend(cards)
+    return json.dumps({"flashcards": results[:requested_cards]})
 
 
 def _is_formula_topic(topic: str) -> bool:
@@ -1834,13 +1749,11 @@ def _is_formula_topic(topic: str) -> bool:
     )
 
 
-LIGHTWEIGHT_KEYWORDS = ["simple", "basic", "intro", "easy", "quick"]
+LIGHTWEIGHT_KEYWORDS = ["simple", "basic", "intro", "easy", "quick", "concepts"]
 
 
 def _get_math_instruction(topic: str) -> str:
-    """Return STRICT_FORMULA_INSTRUCTION, FORMULA_INSTRUCTION, or LATEX_INSTRUCTION."""
-    if _is_strict_formula_topic(topic):
-        return STRICT_FORMULA_INSTRUCTION
+    """Return FORMULA_INSTRUCTION for formula topics, else LATEX_INSTRUCTION."""
     if _is_formula_topic(topic):
         return FORMULA_INSTRUCTION
     return LATEX_INSTRUCTION
@@ -2025,9 +1938,32 @@ async def generate_flashcards(
                 elif _is_question_style_topic(topic_str):
                     # Skip concept extraction for question-style topics; generate directly
                     try:
-                        response_text = _generate_flashcards_from_question_topic(
-                            topic_str, lang_hint, num_cards=num_cards, skip_cache=attempt > 0, max_tokens_override=retry_max_tokens
-                        )
+                        if _is_formula_topic(topic_str):
+                            total_batches = (num_cards + FORMULA_BATCH_SIZE - 1) // FORMULA_BATCH_SIZE
+
+                            def _gen_question(batch_size: int, batch_index: int) -> str:
+                                batch_ctx = (
+                                    f"This is batch {batch_index + 1} of {total_batches}. "
+                                    "Generate DIFFERENT flashcards. Do not repeat cards from previous batches."
+                                    if batch_index > 0
+                                    else None
+                                )
+                                return _generate_flashcards_from_question_topic(
+                                    topic_str,
+                                    lang_hint,
+                                    num_cards=batch_size,
+                                    skip_cache=(batch_index > 0 or attempt > 0),
+                                    max_tokens_override=retry_max_tokens,
+                                    batch_context=batch_ctx,
+                                )
+
+                            response_text = _generate_flashcards_formula_batched(
+                                _gen_question, num_cards
+                            )
+                        else:
+                            response_text = _generate_flashcards_from_question_topic(
+                                topic_str, lang_hint, num_cards=num_cards, skip_cache=attempt > 0, max_tokens_override=retry_max_tokens
+                            )
                     except ValueError as e:
                         raise HTTPException(status_code=503, detail=str(e))
                 elif _is_mapping_mode(topic_str):
@@ -2141,15 +2077,42 @@ async def generate_flashcards(
 
                     if concepts:
                         try:
-                            response_text = _generate_flashcards_from_concepts(
-                                concepts, topic_str, lang_hint, is_vocab=is_vocab, num_cards=num_cards, skip_cache=attempt > 0, max_tokens_override=retry_max_tokens
-                            )
+                            if _is_formula_topic(topic_str):
+                                concept_batches = [
+                                    concepts[i : i + FORMULA_BATCH_SIZE]
+                                    for i in range(0, len(concepts), FORMULA_BATCH_SIZE)
+                                ]
+                                num_batches = min(
+                                    len(concept_batches),
+                                    (num_cards + FORMULA_BATCH_SIZE - 1) // FORMULA_BATCH_SIZE,
+                                )
+
+                                def _gen_from_concepts(batch_size: int, batch_index: int) -> str:
+                                    subset = concept_batches[batch_index] if batch_index < len(concept_batches) else concept_batches[-1]
+                                    return _generate_flashcards_from_concepts(
+                                        subset,
+                                        topic_str,
+                                        lang_hint,
+                                        is_vocab=is_vocab,
+                                        num_cards=batch_size,
+                                        skip_cache=(batch_index > 0 or attempt > 0),
+                                        max_tokens_override=retry_max_tokens,
+                                    )
+
+                                response_text = _generate_flashcards_formula_batched(
+                                    _gen_from_concepts, num_cards, num_batches=num_batches
+                                )
+                            else:
+                                response_text = _generate_flashcards_from_concepts(
+                                    concepts, topic_str, lang_hint, is_vocab=is_vocab, num_cards=num_cards, skip_cache=attempt > 0, max_tokens_override=retry_max_tokens
+                                )
                         except ValueError as e:
                             raise HTTPException(status_code=503, detail=str(e))
                     else:
                         # Fallback: single-stage generation when concept extraction fails
                         lang_instruction = build_language_instruction(topic_str, lang_hint)
                         wants_ex = _topic_wants_examples(topic_str)
+                        is_formula = _is_formula_topic(topic_str)
                         if is_vocab:
                             vocab_instruction = build_vocab_instruction(topic_str)
                             if wants_ex:
@@ -2189,27 +2152,13 @@ async def generate_flashcards(
       ]
     }'''
                         else:
-                            is_strict_formula = _is_strict_formula_topic(topic_str)
-                            is_formula = _is_formula_topic(topic_str)
-                            if is_strict_formula:
-                                style_rules = STRICT_FORMULA_INSTRUCTION
-                                fallback_json = '''{
-      "flashcards": [
-        {
-          "question": "<question>",
-          "answer_short": "<short explanation>\\n\\n$$<formula>$$",
-          "answer_detailed": null,
-          "difficulty": "easy"
-        }
-      ]
-    }'''
-                            elif is_formula:
+                            if is_formula:
                                 style_rules = FORMULA_INSTRUCTION
                                 fallback_json = '''{
       "flashcards": [
         {
           "question": "<question>",
-          "answer_short": "<short explanation>\\n\\n$$<formula>$$",
+          "answer_short": "<short explanation, formula when appropriate>",
           "answer_detailed": null,
           "difficulty": "easy"
         }
@@ -2289,7 +2238,51 @@ async def generate_flashcards(
     {JSON_CLOSING_CONSTRAINT}"""
 
                         try:
-                            response_text = generate_completion(fallback_prompt, skip_cache=attempt > 0, max_tokens=retry_max_tokens)
+                            if is_formula:
+                                total_batches = (num_cards + FORMULA_BATCH_SIZE - 1) // FORMULA_BATCH_SIZE
+
+                                def _gen_fallback(batch_size: int, batch_index: int) -> str:
+                                    if batch_index > 0:
+                                        batch_context = (
+                                            f"\n    - This is batch {batch_index + 1} of {total_batches}. "
+                                            "Generate DIFFERENT flashcards. Do not repeat cards from previous batches."
+                                        )
+                                    else:
+                                        batch_context = ""
+                                    prompt = f"""{JSON_HEADER}
+    You are generating flashcards for studying.
+
+    Topic:
+    {topic_str}
+
+    {lang_instruction}
+
+    {style_rules}
+
+    {CONTENT_RULES}
+
+    {_get_math_instruction(topic_str)}
+
+    {JSON_OUTPUT_REQUIREMENT}
+
+    Return ONLY this JSON structure (no other text):
+    {fallback_json}
+
+    Rules:
+    - {_build_count_instruction(batch_size)}{batch_context}
+    - Output MUST be valid JSON. No plain text, no Q/A format. Use double quotes. Escape newlines as \\n.
+    {JSON_CLOSING_CONSTRAINT}"""
+                                    return generate_completion(
+                                        prompt,
+                                        skip_cache=(batch_index > 0 or attempt > 0),
+                                        max_tokens=retry_max_tokens,
+                                    )
+
+                                response_text = _generate_flashcards_formula_batched(
+                                    _gen_fallback, num_cards
+                                )
+                            else:
+                                response_text = generate_completion(fallback_prompt, skip_cache=attempt > 0, max_tokens=retry_max_tokens)
                         except ValueError as e:
                             raise HTTPException(status_code=503, detail=str(e))
 
@@ -2325,66 +2318,9 @@ async def generate_flashcards(
 
         topic_str = (payload.topic or "").strip()
 
-        # Strict formula: filter to cards that include $$ in answer (skip when used simple mode - no LaTeX)
-        if not used_simple_mode and _is_strict_formula_topic(topic_str):
-            before = len(cards)
-            cards = [
-                c
-                for c in cards
-                if "$$" in (c.get("answer_short") or c.get("answer") or c.get("back") or "")
-            ]
-            removed = before - len(cards)
-            if removed > 0:
-                logger.info(
-                    "Strict formula: removed %d cards without formulas, %d remain",
-                    removed,
-                    len(cards),
-                )
-                # Retry once with explicit formula requirement
-                retry_formula_prompt = f"""{JSON_HEADER}
-You are generating flashcards for a STRICT formula topic.
-
-Topic: {topic_str}
-
-CRITICAL: You must include a formula in EVERY answer. Regenerate all flashcards.
-
-Each question must correspond to a known formula. Do NOT include definition-only, usage-only, or conceptual answers without formulas.
-
-Format each answer as: "answer_short": "<short explanation>\\n\\n$$<formula>$$"
-
-{_build_count_instruction(num_cards)}
-
-{STRICT_FORMULA_INSTRUCTION}
-
-{JSON_OUTPUT_REQUIREMENT}
-
-Return ONLY valid JSON with a "flashcards" array. No other text.
-{JSON_CLOSING_CONSTRAINT}"""
-                try:
-                    retry_response = generate_completion(retry_formula_prompt)
-                    retry_parsed = _extract_json(retry_response)
-                    retry_cards = retry_parsed.get("flashcards", [])
-                    if isinstance(retry_cards, list) and retry_cards:
-                        retry_filtered = [
-                            c
-                            for c in retry_cards
-                            if "$$" in (c.get("answer_short") or c.get("answer") or c.get("back") or "")
-                        ]
-                        if retry_filtered:
-                            cards = retry_filtered
-                            logger.info(
-                                "Strict formula retry: %d cards with formulas",
-                                len(cards),
-                            )
-                except (ValueError, json.JSONDecodeError, TypeError, RuntimeError) as e:
-                    logger.warning("Strict formula retry failed: %s", e)
-
         # Light validation: if too few cards, try one regeneration (use clamped num_cards)
         if len(cards) < num_cards * 0.6:
             retry_context = (payload.topic or "")[:200] or (text_input[:200] + "..." if text_input else "the topic")
-            formula_rule = ""
-            if _is_strict_formula_topic(topic_str):
-                formula_rule = "\n- EVERY answer MUST include a formula in $$...$$ format.\n"
             retry_prompt = f"""{JSON_HEADER}
 You previously returned {len(cards)} flashcards, which is too few.
 
@@ -2395,7 +2331,7 @@ Context: {retry_context}
 Rules:
 - Do NOT repeat any previously generated questions
 - Cover different concepts or scenarios
-- Maintain the same format as before{formula_rule}
+- Maintain the same format as before
 
 Return ONLY valid JSON: {{"flashcards": [{{"question": "...", "answer_short": "...", "answer_detailed": null, "difficulty": "easy"}}]}}
 Use double quotes. Escape newlines as \\n in answer_short.
@@ -2413,10 +2349,6 @@ Use double quotes. Escape newlines as \\n in answer_short.
                             and (rc.get("answer_short") or rc.get("answer") or rc.get("back"))
                             and str(rc.get("question", "")).strip() not in seen_questions
                         ):
-                            if _is_strict_formula_topic(topic_str):
-                                ans = rc.get("answer_short") or rc.get("answer") or rc.get("back") or ""
-                                if "$$" not in ans:
-                                    continue
                             cards.append(rc)
                             seen_questions.add(str(rc.get("question", "")).strip())
                     logger.info("Retry added cards, total now %d", len(cards))
