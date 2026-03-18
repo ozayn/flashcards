@@ -540,7 +540,9 @@ Text:
 
 {grounding_block}
 
-Extract key facts and create one flashcard per important point. Generate exactly {num_cards} flashcards. Return exactly {num_cards} flashcards. Do not generate fewer or more.
+Extract key facts and create one flashcard per important point.
+
+{_build_count_instruction(num_cards)}
 
 {JSON_OUTPUT_REQUIREMENT}
 
@@ -581,7 +583,8 @@ Names:
 
 {lang_instruction}
 
-Generate exactly {num_cards} flashcards, one per name. If there are more names than {num_cards}, select the most important {num_cards}. Return exactly {num_cards} flashcards. Do not generate fewer or more.
+{_build_count_instruction(num_cards)}
+If there are more names than needed, select the most important. If fewer, create multiple cards per person (e.g. definition, notable work).
 
 Rules:
 - Each question must be exactly in the style:
@@ -763,7 +766,8 @@ Concepts:
 {f'Anchor keywords:\n{anchors_str}\n' if anchors else ''}
 {lang_instruction}
 
-Generate exactly {num_cards} flashcards. If there are more concepts than {num_cards}, select the most important {num_cards} and create one card per concept. If there are fewer concepts than {num_cards}, create multiple cards per concept (e.g. definition, example, application) to reach the requested count. Return exactly {num_cards} flashcards. Do not generate fewer or more.
+{_build_count_instruction(num_cards)}
+If there are more concepts than needed, select the most important. If fewer concepts, create multiple cards per concept (e.g. definition, example, application).
 
 {style_instruction}
 
@@ -773,7 +777,7 @@ Return ONLY this JSON structure (no other text):
 {json_schema}
 
 Rules:
-- One flashcard per concept when concepts >= num_cards. When concepts < num_cards, create multiple cards per concept to reach the count.
+- One flashcard per concept when you have enough concepts. When fewer concepts, create multiple cards per concept.
 {json_rules}"""
 
     return generate_completion(prompt)
@@ -807,7 +811,7 @@ Instructions:
 {EXAMPLE_FORMAT_REQUIREMENT}
 {examples_required}
 
-Generate exactly {num_cards} flashcards. Return exactly {num_cards} flashcards. Do not generate fewer or more.
+{_build_count_instruction(num_cards)}
 
 {JSON_OUTPUT_REQUIREMENT}
 
@@ -876,6 +880,15 @@ def _topic_wants_examples(topic: str) -> bool:
         return False
     t = topic.lower().strip()
     return "with examples" in t or " with example" in t or "examples" in t
+
+
+def _build_count_instruction(num_cards: int) -> str:
+    """Build approximate count instruction for generation prompts."""
+    min_acceptable = max(5, num_cards - 5)
+    return f"""Generate approximately {num_cards} flashcards.
+Aim for {num_cards}, but it is acceptable to return between {num_cards - 3} and {num_cards + 3}.
+Do NOT return fewer than {min_acceptable} flashcards.
+Prioritize covering as many distinct concepts as possible before stopping."""
 
 
 STRICT_TEXT_GROUNDING_RULES = """STRICT GROUNDING RULES (text-based generation):
@@ -1028,7 +1041,7 @@ Return ONLY this JSON structure (no other text):
 }}
 
 Rules:
-- Generate exactly {num_cards} flashcards. Return exactly {num_cards} flashcards. Do not generate fewer or more.
+- {_build_count_instruction(num_cards)}
 - Output MUST be valid JSON. No plain text, no Q/A format. Use double quotes. Escape newlines as \\n."""
 
                         try:
@@ -1099,7 +1112,7 @@ Return ONLY this JSON structure (no other text):
 }}
 
 Rules:
-- Generate exactly {num_cards} flashcards. Return exactly {num_cards} flashcards. Do not generate fewer or more.
+- {_build_count_instruction(num_cards)}
 - Output MUST be valid JSON. No plain text, no Q/A format. Use double quotes. Escape newlines as \\n."""
 
                     try:
@@ -1119,12 +1132,47 @@ Rules:
 
         cards: list = parsed_json["flashcards"]
         logger.info("Generated %d candidate cards", len(cards))
+
+        # Light validation: if too few cards, try one regeneration
+        num_cards = max(1, min(payload.num_cards or 10, 50))
+        if len(cards) < num_cards * 0.6:
+            retry_context = (payload.topic or "")[:200] or (text_input[:200] + "..." if text_input else "the topic")
+            retry_prompt = f"""You previously returned {len(cards)} flashcards, which is too few.
+
+Generate additional UNIQUE flashcards to reach approximately {num_cards} total.
+
+Context: {retry_context}
+
+Rules:
+- Do NOT repeat any previously generated questions
+- Cover different concepts or scenarios
+- Maintain the same format as before
+
+Return ONLY valid JSON: {{"flashcards": [{{"question": "...", "answer_short": "...", "answer_detailed": null, "difficulty": "easy"}}]}}
+Use double quotes. Escape newlines as \\n in answer_short."""
+            try:
+                retry_text = generate_completion(retry_prompt)
+                retry_parsed = _extract_json(retry_text)
+                retry_cards = retry_parsed.get("flashcards", [])
+                if isinstance(retry_cards, list) and retry_cards:
+                    seen_questions = {str(c.get("question", "")).strip() for c in cards if isinstance(c, dict)}
+                    for rc in retry_cards:
+                        if (
+                            isinstance(rc, dict)
+                            and rc.get("question")
+                            and (rc.get("answer_short") or rc.get("answer") or rc.get("back"))
+                            and str(rc.get("question", "")).strip() not in seen_questions
+                        ):
+                            cards.append(rc)
+                            seen_questions.add(str(rc.get("question", "")).strip())
+                    logger.info("Retry added cards, total now %d", len(cards))
+            except (ValueError, json.JSONDecodeError, TypeError):
+                pass
+
         # Grounding check: when text mode and strict_text_only, filter out unsupported cards
         if text_input and payload.strict_text_only and cards:
             cards = _filter_ungrounded_cards(cards, text_input)
             logger.info("After grounding filter: %d cards kept", len(cards))
-
-        cards = cards[: payload.num_cards]
 
         # Preload existing questions for duplicate prevention (one query for entire batch)
         existing_result = await db.execute(
