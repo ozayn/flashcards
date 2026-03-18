@@ -577,15 +577,10 @@ def _validate_flashcards_schema(data) -> bool:
 
 
 def _looks_like_complete_flashcards_json(text: str) -> bool:
-    """Check if extracted chunk appears to be complete (not truncated)."""
+    """Check if extracted chunk contains flashcards JSON."""
     if not text or not text.strip():
         return False
-    s = text.strip()
-    return (
-        ('"flashcards"' in text or '"cards"' in text)
-        and (s.endswith("}") or s.endswith("]"))
-        and text.count("{") >= 2
-    )
+    return '"flashcards"' in text or '"cards"' in text
 
 
 def _extract_json(text: str) -> dict:
@@ -610,11 +605,6 @@ def _extract_json(text: str) -> dict:
             (before_latex[:150] + "...") if len(before_latex) > 150 else before_latex,
             (text[:150] + "...") if len(text) > 150 else text,
         )
-
-    # Truncation detection: valid JSON should end with ]} (object) or ] (array)
-    s = text.strip()
-    if not (s.endswith("]}") or s.endswith("]")):
-        raise ValueError("LLM response appears truncated")
 
     # 3. THEN parse
     data = None
