@@ -591,9 +591,6 @@ def _extract_json(text: str) -> dict:
     if not json_chunk:
         raise ValueError("No valid JSON found in LLM response")
 
-    if not _is_balanced_json(json_chunk):
-        raise ValueError("LLM response appears truncated")
-
     # 2. THEN run repair steps on the isolated JSON only
     text = _repair_bare_formula_json(json_chunk)
     text = _repair_pseudo_latex(text)
@@ -607,7 +604,6 @@ def _extract_json(text: str) -> dict:
         )
 
     # 3. THEN parse
-    data = None
     try:
         data = json.loads(text)
     except json.JSONDecodeError:
@@ -615,16 +611,7 @@ def _extract_json(text: str) -> dict:
         try:
             data = json.loads(fixed)
         except json.JSONDecodeError:
-            data = _extract_first_json(text)
-
-    if data is None and latex_repaired:
-        logger.warning(
-            "JSON parsing failed after LaTeX repair. Preview: %s",
-            (text[:400] + "...") if len(text) > 400 else text,
-        )
-
-    if data is None:
-        raise ValueError("Failed to parse JSON")
+            raise ValueError("Failed to parse JSON")
     if isinstance(data, list):
         result = {"flashcards": data}
     elif not isinstance(data, dict):
