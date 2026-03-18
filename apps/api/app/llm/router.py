@@ -58,6 +58,7 @@ def _generate_groq(prompt: str, temperature: float, max_tokens: int) -> str:
             {"role": "user", "content": prompt},
         ],
         "temperature": temperature,
+        "stop": ["\n\n\n"],
     }
     if max_tokens:
         kwargs["max_tokens"] = max_tokens
@@ -97,6 +98,7 @@ def _generate_openrouter(prompt: str, temperature: float, max_tokens: int) -> st
             {"role": "user", "content": prompt},
         ],
         "temperature": temperature,
+        "stop": ["\n\n\n"],
     }
     if max_tokens:
         payload["max_tokens"] = max_tokens
@@ -145,6 +147,7 @@ def _generate_gemini(prompt: str, temperature: float, max_tokens: int) -> str:
         "generationConfig": {
             "temperature": temperature,
             "maxOutputTokens": max_tokens,
+            "stopSequences": ["\n\n\n"],
         },
     }
     resp = requests.post(
@@ -197,6 +200,7 @@ def _generate_openai(prompt: str, temperature: float, max_tokens: int) -> str:
             {"role": "user", "content": prompt},
         ],
         "temperature": temperature,
+        "stop": ["\n\n\n"],
     }
     if max_tokens:
         kwargs["max_tokens"] = max_tokens
@@ -251,7 +255,9 @@ def _get_default_temperature() -> float:
 
 
 def _get_default_max_tokens() -> int:
-    return int(os.getenv("LLM_MAX_TOKENS", "2000"))
+    """Return max output tokens (min 1200 to avoid JSON truncation). Default 1500."""
+    val = int(os.getenv("LLM_MAX_TOKENS", "1500"))
+    return max(1200, val)
 
 
 def generate_completion(

@@ -60,7 +60,7 @@ sqlite3 apps/api/data/llm_cache.db "DELETE FROM llm_cache;"
 |----------|-------------|---------|
 | `LLM_PROVIDER` | Preferred provider (groq, gemini, openrouter, openai) | (default order) |
 | `LLM_TEMPERATURE` | Sampling temperature | 0.2 |
-| `LLM_MAX_TOKENS` | Max tokens per response | 2000 |
+| `LLM_MAX_TOKENS` | Max tokens per response (min 1200) | 1500 |
 | `LLM_COST_TRACKING` | Enable cost logging (1/0) | 1 |
 | `GROQ_API_KEY` | Groq API key | — |
 | `GROQ_MODEL` | Groq model | llama-3.1-8b-instant |
