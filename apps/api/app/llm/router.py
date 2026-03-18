@@ -4,10 +4,8 @@ Primary: Groq → Gemini → OpenRouter → OpenAI
 """
 from __future__ import annotations
 
-import json
 import logging
 import os
-import re
 
 import requests
 
@@ -18,22 +16,6 @@ logger = logging.getLogger(__name__)
 
 PROVIDER_ORDER = ["groq", "gemini", "openrouter", "openai"]
 
-
-def _is_valid_json(text: str) -> bool:
-    """Return True if text contains parseable JSON (raw or in markdown code block)."""
-    t = (text or "").strip()
-    if not t:
-        return False
-    match = re.search(r"```(?:json)?\s*([\s\S]*?)```", t)
-    if match:
-        t = match.group(1).strip()
-    if not t:
-        return False
-    try:
-        parsed = json.loads(t)
-        return isinstance(parsed, (dict, list))
-    except json.JSONDecodeError:
-        return False
 
 DEFAULT_MODELS = {
     "groq": "llama-3.1-8b-instant",
@@ -304,8 +286,6 @@ def generate_completion(
         logger.info("Model: %s", model)
         try:
             response_text = fn(prompt, temp, max_tok)
-            if not _is_valid_json(response_text):
-                raise ValueError("Invalid JSON in response")
             try:
                 save_cached_response(prompt, response_text)
             except Exception as e:
