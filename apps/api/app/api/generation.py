@@ -1646,18 +1646,24 @@ NON_FORMULA_TOPICS = """NON-FORMULA TOPICS:
 def _estimate_tokens_per_card(topic: str) -> int:
     """Estimate tokens per flashcard for truncation safety."""
     if _is_formula_topic(topic):
-        return 200  # Formula flashcards with LaTeX are significantly longer than plain text
+        return 250  # Formula flashcards with LaTeX are significantly longer than plain text
     return 80
 
 
-def _compute_safe_card_count(requested: int, topic: str) -> tuple[int, int]:
+def _compute_safe_card_count(
+    requested: int, topic: str, retry_attempt: int = 0
+) -> tuple[int, int]:
     """Clamp requested cards to avoid LLM truncation. Returns (final_count, safe_max)."""
     max_tokens = _get_default_max_tokens()
     tokens_per_card = _estimate_tokens_per_card(topic)
-    safe_max = max(1, int(max_tokens * 0.75 / tokens_per_card))
+    safe_max = max(1, int(max_tokens * 0.7 / tokens_per_card))
     # Simple (non-formula) topics: allow up to 15 cards
     if not _is_formula_topic(topic):
         safe_max = min(15, max(safe_max, 10))
+    else:
+        # Formula topics: reduce safe_max on retry to prevent truncation
+        if retry_attempt > 0:
+            safe_max = max(2, safe_max - retry_attempt)
     final = min(requested, safe_max)
     return (final, safe_max)
 
@@ -1820,10 +1826,14 @@ async def generate_flashcards(
             (text_input[:200] + "...") if text_input else ""
         )
 
-        for attempt in range(2):
-            if attempt > 0:
+        for attempt in range(3):
+            if attempt == 1:
                 requested_cards = max(3, requested_cards - 2)
-            num_cards, safe_max = _compute_safe_card_count(requested_cards, topic_for_estimate)
+            elif attempt == 2:
+                requested_cards = max(3, requested_cards - 3)
+            num_cards, safe_max = _compute_safe_card_count(
+                requested_cards, topic_for_estimate, retry_attempt=attempt
+            )
             retry_max_tokens = int(_get_default_max_tokens() * 1.5) if attempt > 0 else None
             logger.info(
                 "Requested cards: %d, Safe max cards: %d, Final cards used: %d (attempt %d)%s",
@@ -2149,15 +2159,18 @@ async def generate_flashcards(
             try:
                 parsed_json = _extract_json(response_text)
             except ValueError as e:
-                if "truncated" in str(e).lower() and attempt == 0:
-                    logger.warning("LLM response truncated on first attempt, retrying with fewer cards")
+                if "truncated" in str(e).lower() and attempt < 2:
+                    logger.warning(
+                        "LLM response truncated on attempt %d, retrying with fewer cards",
+                        attempt + 1,
+                    )
                     continue
                 logger.error("Generation failed after retry: %s", e)
                 raise HTTPException(status_code=503, detail=str(e))
             if "flashcards" not in parsed_json or not isinstance(
                 parsed_json.get("flashcards"), list
             ):
-                if attempt == 0:
+                if attempt < 2:
                     continue
                 preview = (response_text or "")[:500].replace("\n", " ")
                 logger.error(
