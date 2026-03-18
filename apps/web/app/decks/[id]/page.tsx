@@ -16,6 +16,7 @@ import {
   deleteFlashcard,
 } from "@/lib/api";
 import PageContainer from "@/components/layout/page-container";
+import FormattedText from "@/components/FormattedText";
 
 interface DeckPageProps {
   params: { id: string };
@@ -370,7 +371,7 @@ export default function DeckPage({ params }: DeckPageProps) {
                         {card.question}
                       </div>
                       <div dir="auto" className="text-sm text-neutral-500 leading-snug dark:text-neutral-400 max-mobile:text-[14px] max-mobile:text-[#555] dark:max-mobile:text-neutral-400">
-                        {card.answer_short}
+                        <FormattedText text={card.answer_short} className="text-inherit" />
                       </div>
                     </div>
                   </Link>
