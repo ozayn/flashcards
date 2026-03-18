@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Flashcard } from "@/components/study/Flashcard";
+import FormattedText from "@/components/FormattedText";
 import { getFlashcards, getUserSettings, updateUserSettings, submitReview, deleteDeckReviews, type UserSettings } from "@/lib/api";
 import { getStoredUserId } from "@/components/user-selector";
 
@@ -504,21 +505,27 @@ export default function StudyPage({ params }: StudyPageProps) {
               front={
                 <>
                   <div className="flex-1 min-h-0 w-full overflow-y-auto">
-                    <p dir="auto" className="text-2xl font-medium leading-relaxed">
-                      {card.question}
-                    </p>
+                    <FormattedText
+                      text={card.question}
+                      className="text-2xl font-medium leading-relaxed"
+                    />
                   </div>
                 </>
               }
               back={
                 <>
                   <div className="flex-1 min-h-0 flex flex-col items-stretch justify-start w-full overflow-y-auto cursor-pointer">
-                    <div dir="auto" className="text-xl leading-relaxed mt-6 whitespace-pre-line">
-                      {card.answer_detailed &&
-                      card.answer_detailed.trim() !== card.answer_short.trim()
-                        ? card.answer_detailed
-                        : card.answer_short}
-                    </div>
+                    <FormattedText
+                      text={card.answer_short}
+                      className="whitespace-pre-line text-xl leading-relaxed mt-6"
+                    />
+                    {card.answer_detailed &&
+                      card.answer_detailed.trim() !== card.answer_short.trim() && (
+                        <FormattedText
+                          text={card.answer_detailed}
+                          className="whitespace-pre-line text-muted-foreground mt-4"
+                        />
+                      )}
                   </div>
                   {mode === "study" && showAnswer && (
                     <div className="flex flex-row gap-2 justify-center flex-wrap shrink-0 w-full" onClick={(e) => e.stopPropagation()}>

@@ -606,6 +606,8 @@ Extract key facts and create one flashcard per important point.
 
 {_build_count_instruction(num_cards)}
 
+{LATEX_INSTRUCTION}
+
 {JSON_OUTPUT_REQUIREMENT}
 
 Return ONLY this JSON structure (no other text):
@@ -683,6 +685,8 @@ Rules:
 - Do not ask 'Why' or 'How' questions
 - Do not ask about the field in general
 - Each card must test one person only
+
+{LATEX_INSTRUCTION}
 
 {JSON_OUTPUT_REQUIREMENT}
 
@@ -888,6 +892,8 @@ If there are more concepts than needed, select the most important. If fewer conc
 
 {style_instruction}
 
+{LATEX_INSTRUCTION}
+
 {JSON_OUTPUT_REQUIREMENT if not is_identification else "Return ONLY valid JSON. No plain text, no Q/A format. Use double quotes."}
 
 Return ONLY this JSON structure (no other text):
@@ -951,6 +957,8 @@ Instructions:
 - Cards must be directly related to the topic.
 
 {answer_format}
+
+{LATEX_INSTRUCTION}
 
 {_build_count_instruction(num_cards)}
 
@@ -1019,6 +1027,8 @@ A: Alfa
 Q: B
 A: Bravo
 
+{LATEX_INSTRUCTION}
+
 Return ONLY valid JSON in the required schema.
 
 Return ONLY this JSON structure (no other text):
@@ -1050,6 +1060,11 @@ You MUST return valid JSON only. No plain text, no Q/A format, no explanations b
 The output MUST be valid JSON. If the output is not valid JSON, it will be rejected.
 Use double quotes for all JSON keys and string values.
 Do not include any text outside the JSON object."""
+
+LATEX_INSTRUCTION = """When including mathematical expressions:
+- Use LaTeX format enclosed in $...$ for inline math
+- Use $$...$$ for block equations
+- Do NOT use plain text approximations for formulas"""
 
 EXAMPLE_FORMAT_REQUIREMENT = """
 ANSWER FORMAT (REQUIRED when examples requested):
@@ -1265,6 +1280,8 @@ Topic:
 
 {style_rules}
 
+{LATEX_INSTRUCTION}
+
 {JSON_OUTPUT_REQUIREMENT}
 
 Return ONLY this JSON structure (no other text):
@@ -1369,6 +1386,8 @@ Topic:
 {lang_instruction}
 
 {style_rules}
+
+{LATEX_INSTRUCTION}
 
 {JSON_OUTPUT_REQUIREMENT}
 
