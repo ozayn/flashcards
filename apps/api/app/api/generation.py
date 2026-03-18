@@ -83,9 +83,15 @@ def _normalize_question(q: str) -> str:
 
 
 def _repair_latex_typos(text: str) -> str:
-    """Fix common LLM LaTeX mistakes (e.g. ^Mightarrow instead of \\Rightarrow)."""
+    """Fix common LLM LaTeX mistakes and JSON-escape corruption.
+
+    - ^Mightarrow etc.: LLM typos
+    - \\r+ho, \\f+rac: JSON parses \\rho as \\r+ho, \\frac as \\f+rac (backslash consumed)
+    """
     return (
-        text.replace("^Mightarrow", r"\Rightarrow")
+        text.replace("\rho", r"\rho")  # \r+ho (JSON \r=CR) -> \rho
+        .replace("\frac", r"\frac")  # \f+rac (JSON \f=FF) -> \frac
+        .replace("^Mightarrow", r"\Rightarrow")
         .replace("^Rightarrow", r"\Rightarrow")
         .replace("^rightarrow", r"\rightarrow")
         .replace("^Leftarrow", r"\Leftarrow")

@@ -7,9 +7,12 @@ type Props = {
   className?: string;
 };
 
-/** Repair common LLM LaTeX mistakes (e.g. ^Mightarrow instead of \\Rightarrow). */
+/** Repair common LLM LaTeX mistakes and JSON-escape corruption.
+ * JSON parses \rho as \r+ho, \frac as \f+rac (backslash consumed). */
 function repairLatex(math: string): string {
   return math
+    .replace(/\rho/g, "\\rho")   // \r+ho -> \rho
+    .replace(/\frac/g, "\\frac") // \f+rac -> \frac
     .replace(/\^Mightarrow/g, "\\Rightarrow")
     .replace(/\^Rightarrow/g, "\\Rightarrow")
     .replace(/\^rightarrow/g, "\\rightarrow")
