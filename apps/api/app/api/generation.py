@@ -591,7 +591,7 @@ def _extract_json(text: str) -> dict:
     if not json_chunk:
         raise ValueError("No valid JSON found in LLM response")
 
-    if not _looks_like_complete_flashcards_json(json_chunk) or not _is_balanced_json(json_chunk):
+    if not _is_balanced_json(json_chunk):
         raise ValueError("LLM response appears truncated")
 
     # 2. THEN run repair steps on the isolated JSON only
@@ -624,17 +624,17 @@ def _extract_json(text: str) -> dict:
         )
 
     if data is None:
-        return {}
+        raise ValueError("Failed to parse JSON")
     if isinstance(data, list):
         result = {"flashcards": data}
     elif not isinstance(data, dict):
-        return {}
+        raise ValueError("Failed to parse JSON")
     elif "flashcards" in data:
         result = data
     elif "cards" in data and isinstance(data["cards"], list):
         result = {"flashcards": data["cards"]}
     else:
-        return {}
+        raise ValueError("Failed to parse JSON")
 
     if not _validate_flashcards_schema(result):
         raise ValueError("Invalid flashcards schema")
@@ -1165,6 +1165,7 @@ def _generate_flashcards_from_concepts(
     include_background: bool = False,
     skip_cache: bool = False,
     max_tokens_override: Optional[int] = None,
+    batch_context: Optional[str] = None,
 ) -> str:
     """Stage 2: Generate flashcards from concepts using LLM."""
     concept_list = "\n".join(f"- {c}" for c in concepts)
@@ -1375,6 +1376,7 @@ Return ONLY this JSON structure (no other text):
 
 Rules:
 - One flashcard per concept when you have enough concepts. When fewer concepts, create multiple cards per concept.
+{f'- {batch_context}' if batch_context else ''}
 {json_rules}
 {JSON_CLOSING_CONSTRAINT}"""
 
@@ -1667,7 +1669,7 @@ NON_FORMULA_TOPICS = """NON-FORMULA TOPICS:
 def _estimate_tokens_per_card(topic: str) -> int:
     """Estimate tokens per flashcard for truncation safety."""
     if _is_formula_topic(topic):
-        return 140  # Formulas + explanations need more space than plain cards
+        return 180  # Formulas + explanations need more space than plain cards
     return 80
 
 
@@ -2079,6 +2081,11 @@ async def generate_flashcards(
 
                                 def _gen_from_concepts(batch_size: int, batch_index: int) -> str:
                                     subset = concept_batches[batch_index] if batch_index < len(concept_batches) else concept_batches[-1]
+                                    batch_ctx = (
+                                        f"This is batch {batch_index + 1}. Generate DIFFERENT flashcards."
+                                        if batch_index > 0
+                                        else None
+                                    )
                                     return _generate_flashcards_from_concepts(
                                         subset,
                                         topic_str,
@@ -2087,6 +2094,7 @@ async def generate_flashcards(
                                         num_cards=batch_size,
                                         skip_cache=(batch_index > 0 or attempt > 0),
                                         max_tokens_override=retry_max_tokens,
+                                        batch_context=batch_ctx,
                                     )
 
                                 response_text = _generate_flashcards_formula_batched(
