@@ -104,7 +104,8 @@ def _repair_latex_typos(text: str) -> str:
 
 
 def normalize_latex(text: str) -> str:
-    """Convert single $...$ to $$...$$ for consistent block-math rendering. Does not touch existing $$...$$."""
+    """Normalize math to $$...$$ only. Converts single $...$ to $$...$$. Repairs typos inside $$...$$ blocks.
+    Call only for formula topics; non-formula content should not pass through."""
     if not text:
         return text
     # (?<!\$) ensures we don't match $ that is part of $$ (opening); (?!\$) ensures we don't match $ that is part of $$ (closing)
@@ -975,6 +976,8 @@ Return ONLY this JSON structure (no other text):
 Rules:
 - Output MUST be valid JSON. No plain text, no Q/A format. Use double quotes. Escape newlines as \\n.
 {JSON_CLOSING_CONSTRAINT}"""
+    if not _is_formula_topic(topic or text):
+        prompt += NON_FORMULA_STRICT_RULE
 
     return generate_completion(prompt, skip_cache=skip_cache, max_tokens=max_tokens_override)
 
@@ -1061,7 +1064,8 @@ Return ONLY this JSON structure (no other text):
 Rules:
 - One flashcard per name.
 - Output MUST be valid JSON. No plain text, no Q/A format. Use double quotes. Escape newlines as \\n.
-{JSON_CLOSING_CONSTRAINT}"""
+{JSON_CLOSING_CONSTRAINT}
+{NON_FORMULA_STRICT_RULE}"""
 
     return generate_completion(prompt, skip_cache=skip_cache, max_tokens=max_tokens_override)
 
@@ -1288,7 +1292,8 @@ Return ONLY this JSON structure (no other text):
 Rules:
 - One flashcard per concept when you have enough concepts. When fewer concepts, create multiple cards per concept.
 {json_rules}
-{JSON_CLOSING_CONSTRAINT}"""
+{JSON_CLOSING_CONSTRAINT}
+{NON_FORMULA_STRICT_RULE if not _is_formula_topic(topic) else ''}"""
 
     return generate_completion(prompt, skip_cache=skip_cache, max_tokens=max_tokens_override)
 
@@ -1377,7 +1382,8 @@ Return ONLY this JSON structure (no other text):
 Rules:
 - Output MUST be valid JSON. No plain text, no Q/A format, no markdown outside the JSON.
 - Use double quotes for keys and values. Escape newlines as \\n in strings.
-{JSON_CLOSING_CONSTRAINT}"""
+{JSON_CLOSING_CONSTRAINT}
+{NON_FORMULA_STRICT_RULE if not is_formula else ''}"""
 
     return generate_completion(prompt, skip_cache=skip_cache, max_tokens=max_tokens_override)
 
@@ -1441,7 +1447,8 @@ Rules:
 - No markdown
 - No explanations
 - No formulas
-{JSON_CLOSING_CONSTRAINT}"""
+{JSON_CLOSING_CONSTRAINT}
+{NON_FORMULA_STRICT_RULE}"""
 
     return generate_completion(prompt, skip_cache=skip_cache, max_tokens=max_tokens_override)
 
@@ -1508,7 +1515,8 @@ Rules:
 - No formulas
 - No LaTeX
 - Escape newlines as \\n if needed
-{JSON_CLOSING_CONSTRAINT}"""
+{JSON_CLOSING_CONSTRAINT}
+{NON_FORMULA_STRICT_RULE}"""
 
     return generate_completion(prompt, skip_cache=skip_cache, max_tokens=max_tokens_override)
 
@@ -1579,7 +1587,8 @@ Rules:
 - Output MUST be valid JSON
 - No markdown
 - No explanations
-{JSON_CLOSING_CONSTRAINT}"""
+{JSON_CLOSING_CONSTRAINT}
+{NON_FORMULA_STRICT_RULE}"""
 
     return generate_completion(prompt, skip_cache=skip_cache, max_tokens=max_tokens_override)
 
@@ -1656,7 +1665,8 @@ Return ONLY this JSON structure (no other text):
 
 Rules:
 - Output MUST be valid JSON. No plain text, no Q/A format. Use double quotes. Escape newlines as \\n if needed.
-{JSON_CLOSING_CONSTRAINT}"""
+{JSON_CLOSING_CONSTRAINT}
+{NON_FORMULA_STRICT_RULE if not _is_formula_topic(topic) else ''}"""
 
     return generate_completion(prompt, skip_cache=skip_cache, max_tokens=max_tokens_override)
 
@@ -1670,9 +1680,11 @@ def _generate_flashcards_simple(
 ) -> str:
     """Simple generation. Minimal prompt for formula and non-formula topics."""
     lang_instruction = build_language_instruction(topic, language_hint)
+    is_formula = _is_formula_topic(topic)
 
-    if num_cards == 1 and _is_formula_topic(topic):
-        prompt = f"""Return ONLY valid JSON.
+    if is_formula:
+        if num_cards == 1:
+            prompt = f"""Return ONLY valid JSON.
 
 Generate EXACTLY ONE flashcard for the topic: "{topic}"
 
@@ -1701,8 +1713,8 @@ IMPORTANT:
 - Return ONLY ONE flashcard
 - Do NOT return multiple flashcards
 """
-    else:
-        prompt = f"""Return ONLY valid JSON.
+        else:
+            prompt = f"""Return ONLY valid JSON.
 
 Generate flashcards for the topic: "{topic}"
 
@@ -1730,6 +1742,67 @@ Return this exact JSON format:
     }}
   ]
 }}"""
+    else:
+        # Non-formula topics: explicitly forbid formulas, LaTeX, and math symbols
+        no_formula_rules = """- Do NOT include formulas
+- Do NOT include LaTeX
+- Do NOT include symbols like =, Σ, ∑, μ, θ unless explicitly part of the topic"""
+        if num_cards == 1:
+            prompt = f"""Return ONLY valid JSON.
+
+Generate EXACTLY ONE flashcard for the topic: "{topic}"
+
+{lang_instruction}
+
+Rules:
+{no_formula_rules}
+- Answers must be VERY short (1 line max)
+- Each flashcard should test one DIFFERENT concept
+
+Return this exact JSON format:
+{{
+  "flashcards": [
+    {{
+      "question": "<question>",
+      "answer_short": "<concise factual answer>",
+      "answer_detailed": null,
+      "difficulty": "easy"
+    }}
+  ]
+}}
+
+IMPORTANT:
+- Return ONLY ONE flashcard
+- Do NOT return multiple flashcards
+{NON_FORMULA_STRICT_RULE}
+"""
+        else:
+            prompt = f"""Return ONLY valid JSON.
+
+Generate flashcards for the topic: "{topic}"
+
+{lang_instruction}
+
+{_build_count_instruction(num_cards)}
+
+Rules:
+{no_formula_rules}
+- Answers must be VERY short (1 line max)
+- Each flashcard should test one concept
+- Avoid repeating the same question across flashcards.
+
+Return this exact JSON format:
+{{
+  "flashcards": [
+    {{
+      "question": "<question>",
+      "answer_short": "<concise factual answer>",
+      "answer_detailed": null,
+      "difficulty": "easy"
+    }}
+  ]
+}}
+{NON_FORMULA_STRICT_RULE}"""
 
     return generate_completion(prompt, skip_cache=skip_cache, max_tokens=max_tokens_override)
 
@@ -1787,6 +1860,13 @@ FORMULA_INSTRUCTION = """This topic involves formulas.
 - Include formulas using LaTeX inside $$...$$
 - Keep answers short
 - Return valid JSON only"""
+
+NON_FORMULA_STRICT_RULE = """
+STRICT RULE:
+- Do NOT generate formulas
+- Do NOT use LaTeX
+- Do NOT include mathematical notation
+- Answers must be plain text only"""
 
 NON_FORMULA_TOPICS = """NON-FORMULA TOPICS:
 - Provide a concise definition (1–2 sentences)
@@ -1854,28 +1934,37 @@ def _is_pure_math_or_quant_topic(topic: str) -> bool:
         return False
     t = topic.lower().strip()
 
-    # Explicit exclusions - must never trigger formula generation
-    non_math_domains = [
-        "bonapartism", "democracy", "ideology", "political", "politics",
-        "philosophy", "philosophical", "fallacy", "fallacies", "rhetoric",
-        "cognitive bias", "biases",
+    # Stricter negative filter - return False immediately if ANY of these appear
+    strict_exclusions = [
+        "fallacy", "fallacies", "bias", "biases",
+        "philosophy", "philosophical",
+        "political", "politics",
         "history", "historical",
-        "french", "persian", "spanish", "english", "vocabulary", "translation",
+        "language", "vocabulary",
+    ]
+    if any(k in t for k in strict_exclusions):
+        return False
+
+    # Additional exclusions
+    non_math_domains = [
+        "bonapartism", "democracy", "ideology",
+        "rhetoric", "cognitive bias",
+        "french", "persian", "spanish", "english", "translation",
         "loanword", "grammar",
     ]
     if any(k in t for k in non_math_domains):
         return False
 
-    # Positive: must match math/stat/physics indicators
+    # Positive: must match math/stat/physics indicators (no weak triggers like rule, update, learning)
     math_quant_indicators = [
         "linear regression", "calculus", "formula", "formulas", "equation", "equations",
         "probability", "distribution", "distributions",
         "bayes", "bayesian",
-        "gradient descent", "gradient",
+        "gradient descent",  # not "gradient" alone (e.g. color gradient)
         "physics", "statistical", "statistics",
         "derivative", "integral", "matrix", "matrices",
         "algebra", "trigonometry", "geometry",
-        "mathematical logic",  # override for logic (philosophy excluded)
+        "mathematical logic",
     ]
     return any(k in t for k in math_quant_indicators)
 
@@ -1889,11 +1978,10 @@ LIGHTWEIGHT_KEYWORDS = ["simple", "basic", "intro", "easy", "quick", "concepts"]
 
 
 def _get_math_instruction(topic: str) -> str:
-    """Return FORMULA_INSTRUCTION for formula topics, else DEFINITION_ONLY_FORMAT."""
+    """Return FORMULA_INSTRUCTION for formula topics only. Empty string for non-math topics."""
     if _is_formula_topic(topic):
         return FORMULA_INSTRUCTION
-    # fallback to definition mode
-    return DEFINITION_ONLY_FORMAT
+    return ""
 
 EXAMPLE_FORMAT_REQUIREMENT = """
 ANSWER FORMAT (REQUIRED when examples requested):
@@ -2299,7 +2387,8 @@ async def generate_flashcards(
     Rules:
     - {_build_count_instruction(num_cards)}
     - Output MUST be valid JSON. No plain text, no Q/A format. Use double quotes. Escape newlines as \\n.
-    {JSON_CLOSING_CONSTRAINT}"""
+    {JSON_CLOSING_CONSTRAINT}
+    {NON_FORMULA_STRICT_RULE}"""
 
                             try:
                                 response_text = generate_completion(fallback_prompt, skip_cache=attempt > 0, max_tokens=retry_max_tokens)
@@ -2469,7 +2558,8 @@ async def generate_flashcards(
     Rules:
     - {_build_count_instruction(num_cards)}
     - Output MUST be valid JSON. No plain text, no Q/A format. Use double quotes. Escape newlines as \\n.
-    {JSON_CLOSING_CONSTRAINT}"""
+    {JSON_CLOSING_CONSTRAINT}
+    {NON_FORMULA_STRICT_RULE}"""
 
                         try:
                             if is_formula:
@@ -2603,13 +2693,20 @@ async def generate_flashcards(
             difficulty = DIFFICULTY_TO_INT[difficulty_str]
 
             answer_short = str(answer_short or "")[:1000]
-            answer_short = normalize_latex(answer_short)
+            if _is_formula_topic(topic_str):
+                answer_short = normalize_latex(answer_short)
             if answer_detailed:
                 answer_detailed = str(answer_detailed)[:10000]
+                if _is_formula_topic(topic_str):
+                    answer_detailed = normalize_latex(answer_detailed)
+
+            question_for_save = str(question)[:10000]
+            if _is_formula_topic(topic_str):
+                question_for_save = normalize_latex(question_for_save)
 
             flashcard = Flashcard(
                 deck_id=deck_id_str,
-                question=str(question)[:10000],
+                question=question_for_save,
                 answer_short=answer_short,
                 answer_detailed=(answer_detailed if answer_detailed else None),
                 difficulty=difficulty,
