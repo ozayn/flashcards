@@ -1844,23 +1844,45 @@ def _generate_flashcards_formula_batched(
     return json.dumps({"flashcards": results[:requested_cards]})
 
 
-def _is_formula_topic(topic: str) -> bool:
-    """Return True if topic involves formulas, equations, or quantitative concepts."""
+def _is_pure_math_or_quant_topic(topic: str) -> bool:
+    """Return True ONLY if topic is clearly mathematical, statistical, or physics-based.
+
+    Strict domain guard: formula/LaTeX generation is allowed ONLY when this returns True.
+    Returns False for: political, philosophy, history, language learning, general conceptual topics.
+    """
     if not topic or not isinstance(topic, str):
         return False
-    t = topic.lower()
+    t = topic.lower().strip()
 
-    formula_words = ["formula", "formulas", "equation", "equations"]
-    non_formula_topics = [
-        "fallacy", "fallacies",
-        "philosophy", "logic",
-        "cognitive bias", "biases"
+    # Explicit exclusions - must never trigger formula generation
+    non_math_domains = [
+        "bonapartism", "democracy", "ideology", "political", "politics",
+        "philosophy", "philosophical", "fallacy", "fallacies", "rhetoric",
+        "cognitive bias", "biases",
+        "history", "historical",
+        "french", "persian", "spanish", "english", "vocabulary", "translation",
+        "loanword", "grammar",
     ]
-
-    if any(k in t for k in non_formula_topics):
+    if any(k in t for k in non_math_domains):
         return False
 
-    return any(k in t for k in formula_words)
+    # Positive: must match math/stat/physics indicators
+    math_quant_indicators = [
+        "linear regression", "calculus", "formula", "formulas", "equation", "equations",
+        "probability", "distribution", "distributions",
+        "bayes", "bayesian",
+        "gradient descent", "gradient",
+        "physics", "statistical", "statistics",
+        "derivative", "integral", "matrix", "matrices",
+        "algebra", "trigonometry", "geometry",
+        "mathematical logic",  # override for logic (philosophy excluded)
+    ]
+    return any(k in t for k in math_quant_indicators)
+
+
+def _is_formula_topic(topic: str) -> bool:
+    """Return True if topic should get formula/LaTeX treatment. Strict domain guard: math/stat/physics only."""
+    return _is_pure_math_or_quant_topic(topic)
 
 
 LIGHTWEIGHT_KEYWORDS = ["simple", "basic", "intro", "easy", "quick", "concepts"]
