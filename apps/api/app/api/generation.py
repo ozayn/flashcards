@@ -1668,6 +1668,23 @@ async def generate_flashcards(
                 topic_str = payload.topic or ""
                 is_vocab = is_vocabulary_topic(topic_str)
 
+                # Formula topics: single simple path, no batching or concept extraction
+                if _is_formula_topic(topic_str):
+                    try:
+                        response_text = _generate_flashcards_simple(
+                            topic_str,
+                            lang_hint,
+                            num_cards=num_cards,
+                            skip_cache=attempt > 0,
+                            max_tokens_override=800,
+                        )
+                        parsed_json = _extract_json(response_text)
+                        break
+                    except ValueError as e:
+                        if attempt < 2:
+                            continue
+                        raise HTTPException(status_code=503, detail=str(e))
+
                 # Use simple mode for non-formula topics OR lightweight formula topics (e.g. "basic formulas", "intro calculus")
                 is_lightweight_formula = (
                     _is_formula_topic(topic_str)
