@@ -298,6 +298,14 @@ def _is_people_list_topic(topic: str) -> bool:
     return any(word in topic_lower for word in PEOPLE_LIST_HINTS)
 
 
+def _is_identification_mode(topic: str) -> bool:
+    """Return True if topic asks for identification/quiz-style cards (scenario → concept name)."""
+    if not topic or not isinstance(topic, str):
+        return False
+    t = topic.lower()
+    return any(k in t for k in ["identify", "from examples", "quiz", "guess", "scenario"])
+
+
 def extract_anchor_keywords(topic: str) -> list[str]:
     """Extract 2–5 anchor keywords from the topic to enforce topical grounding."""
     if not topic or not topic.strip():
@@ -679,6 +687,20 @@ Do NOT combine into a single paragraph. Include a blank line between definition 
 {vocab_instruction}
 {EXAMPLE_FORMAT_REQUIREMENT}
 {examples_required}"""
+    elif _is_identification_mode(topic):
+        style_instruction = """Generate flashcards where the user must identify the concept from a scenario.
+
+Format:
+Q: <real-world situation or scenario>
+A: <concept name only>
+
+Rules:
+- Do NOT use "What is…" questions.
+- Do NOT include definitions in the answer.
+- Do NOT include "Definition:" or "Example:" in the answer.
+- Answers must be short (just the concept name).
+- Scenarios must be realistic and varied.
+- Each question describes a situation; the answer is the single concept that fits."""
     else:
         examples_required = " Examples are REQUIRED in every card." if _topic_wants_examples(topic) else ""
         style_instruction = f"""Instructions:
@@ -705,6 +727,32 @@ Topical Grounding:
 {examples_required}"""
 
     source_label = "Source text (base flashcards ONLY on this):" if is_from_text else "Topic (stay focused on this):"
+    is_identification = _is_identification_mode(topic)
+    if is_identification:
+        json_schema = '''{
+  "flashcards": [
+    {
+      "question": "<real-world scenario>",
+      "answer_short": "<concept name only>",
+      "answer_detailed": null,
+      "difficulty": "easy"
+    }
+  ]
+}'''
+        json_rules = "- Output MUST be valid JSON. No plain text, no Q/A format. Use double quotes for keys and values."
+    else:
+        json_schema = '''{
+  "flashcards": [
+    {
+      "question": "<question>",
+      "answer_short": "Definition:\\n\\n<definition>\\n\\nExample:\\n\\n<example>",
+      "answer_detailed": null,
+      "difficulty": "easy"
+    }
+  ]
+}'''
+        json_rules = "- Output MUST be valid JSON. No plain text, no Q/A format, no markdown outside the JSON. Use double quotes for keys and values. Escape newlines as \\n in strings."
+
     prompt = f"""You are generating flashcards.
 
 Concepts:
@@ -719,24 +767,14 @@ Generate exactly {num_cards} flashcards. If there are more concepts than {num_ca
 
 {style_instruction}
 
-{JSON_OUTPUT_REQUIREMENT}
+{JSON_OUTPUT_REQUIREMENT if not is_identification else "Return ONLY valid JSON. No plain text, no Q/A format. Use double quotes."}
 
 Return ONLY this JSON structure (no other text):
-{{
-  "flashcards": [
-    {{
-      "question": "<question>",
-      "answer_short": "Definition:\\n\\n<definition>\\n\\nExample:\\n\\n<example>",
-      "answer_detailed": null,
-      "difficulty": "easy"
-    }}
-  ]
-}}
+{json_schema}
 
 Rules:
 - One flashcard per concept when concepts >= num_cards. When concepts < num_cards, create multiple cards per concept to reach the count.
-- Output MUST be valid JSON. No plain text, no Q/A format, no markdown outside the JSON.
-- Use double quotes for keys and values. Escape newlines as \\n in strings."""
+{json_rules}"""
 
     return generate_completion(prompt)
 
