@@ -296,8 +296,7 @@ def generate_completion(
         try:
             cached = get_cached_response(prompt)
             if cached is not None:
-                print("Using cached LLM response")
-                print("LLM cache hit")
+                logger.info("LLM cache hit")
                 return cached
         except Exception as e:
             logger.warning("LLM cache check failed: %s", e)

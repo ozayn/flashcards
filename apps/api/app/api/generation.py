@@ -436,14 +436,14 @@ def _extract_json(text: str) -> dict:
 
     json_chunk = _isolate_json_chunk(raw)
     if not json_chunk:
-        logger.warning("RAW LLM RESPONSE: %s", raw[:500])
+        logger.debug("RAW LLM RESPONSE: %s", raw[:500])
         raise ValueError("No valid JSON found")
 
     if not _is_balanced_json(json_chunk):
-        logger.warning("RAW LLM RESPONSE: %s", raw[:500])
+        logger.debug("RAW LLM RESPONSE: %s", raw[:500])
         raise ValueError("LLM response appears truncated")
 
-    logger.warning("RAW BEFORE PARSE: %s", json_chunk[:500])
+    logger.debug("RAW BEFORE PARSE: %s", json_chunk[:500])
 
     try:
         data = json.loads(json_chunk)
@@ -452,7 +452,7 @@ def _extract_json(text: str) -> dict:
         try:
             data = json.loads(fixed)
         except Exception:
-            logger.warning("RAW LLM RESPONSE: %s", raw[:500])
+            logger.debug("RAW LLM RESPONSE: %s", raw[:500])
             raise ValueError("Failed to parse JSON")
 
     if isinstance(data, list):
@@ -463,19 +463,19 @@ def _extract_json(text: str) -> dict:
         elif "cards" in data and isinstance(data["cards"], list):
             result = {"flashcards": data["cards"]}
         else:
-            logger.warning("RAW LLM RESPONSE: %s", raw[:500])
+            logger.debug("RAW LLM RESPONSE: %s", raw[:500])
             raise ValueError("Invalid JSON structure")
     else:
-        logger.warning("RAW LLM RESPONSE: %s", raw[:500])
+        logger.debug("RAW LLM RESPONSE: %s", raw[:500])
         raise ValueError("Invalid JSON structure")
 
     if not _validate_flashcards_schema(result):
-        logger.warning("RAW LLM RESPONSE: %s", raw[:500])
+        logger.debug("RAW LLM RESPONSE: %s", raw[:500])
         raise ValueError("Invalid flashcards schema")
 
     cards = result.get("flashcards", [])
     if cards and isinstance(cards[0], dict):
-        logger.warning("AFTER PARSE: %s", cards[0].get("answer_short", ""))
+        logger.debug("AFTER PARSE: %s", cards[0].get("answer_short", ""))
 
     return result
 

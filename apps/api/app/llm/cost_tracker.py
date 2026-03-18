@@ -5,7 +5,10 @@ Set LLM_COST_TRACKING=0 to disable.
 """
 from __future__ import annotations
 
+import logging
 import os
+
+logger = logging.getLogger(__name__)
 
 MODEL_COSTS = {
     "llama-3.1-8b-instant": {
@@ -57,15 +60,9 @@ def log_llm_usage(
         return
     total_tokens = input_tokens + output_tokens
     cost = estimate_cost(model, input_tokens, output_tokens)
-    print(
-        "LLM Usage\n"
-        "---------\n"
-        f"Provider: {provider}\n"
-        f"Model: {model}\n"
-        f"Input tokens: {input_tokens}\n"
-        f"Output tokens: {output_tokens}\n"
-        f"Total tokens: {total_tokens}\n"
-        f"Estimated cost: ${cost:.5f}\n"
+    logger.info(
+        "LLM Usage | Provider: %s | Model: %s | In: %d Out: %d | Cost: $%.5f",
+        provider, model, input_tokens, output_tokens, cost,
     )
 
 
@@ -73,4 +70,4 @@ def log_usage_unavailable(provider: str) -> None:
     """Log when token usage cannot be extracted. Never raises."""
     if not _is_tracking_enabled():
         return
-    print(f"Token usage unavailable for {provider}.")
+    logger.info("Token usage unavailable for %s", provider)
