@@ -87,10 +87,12 @@ def _repair_latex_typos(text: str) -> str:
 
     - ^Mightarrow etc.: LLM typos
     - \\r+ho, \\f+rac: JSON parses \\rho as \\r+ho, \\frac as \\f+rac (backslash consumed)
+    - Unicode ρ: user may paste Greek letter instead of \\rho
     """
     return (
         text.replace("\rho", r"\rho")  # \r+ho (JSON \r=CR) -> \rho
         .replace("\frac", r"\frac")  # \f+rac (JSON \f=FF) -> \frac
+        .replace("\u03c1", r"\rho")  # Unicode ρ -> \rho
         .replace("^Mightarrow", r"\Rightarrow")
         .replace("^Rightarrow", r"\Rightarrow")
         .replace("^rightarrow", r"\rightarrow")

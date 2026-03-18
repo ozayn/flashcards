@@ -1,6 +1,6 @@
 "use client";
 
-import { BlockMath } from "react-katex";
+import { BlockMath, InlineMath } from "react-katex";
 
 type Props = {
   text: string;
@@ -13,6 +13,7 @@ function repairLatex(math: string): string {
   return math
     .replace(/\rho/g, "\\rho")   // \r+ho -> \rho
     .replace(/\frac/g, "\\frac") // \f+rac -> \frac
+    .replace(/\u03C1/g, "\\rho") // Unicode ρ -> \rho
     .replace(/\^Mightarrow/g, "\\Rightarrow")
     .replace(/\^Rightarrow/g, "\\Rightarrow")
     .replace(/\^rightarrow/g, "\\rightarrow")
@@ -31,10 +32,15 @@ function renderMixed(text: string) {
         <span key={i} className="katex-block overflow-visible my-2">
           <BlockMath
             math={math}
-            renderError={(err) => (
-              <span className="text-destructive text-sm" title={err.message}>
-                {part}
-              </span>
+            renderError={() => (
+              <InlineMath
+                math={math}
+                renderError={(err) => (
+                  <span className="text-destructive text-sm" title={err.message}>
+                    {part}
+                  </span>
+                )}
+              />
             )}
           />
         </span>
@@ -46,8 +52,6 @@ function renderMixed(text: string) {
 
 export default function FormattedText({ text, className }: Props) {
   if (!text) return null;
-
-  console.log("RENDER INPUT:", text);
 
   try {
     return (
