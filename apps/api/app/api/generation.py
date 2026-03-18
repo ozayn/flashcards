@@ -971,7 +971,8 @@ def _generate_flashcards_from_mapping_topic(
 ) -> str:
     """Generate flashcards for learning mappings between two related items (e.g. A ↔ Alfa, symbol ↔ name)."""
     lang_instruction = build_language_instruction(topic, language_hint)
-    prompt = f"""You are generating flashcards for learning mappings between two related items.
+    n = num_cards
+    prompt = f"""Generate approximately {n} flashcards for learning mappings between two related items.
 
 Topic:
 {topic}
@@ -982,26 +983,35 @@ Format:
 Q: <item A>
 A: <item B>
 
-Include reverse direction where appropriate (e.g. if you have A→Alfa, also include Alfa→A).
-
 Rules:
-- Do NOT use "What is..." questions.
-- Do NOT include definitions.
-- Do NOT include examples.
-- Keep answers very short (one word or short phrase).
-- Ensure variety: include both directions when useful (e.g. letter→name and name→letter).
-- Question is one item, answer is the paired item. No extra text.
+- Do NOT use "What is..."
+- Do NOT include definitions or explanations
+- Do NOT include examples
+- Answers must be short (1–3 words max)
+- Each card must contain only a direct mapping
 
-Examples:
+Card count:
+- Aim for {n} total flashcards
+- It is acceptable to return between {n - 3} and {n + 3}
+- Do NOT significantly exceed {n}
+- If the full dataset would exceed this number, include only a subset of mappings
+
+Direction:
+- Use the most natural and commonly used direction for this mapping
+- Prefer letter → phonetic word (e.g., A → Alfa)
+- Do NOT include reverse mappings unless clearly useful
+- Avoid confusing or unnatural cards
+
+Variety:
+- Avoid duplicates
+- Ensure coverage across different items
+
+Example:
+
 Q: A
 A: Alfa
 
-Q: Bravo
-A: B
-
-{_build_count_instruction(num_cards)}
-
-Return ONLY valid JSON. No plain text, no Q/A format. Use double quotes.
+Return ONLY valid JSON in the required schema.
 
 Return ONLY this JSON structure (no other text):
 {{
