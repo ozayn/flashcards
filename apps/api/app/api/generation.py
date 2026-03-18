@@ -576,20 +576,18 @@ def _validate_flashcards_schema(data) -> bool:
     return True
 
 
-def _looks_like_complete_flashcards_json(text: str) -> bool:
-    """Check if extracted chunk contains flashcards JSON."""
-    if not text or not text.strip():
-        return False
-    return '"flashcards"' in text or '"cards"' in text
-
-
 def _extract_json(text: str) -> dict:
     """Extract JSON from LLM response. Isolate JSON first, then repair, then parse."""
     raw = text.strip()
     # 1. FIRST extract JSON from raw (isolates from "LLM Usage", logs, metadata)
     json_chunk = _isolate_json_chunk(raw)
     if not json_chunk:
+        logger.warning("RAW LLM RESPONSE: %s", raw[:500])
         raise ValueError("No valid JSON found in LLM response")
+
+    if not _is_balanced_json(json_chunk):
+        logger.warning("RAW LLM RESPONSE: %s", raw[:500])
+        raise ValueError("LLM response appears truncated")
 
     # 2. THEN run repair steps on the isolated JSON only
     text = _repair_bare_formula_json(json_chunk)
@@ -606,24 +604,28 @@ def _extract_json(text: str) -> dict:
     # 3. THEN parse
     try:
         data = json.loads(text)
-    except json.JSONDecodeError:
-        fixed = re.sub(r",\s*([}\]])", r"\1", text)
+    except Exception:
+        trimmed = re.sub(r",\s*([}\]])", r"\1", text)
         try:
-            data = json.loads(fixed)
-        except json.JSONDecodeError:
+            data = json.loads(trimmed)
+        except Exception:
+            logger.warning("RAW LLM RESPONSE: %s", raw[:500])
             raise ValueError("Failed to parse JSON")
     if isinstance(data, list):
         result = {"flashcards": data}
     elif not isinstance(data, dict):
+        logger.warning("RAW LLM RESPONSE: %s", raw[:500])
         raise ValueError("Failed to parse JSON")
     elif "flashcards" in data:
         result = data
     elif "cards" in data and isinstance(data["cards"], list):
         result = {"flashcards": data["cards"]}
     else:
+        logger.warning("RAW LLM RESPONSE: %s", raw[:500])
         raise ValueError("Failed to parse JSON")
 
     if not _validate_flashcards_schema(result):
+        logger.warning("RAW LLM RESPONSE: %s", raw[:500])
         raise ValueError("Invalid flashcards schema")
 
     return result
@@ -1640,12 +1642,9 @@ CRITICAL - LaTeX correctness:
 
 FORMULA_INSTRUCTION = """This topic involves formulas or quantitative concepts.
 
-- Include a formula when appropriate.
-- Use simple math notation or LaTeX. Keep formulas concise.
-- Avoid very long or complex expressions.
-- Prefer simple forms when possible.
-- Put formula inside the answer_short string. Escape newlines as \\n.
-- Output valid JSON only. Use double quotes."""
+- Use LaTeX inside $$...$$
+- Return valid JSON only
+- Keep answers concise"""
 
 NON_FORMULA_TOPICS = """NON-FORMULA TOPICS:
 - Provide a concise definition (1–2 sentences)
@@ -1678,7 +1677,7 @@ def _compute_safe_card_count(
     return (final, safe_max)
 
 
-FORMULA_BATCH_SIZE = 2
+FORMULA_BATCH_SIZE = 1
 
 
 def _generate_flashcards_formula_batched(
@@ -1854,6 +1853,9 @@ async def generate_flashcards(
                 requested_cards, topic_for_estimate, retry_attempt=attempt
             )
             retry_max_tokens = int(_get_default_max_tokens() * 1.5) if attempt > 0 else None
+            if _is_formula_topic(topic_for_estimate):
+                base = _get_default_max_tokens()
+                retry_max_tokens = min(retry_max_tokens or base, 800)
             logger.info(
                 "Requested cards: %d, Safe max cards: %d, Final cards used: %d (attempt %d)%s",
                 requested_cards,
@@ -2302,43 +2304,6 @@ async def generate_flashcards(
         logger.info("Generated %d candidate cards", len(cards))
 
         topic_str = (payload.topic or "").strip()
-
-        # Light validation: if too few cards, try one regeneration (use clamped num_cards)
-        if len(cards) < num_cards * 0.6:
-            retry_context = (payload.topic or "")[:200] or (text_input[:200] + "..." if text_input else "the topic")
-            retry_prompt = f"""{JSON_HEADER}
-You previously returned {len(cards)} flashcards, which is too few.
-
-Generate additional UNIQUE flashcards to reach approximately {num_cards} total.
-
-Context: {retry_context}
-
-Rules:
-- Do NOT repeat any previously generated questions
-- Cover different concepts or scenarios
-- Maintain the same format as before
-
-Return ONLY valid JSON: {{"flashcards": [{{"question": "...", "answer_short": "...", "answer_detailed": null, "difficulty": "easy"}}]}}
-Use double quotes. Escape newlines as \\n in answer_short.
-{JSON_CLOSING_CONSTRAINT}"""
-            try:
-                retry_text = generate_completion(retry_prompt)
-                retry_parsed = _extract_json(retry_text)
-                retry_cards = retry_parsed.get("flashcards", [])
-                if isinstance(retry_cards, list) and retry_cards:
-                    seen_questions = {str(c.get("question", "")).strip() for c in cards if isinstance(c, dict)}
-                    for rc in retry_cards:
-                        if (
-                            isinstance(rc, dict)
-                            and rc.get("question")
-                            and (rc.get("answer_short") or rc.get("answer") or rc.get("back"))
-                            and str(rc.get("question", "")).strip() not in seen_questions
-                        ):
-                            cards.append(rc)
-                            seen_questions.add(str(rc.get("question", "")).strip())
-                    logger.info("Retry added cards, total now %d", len(cards))
-            except (ValueError, json.JSONDecodeError, TypeError):
-                pass
 
         # Grounding check: when text mode and strict_text_only, filter out unsupported cards
         if text_input and payload.strict_text_only and cards:
