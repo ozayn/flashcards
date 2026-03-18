@@ -401,45 +401,6 @@ def _repair_pseudo_latex(text: str) -> str:
     return re.sub(r"\$\$([\s\S]*?)\$\$", _fix_formula, text)
 
 
-def _remove_inline_latex_before_block(text: str) -> str:
-    """Remove only duplicate LaTeX commands before $$ block. Do not touch =, +, -, *, or parentheses."""
-    if "$$" not in text:
-        return text
-
-    first_dd = text.find("$$")
-    before = text[:first_dd]
-    after = text[first_dd:]
-
-    # Remove only LaTeX command tokens (e.g. \omega_{j+1}, \cdot)
-    latex_pattern = r"\\[a-zA-Z]+(?:\{[^{}]*\})*"
-    clean_before = re.sub(latex_pattern, "", before)
-
-    # Collapse whitespace
-    clean_before = re.sub(r"\s+", " ", clean_before).strip()
-
-    # Ensure sentence ends cleanly (add period if needed)
-    if clean_before and not re.search(r"[.!?]$", clean_before):
-        clean_before = clean_before.rstrip(" ,;") + "."
-
-    result = (clean_before + "\n\n" + after.strip()).strip()
-    return result if result else text
-
-
-def _clean_answer_shorts_in_json(json_text: str) -> str:
-    """Apply _remove_inline_latex_before_block to each answer_short value in raw JSON."""
-    pattern = r'"answer_short":\s*"((?:[^"\\]|\\.)*)"'
-
-    def replacer(match) -> str:
-        content = match.group(1)
-        cleaned = _remove_inline_latex_before_block(content)
-        if cleaned == content:
-            return match.group(0)
-        escaped = cleaned.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
-        return f'"answer_short": "{escaped}"'
-
-    return re.sub(pattern, replacer, json_text)
-
-
 def _repair_unescaped_latex_json(text: str) -> tuple[str, bool]:
     """Fix unescaped LaTeX backslashes in JSON strings. Returns (repaired_text, changed)."""
     pattern = (
@@ -523,8 +484,6 @@ def _extract_json(text: str) -> dict:
             (before_latex[:150] + "...") if len(before_latex) > 150 else before_latex,
             (text[:150] + "...") if len(text) > 150 else text,
         )
-
-    text = _clean_answer_shorts_in_json(text)
 
     data = None
     try:
