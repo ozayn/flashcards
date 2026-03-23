@@ -256,60 +256,6 @@ def _reduce_transcript_overlaps(cards: list) -> list:
     return kept
 
 
-def _answer_definition_part(ans: str) -> str:
-    """Extract the Definition: part or first paragraph for quality checks."""
-    if not ans:
-        return ""
-    m = re.search(r"definition:\s*(.+?)(?=\n\s*(?:example:|$))", ans, re.I | re.DOTALL)
-    if m:
-        return m.group(1).strip()
-    return ans.split("\n\n")[0].strip() if ans else ""
-
-
-def _example_supports_definition(q: str, ans: str) -> bool:
-    """True if the example section appears to support the definition (shared key terms)."""
-    def_part = _answer_definition_part(ans)
-    ex_m = re.search(r"example:\s*(.+?)(?=\n\s*\w+:|$)", ans, re.I | re.DOTALL)
-    if not ex_m:
-        return True
-    example_part = ex_m.group(1).strip().lower()
-    def_lower = (def_part + " " + q).lower()
-    key_terms = [
-        w for w in re.split(r"\W+", def_lower)
-        if len(w) >= 4 and w not in _STOPWORDS
-    ][:8]
-    if not key_terms:
-        return True
-    matches = sum(1 for t in key_terms if t in example_part)
-    return matches >= 1
-
-
-def _filter_transcript_quality(cards: list) -> list:
-    """Remove cards with vague answers, example-definition mismatch, or obvious redundancy."""
-    if not cards:
-        return []
-    kept = []
-    for c in cards:
-        ans = c.get("answer_short") or c.get("back") or c.get("answer") or ""
-        def_part = _answer_definition_part(ans)
-        # Vague: definition too short or generic
-        if len(def_part) < 25:
-            logger.debug("Dropping vague definition (too short): %s", (c.get("question") or "")[:80])
-            continue
-        if def_part.lower().startswith(("it is when", "it's when", "this is when")):
-            if len(def_part) < 50:
-                logger.debug("Dropping vague definition (generic opener): %s", (c.get("question") or "")[:80])
-                continue
-        # Example-definition mismatch
-        if "example:" in ans.lower() and not _example_supports_definition(
-            c.get("question") or "", ans
-        ):
-            logger.debug("Dropping example-definition mismatch: %s", (c.get("question") or "")[:80])
-            continue
-        kept.append(c)
-    return kept
-
-
 def _select_best_transcript_cards(cards: list, max_cards: int = 8) -> list:
     """If too many cards, keep the strongest up to max_cards."""
     if len(cards) <= max_cards:
@@ -2920,15 +2866,13 @@ async def generate_flashcards(
             cards = _filter_low_value_transcript_cards(cards)
             logger.info("[text-mode] Stage 3 - after low-value filter: %d kept (removed %d)", len(cards), before_lv - len(cards))
 
-        # Example requirement: when topic requested examples, keep only cards with Example section
-        wants_examples = _topic_wants_examples(topic_str) or (
-            bool(text_input) and _topic_wants_examples((text_input or "")[:500])
-        )
+        # Example requirement: only when USER explicitly requested via topic (not inferred from transcript text)
+        wants_examples = _topic_wants_examples(topic_str)
         if wants_examples and cards:
             before_ex = len(cards)
             cards = [c for c in cards if "Example:" in (c.get("answer_short") or "")]
             if text_input:
-                logger.info("[text-mode] Stage 4 - after example filter: %d kept (removed %d)", len(cards), before_ex - len(cards))
+                logger.info("[text-mode] after example filter: %d kept (removed %d)", len(cards), before_ex - len(cards))
             if len(cards) == 0:
                 raise HTTPException(
                     status_code=503,
@@ -2937,21 +2881,15 @@ async def generate_flashcards(
             if not text_input:
                 logger.info("After example filter: %d cards with examples", len(cards))
 
-        # Transcript-only: overlap reduction, quality filter, cap at 5-8
+        # Transcript-only: overlap reduction, cap at 8
         if text_input and cards:
             before_overlap = len(cards)
             cards = _reduce_transcript_overlaps(cards)
-            logger.info("[text-mode] Stage 4b - after overlap reduction: %d kept (removed %d)", len(cards), before_overlap - len(cards))
-            before_quality = len(cards)
-            cards = _filter_transcript_quality(cards)
-            logger.info("[text-mode] Stage 4c - after quality filter: %d kept (removed %d)", len(cards), before_quality - len(cards))
+            logger.info("[text-mode] Stage 4 - after overlap reduction: %d kept (removed %d)", len(cards), before_overlap - len(cards))
             before_cap = len(cards)
             cards = _select_best_transcript_cards(cards, max_cards=8)
             if before_cap > 8 and len(cards) == 8:
-                logger.info("[text-mode] Stage 4d - capped at 8 (had %d)", before_cap)
-
-        if text_input:
-            logger.info("[text-mode] Stage 5 - cards entering create loop (before duplicate check): %d", len(cards))
+                logger.info("[text-mode] Stage 5 - capped at 8 (had %d)", before_cap)
 
         # Preload existing questions for duplicate prevention (one query for entire batch)
         existing_result = await db.execute(
