@@ -11,6 +11,11 @@ from app.schemas.category import CategoryCreate, CategoryResponse, CategoryUpdat
 router = APIRouter(prefix="/categories", tags=["categories"])
 
 
+def _normalize_category_name(s: str) -> str:
+    """Trim, lowercase, collapse repeated spaces. Used for duplicate detection only."""
+    return " ".join(s.strip().lower().split())
+
+
 @router.get("", response_model=List[CategoryResponse])
 async def get_categories(
     user_id: str = Query(..., description="User ID (returns only categories owned by this user)"),
@@ -31,6 +36,16 @@ async def create_category(
     db: AsyncSession = Depends(get_db),
 ):
     """Create a new category. The category is owned by the user_id in the payload."""
+    normalized = _normalize_category_name(payload.name)
+    result = await db.execute(
+        select(Category).where(Category.user_id == payload.user_id)
+    )
+    for c in result.scalars().all():
+        if _normalize_category_name(c.name) == normalized:
+            raise HTTPException(
+                status_code=409,
+                detail="This category already exists.",
+            )
     category = Category(
         name=payload.name,
         user_id=payload.user_id,
@@ -56,6 +71,19 @@ async def update_category(
     if not category:
         raise HTTPException(status_code=404, detail="Category not found")
     if data.name is not None:
+        normalized = _normalize_category_name(data.name)
+        others = await db.execute(
+            select(Category).where(
+                Category.user_id == user_id,
+                Category.id != category_id,
+            )
+        )
+        for c in others.scalars().all():
+            if _normalize_category_name(c.name) == normalized:
+                raise HTTPException(
+                    status_code=409,
+                    detail="This category already exists.",
+                )
         category.name = data.name
     await db.flush()
     await db.refresh(category)

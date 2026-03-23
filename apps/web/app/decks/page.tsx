@@ -86,6 +86,10 @@ function getGenerationStatusIcon(deck: Deck): DeckMetadata | null {
 
 const UNCATEGORIZED = "__uncategorized__";
 
+function normalizeCategoryName(s: string): string {
+  return s.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
 function resolveDropTargetCategoryId(
   overId: string,
   decks: Deck[],
@@ -184,6 +188,7 @@ export default function DecksPage() {
   const [categoryModalOpen, setCategoryModalOpen] = useState(false);
   const [categoryName, setCategoryName] = useState("");
   const [categoryCreating, setCategoryCreating] = useState(false);
+  const [categoryCreateError, setCategoryCreateError] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
@@ -191,6 +196,7 @@ export default function DecksPage() {
   const [renameCategoryId, setRenameCategoryId] = useState<string | null>(null);
   const [renameCategoryName, setRenameCategoryName] = useState("");
   const [renameSaving, setRenameSaving] = useState(false);
+  const [renameCategoryError, setRenameCategoryError] = useState<string | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [openDeckMenuId, setOpenDeckMenuId] = useState<string | null>(null);
@@ -322,6 +328,15 @@ export default function DecksPage() {
     e.preventDefault();
     const name = categoryName.trim();
     if (!name || categoryCreating || !userId) return;
+    const normalized = normalizeCategoryName(name);
+    const isDuplicate = categories.some(
+      (c) => normalizeCategoryName(c.name) === normalized
+    );
+    if (isDuplicate) {
+      setCategoryCreateError("This category already exists.");
+      return;
+    }
+    setCategoryCreateError(null);
     try {
       setCategoryCreating(true);
       await createCategory({ name, user_id: userId });
@@ -329,7 +344,7 @@ export default function DecksPage() {
       setCategoryModalOpen(false);
       setRefreshKey((k) => k + 1);
     } catch (err) {
-      console.error("Failed to create category", err);
+      setCategoryCreateError(err instanceof Error ? err.message : "Failed to create category");
     } finally {
       setCategoryCreating(false);
     }
@@ -338,6 +353,7 @@ export default function DecksPage() {
   function openRenameModal(categoryId: string, currentName: string) {
     setRenameCategoryId(categoryId);
     setRenameCategoryName(currentName);
+    setRenameCategoryError(null);
     setRenameModalOpen(true);
   }
 
@@ -346,6 +362,7 @@ export default function DecksPage() {
       setRenameModalOpen(false);
       setRenameCategoryId(null);
       setRenameCategoryName("");
+      setRenameCategoryError(null);
     }
   }
 
@@ -353,13 +370,22 @@ export default function DecksPage() {
     e.preventDefault();
     const name = renameCategoryName.trim();
     if (!name || !renameCategoryId || renameSaving || !userId) return;
+    const normalized = normalizeCategoryName(name);
+    const isDuplicate = categories.some(
+      (c) => c.id !== renameCategoryId && normalizeCategoryName(c.name) === normalized
+    );
+    if (isDuplicate) {
+      setRenameCategoryError("This category already exists.");
+      return;
+    }
+    setRenameCategoryError(null);
     try {
       setRenameSaving(true);
       await updateCategory(renameCategoryId, { name }, userId);
       setRefreshKey((k) => k + 1);
       closeRenameModal();
     } catch (err) {
-      console.error("Failed to rename category", err);
+      setRenameCategoryError(err instanceof Error ? err.message : "Failed to rename category");
     } finally {
       setRenameSaving(false);
     }
@@ -476,7 +502,7 @@ export default function DecksPage() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setCategoryModalOpen(true)}
+              onClick={() => { setCategoryModalOpen(true); setCategoryCreateError(null); }}
               className="h-10"
             >
               New Category
@@ -493,7 +519,7 @@ export default function DecksPage() {
         {categoryModalOpen && (
           <div
             className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
-            onClick={() => !categoryCreating && setCategoryModalOpen(false)}
+            onClick={() => { if (!categoryCreating) { setCategoryModalOpen(false); setCategoryCreateError(null); } }}
           >
             <div
               className="bg-background rounded-lg shadow-lg p-6 w-full max-w-sm mx-4"
@@ -506,17 +532,20 @@ export default function DecksPage() {
                   name="categoryName"
                   placeholder="Category name"
                   value={categoryName}
-                  onChange={(e) => setCategoryName(e.target.value)}
+                  onChange={(e) => { setCategoryName(e.target.value); setCategoryCreateError(null); }}
                   disabled={categoryCreating}
                   autoFocus
                   autoComplete="off"
                   className="w-full"
                 />
+                {categoryCreateError && (
+                  <p className="text-sm text-destructive">{categoryCreateError}</p>
+                )}
                 <div className="flex justify-end gap-2">
                   <Button
                     type="button"
                     variant="outline"
-                    onClick={() => !categoryCreating && setCategoryModalOpen(false)}
+                    onClick={() => { if (!categoryCreating) { setCategoryModalOpen(false); setCategoryCreateError(null); } }}
                     disabled={categoryCreating}
                   >
                     Cancel
@@ -546,12 +575,15 @@ export default function DecksPage() {
                   name="categoryName"
                   placeholder="Category name"
                   value={renameCategoryName}
-                  onChange={(e) => setRenameCategoryName(e.target.value)}
+                  onChange={(e) => { setRenameCategoryName(e.target.value); setRenameCategoryError(null); }}
                   disabled={renameSaving}
                   autoFocus
                   autoComplete="off"
                   className="w-full"
                 />
+                {renameCategoryError && (
+                  <p className="text-sm text-destructive">{renameCategoryError}</p>
+                )}
                 <div className="flex justify-end gap-2">
                   <Button
                     type="button"

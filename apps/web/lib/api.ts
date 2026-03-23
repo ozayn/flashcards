@@ -180,7 +180,10 @@ export async function createCategory(data: { name: string; user_id: string }) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
   });
-  if (!res.ok) throw new Error("Failed to create category");
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail ?? "Failed to create category");
+  }
   return res.json();
 }
 
@@ -194,7 +197,10 @@ export async function updateCategory(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
   });
-  if (!res.ok) throw new Error("Failed to update category");
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail ?? "Failed to update category");
+  }
   return res.json();
 }
 
