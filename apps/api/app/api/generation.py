@@ -870,7 +870,7 @@ Definition:
 Example:
 <one concrete example from the passage when available>
 
-Do NOT combine into a single paragraph. Include a blank line between definition and Example. 2–3 sentences max."""
+Do NOT combine into a single paragraph. Include a blank line between definition and Example."""
         else:
             grounding_block = f"""{STRICT_TEXT_GROUNDING_RULES}
 {no_background}
@@ -898,7 +898,7 @@ Definition:
 Example:
 <one concrete example>
 
-Do NOT combine into a single paragraph. Include a blank line between definition and Example. 2–3 sentences max."""
+Do NOT combine into a single paragraph. Include a blank line between definition and Example."""
         else:
             grounding_block = f"""{RELAXED_TEXT_GROUNDING_RULES}
 
@@ -921,6 +921,7 @@ Do NOT combine into a single paragraph. Include a blank line between definition 
     {
       "question": "<question>",
       "answer_short": "Definition:\\n\\n<definition>\\n\\nExample:\\n\\n<example>",
+      "has_example": true,
       "answer_detailed": null,
       "difficulty": "easy"
     }
@@ -938,8 +939,9 @@ Do NOT combine into a single paragraph. Include a blank line between definition 
   ]
 }'''
 
+    example_block = f"\n{EXAMPLE_REQUIREMENT_MANDATORY}\n" if wants_examples else ""
     prompt = f"""{JSON_HEADER}
-{build_language_rule(topic or "", text or "", language_hint)}
+{build_language_rule(topic or "", text or "", language_hint)}{example_block}
 You are generating flashcards from the following text.
 
 {USER_TEXT_SAFETY_INSTRUCTION}
@@ -992,12 +994,13 @@ Definition:
 Example:
 <one concrete example>
 
-- Do NOT combine into a single paragraph. Include a blank line between definition and Example. Every answer must include an example. 2–3 sentences max."""
+- Do NOT combine into a single paragraph. Include a blank line between definition and Example. Every answer must include an example."""
         json_schema = '''{
   "flashcards": [
     {
       "question": "Who was <Name>?",
       "answer_short": "Definition:\\n\\n<definition>\\n\\nExample:\\n\\n<example>",
+      "has_example": true,
       "answer_detailed": null,
       "difficulty": "easy"
     }
@@ -1016,8 +1019,9 @@ Example:
   ]
 }'''
 
+    example_block = f"\n{EXAMPLE_REQUIREMENT_MANDATORY}\n" if wants_examples else ""
     prompt = f"""{JSON_HEADER}
-{build_language_rule(topic, "", language_hint)}
+{build_language_rule(topic, "", language_hint)}{example_block}
 You are generating flashcards for studying notable individuals.
 
 Topic:
@@ -1094,7 +1098,7 @@ Definition:
 Example:
 <one concrete example from the passage when available>
 
-Do NOT combine into a single paragraph. Include a blank line between definition and Example. 2–3 sentences max."""
+Do NOT combine into a single paragraph. Include a blank line between definition and Example."""
             else:
                 style_instruction = f"""{STRICT_TEXT_GROUNDING_RULES}
 {no_background}
@@ -1117,7 +1121,7 @@ Definition:
 Example:
 <one concrete example>
 
-Do NOT combine into a single paragraph. Include a blank line between definition and Example. 2–3 sentences max."""
+Do NOT combine into a single paragraph. Include a blank line between definition and Example."""
             else:
                 style_instruction = f"""{RELAXED_TEXT_GROUNDING_RULES}
 
@@ -1160,7 +1164,7 @@ Rules:
 - Only generate flashcards about individual items within the category (e.g., for "cognitive biases" → cards about each bias, not about researchers or theories).
 - Prefer specific facts over abstract concepts.
 - Questions should be concise and suitable for active recall.
-- Each flashcard must test exactly ONE piece of knowledge.
+- Each flashcard must test exactly ONE piece of knowledge AND include a real-world example.
 - Prefer questions that start with: Who, What, When, Where.
 - Avoid questions that start with: Why, How—unless absolutely necessary.
 - Avoid multi-part questions. Bad: "Who was Henri Cartier-Bresson and what was the decisive moment?" Good: "Who was Henri Cartier-Bresson?" / "What is the decisive moment in photography?"
@@ -1231,6 +1235,7 @@ Topical Grounding:
     {
       "question": "<question>",
       "answer_short": "Definition:\\n\\n<definition>\\n\\nExample:\\n\\n<example>",
+      "has_example": true,
       "answer_detailed": null,
       "difficulty": "easy"
     }
@@ -1250,8 +1255,9 @@ Topical Grounding:
 }'''
         json_rules = "- Output MUST be valid JSON. No plain text, no Q/A format, no markdown outside the JSON. Use double quotes for keys and values. Escape newlines as \\n in strings. Do NOT include 'Example:' or examples in answer_short."
 
+    example_block = f"\n{EXAMPLE_REQUIREMENT_MANDATORY}\n" if wants_examples else ""
     prompt = f"""{JSON_HEADER}
-{build_language_rule(topic, "", language_hint)}
+{build_language_rule(topic, "", language_hint)}{example_block}
 You are generating flashcards.
 
 Concepts:
@@ -1313,6 +1319,7 @@ def _generate_flashcards_from_question_topic(
     {
       "question": "<question>",
       "answer_short": "Definition:\\n\\n<definition>\\n\\nExample:\\n\\n<example>",
+      "has_example": true,
       "answer_detailed": null,
       "difficulty": "easy"
     }
@@ -1331,8 +1338,9 @@ def _generate_flashcards_from_question_topic(
   ]
 }'''
 
+    example_block = f"\n{EXAMPLE_REQUIREMENT_MANDATORY}\n" if wants_examples else ""
     prompt = f"""{JSON_HEADER}
-{build_language_rule(topic, "", language_hint)}
+{build_language_rule(topic, "", language_hint)}{example_block}
 You are generating flashcards for studying.
 
 Topic:
@@ -1342,7 +1350,7 @@ Instructions:
 - Prefer specific facts, names, events, or individuals over abstract concepts.
 - Avoid abstract explanations; focus on concrete, memorable facts.
 - Questions should be concise and suitable for active recall.
-- Each flashcard must test exactly ONE piece of knowledge.
+- Each flashcard must test exactly ONE piece of knowledge{f' AND include a real-world example' if wants_examples else ''}.
 - Prefer named entities (people, places, works, events) when possible.
 - Prefer questions that start with: Who, What, When, Where.
 - Avoid questions that start with: Why, How—unless absolutely necessary.
@@ -1653,6 +1661,7 @@ def _generate_flashcards_simple(
 ) -> str:
     """Simple generation. Minimal prompt for formula and non-formula topics."""
     is_formula = _is_formula_topic(topic)
+    wants_examples = _topic_wants_examples(topic)
 
     if is_formula:
         if num_cards == 1:
@@ -1715,14 +1724,23 @@ Return this exact JSON format:
         no_formula_rules = """- Do NOT include formulas
 - Do NOT include LaTeX
 - Do NOT include symbols like =, Σ, ∑, μ, θ unless explicitly part of the topic"""
+        example_block = f"\n{EXAMPLE_REQUIREMENT_MANDATORY}\n" if wants_examples else ""
+        if wants_examples:
+            answer_format = "Definition:\\n\\n<definition>\\n\\nExample:\\n\\n<example>"
+            answer_rule = "- Each answer MUST include Definition AND Example sections. Do NOT omit Example."
+            schema_extra = '\n      "has_example": true,'
+        else:
+            answer_format = "<concise factual answer>"
+            answer_rule = "- Answers must be VERY short (1 line max)"
+            schema_extra = ""
         if num_cards == 1:
             prompt = f"""Return ONLY valid JSON.
-{build_language_rule(topic, "", language_hint)}
+{build_language_rule(topic, "", language_hint)}{example_block}
 Generate EXACTLY ONE flashcard for the topic: "{topic}"
 
 Rules:
 {no_formula_rules}
-- Answers must be VERY short (1 line max)
+{answer_rule}
 - Each flashcard should test one DIFFERENT concept
 
 Return this exact JSON format:
@@ -1730,7 +1748,7 @@ Return this exact JSON format:
   "flashcards": [
     {{
       "question": "<question>",
-      "answer_short": "<concise factual answer>",
+      "answer_short": "{answer_format}",{schema_extra}
       "answer_detailed": null,
       "difficulty": "easy"
     }}
@@ -1744,15 +1762,15 @@ IMPORTANT:
 """
         else:
             prompt = f"""Return ONLY valid JSON.
-{build_language_rule(topic, "", language_hint)}
+{build_language_rule(topic, "", language_hint)}{example_block}
 Generate flashcards for the topic: "{topic}"
 
 {_build_count_instruction(num_cards)}
 
 Rules:
 {no_formula_rules}
-- Answers must be VERY short (1 line max)
-- Each flashcard should test one concept
+{answer_rule}
+- Each flashcard should test one concept{f' AND include a real-world example' if wants_examples else ''}
 - Avoid repeating the same question across flashcards.
 
 Return this exact JSON format:
@@ -1760,7 +1778,7 @@ Return this exact JSON format:
   "flashcards": [
     {{
       "question": "<question>",
-      "answer_short": "<concise factual answer>",
+      "answer_short": "{answer_format}",{schema_extra}
       "answer_detailed": null,
       "difficulty": "easy"
     }}
@@ -1948,19 +1966,27 @@ def _get_math_instruction(topic: str) -> str:
     return ""
 
 EXAMPLE_FORMAT_REQUIREMENT = """
-ANSWER FORMAT (REQUIRED when examples requested):
-Format the answer exactly as:
-
+ANSWER FORMAT (STRICT):
 Definition:
 <one concise sentence>
 
 Example:
 <one concrete real-world example>
 
-- Do NOT combine definition and example into a single paragraph.
-- Include a blank line between the definition and the Example: section.
-- Every answer MUST include both definition and example.
-- Each answer must be no more than 2–3 sentences total. Trim extra whitespace."""
+Rules:
+- BOTH Definition AND Example are REQUIRED
+- Do NOT omit Example
+- Do NOT combine into one paragraph
+- If example is missing → response is INVALID
+"""
+
+EXAMPLE_REQUIREMENT_MANDATORY = """
+EXAMPLE REQUIREMENT (MANDATORY):
+- EVERY flashcard MUST include an Example section
+- If ANY card is missing an example, the response is INVALID
+- Do NOT return definition-only answers
+- Do NOT skip examples even if unsure
+"""
 
 DEFINITION_ONLY_FORMAT = """
 ANSWER FORMAT (REQUIRED when examples NOT requested):
@@ -2298,13 +2324,14 @@ async def generate_flashcards(
     Example:
     <one concrete example (notable work, achievement)>
 
-    Do NOT combine into a single paragraph. Include a blank line between definition and Example. 2–3 sentences max.
+    Do NOT combine into a single paragraph. Include a blank line between definition and Example.
     - Cards must be directly related to the topic."""
                                 json_schema = '''{
       "flashcards": [
         {
           "question": "Who was <Name>?",
           "answer_short": "Definition:\\n\\n<definition>\\n\\nExample:\\n\\n<example>",
+          "has_example": true,
           "answer_detailed": null,
           "difficulty": "easy"
         }
@@ -2328,8 +2355,9 @@ async def generate_flashcards(
       ]
     }'''
 
+                            example_block = f"\n{EXAMPLE_REQUIREMENT_MANDATORY}\n" if wants_ex else ""
                             fallback_prompt = f"""{JSON_HEADER}
-    {build_language_rule(topic_str, "", lang_hint)}
+    {build_language_rule(topic_str, "", lang_hint)}{example_block}
     You are generating flashcards for studying notable individuals.
 
     Topic:
@@ -2412,6 +2440,7 @@ async def generate_flashcards(
         {
           "question": "<question>",
           "answer_short": "Definition:\\n\\n<definition>\\n\\nExample:\\n\\n<example>",
+          "has_example": true,
           "answer_detailed": null,
           "difficulty": "easy"
         }
@@ -2453,7 +2482,7 @@ async def generate_flashcards(
     - Prefer specific facts, names, events, or individuals over abstract concepts.
     - Avoid abstract explanations; focus on concrete, memorable facts.
     - Questions should be concise and suitable for active recall.
-    - Each flashcard must test exactly ONE piece of knowledge.
+    - Each flashcard must test exactly ONE piece of knowledge AND include a real-world example.
     - Prefer named entities (people, places, works, events) when possible.
     - Prefer questions that start with: Who, What, When, Where.
     - Avoid questions that start with: Why, How—unless absolutely necessary.
@@ -2467,6 +2496,7 @@ async def generate_flashcards(
         {
           "question": "<question>",
           "answer_short": "Definition:\\n\\n<definition>\\n\\nExample:\\n\\n<example>",
+          "has_example": true,
           "answer_detailed": null,
           "difficulty": "easy"
         }
@@ -2497,8 +2527,9 @@ async def generate_flashcards(
       ]
     }'''
 
+                        example_block = f"\n{EXAMPLE_REQUIREMENT_MANDATORY}\n" if wants_ex else ""
                         fallback_prompt = f"""{JSON_HEADER}
-    {build_language_rule(topic_str, "", lang_hint)}
+    {build_language_rule(topic_str, "", lang_hint)}{example_block}
     You are generating flashcards for studying.
 
     Topic:
@@ -2602,6 +2633,19 @@ async def generate_flashcards(
         if text_input and payload.strict_text_only and cards:
             cards = _filter_ungrounded_cards(cards, text_input)
             logger.info("After grounding filter: %d cards kept", len(cards))
+
+        # Example requirement: when topic requested examples, keep only cards with Example section
+        wants_examples = _topic_wants_examples(topic_str) or (
+            bool(text_input) and _topic_wants_examples((text_input or "")[:500])
+        )
+        if wants_examples and cards:
+            cards = [c for c in cards if "Example:" in (c.get("answer_short") or "")]
+            if len(cards) == 0:
+                raise HTTPException(
+                    status_code=503,
+                    detail="No valid cards with examples generated",
+                )
+            logger.info("After example filter: %d cards with examples", len(cards))
 
         # Preload existing questions for duplicate prevention (one query for entire batch)
         existing_result = await db.execute(

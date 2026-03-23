@@ -17,6 +17,7 @@ import {
 } from "@/lib/api";
 import PageContainer from "@/components/layout/page-container";
 import FormattedText from "@/components/FormattedText";
+import { FlashcardModal } from "@/components/FlashcardModal";
 
 interface DeckPageProps {
   params: { id: string };
@@ -48,6 +49,7 @@ export default function DeckPage({ params }: DeckPageProps) {
   const [description, setDescription] = useState(deck?.description ?? "");
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [deckDeleteConfirm, setDeckDeleteConfirm] = useState(false);
+  const [modalCardIndex, setModalCardIndex] = useState<number | null>(null);
   const [genTopic, setGenTopic] = useState("");
   const [genText, setGenText] = useState("");
   const [cardCount, setCardCount] = useState(10);
@@ -357,24 +359,25 @@ export default function DeckPage({ params }: DeckPageProps) {
             <p className="text-muted-foreground text-sm">No flashcards yet.</p>
           ) : (
             <div className="space-y-3 max-mobile:space-y-2.5">
-              {flashcards.map((card) => (
+              {flashcards.map((card, index) => (
                 <div
                   key={card.id}
                   className="flashcard-item rounded-xl border border-neutral-200 px-4 py-3 flex items-start justify-between gap-3 bg-white dark:bg-neutral-900 dark:border-neutral-700 max-mobile:p-3.5 max-mobile:rounded-[12px]"
                 >
-                  <Link
-                    href={`/decks/${params.id}/edit-card/${card.id}`}
-                    className="flex-1 min-w-0"
+                  <button
+                    type="button"
+                    onClick={() => setModalCardIndex(index)}
+                    className="flex-1 min-w-0 text-start cursor-pointer hover:opacity-90 transition-opacity"
                   >
-                    <div className="flex flex-col gap-1 text-start">
+                    <div className="flex flex-col gap-1">
                       <div dir="auto" className="font-medium text-base leading-snug max-mobile:text-[15px] max-mobile:leading-[1.4]">
                         {card.question}
                       </div>
-                      <div dir="auto" className="text-sm text-neutral-500 leading-snug dark:text-neutral-400 max-mobile:text-[14px] max-mobile:text-[#555] dark:max-mobile:text-neutral-400">
+                      <div dir="auto" className="text-sm text-neutral-500 leading-snug dark:text-neutral-400 max-mobile:text-[14px] max-mobile:text-[#555] dark:max-mobile:text-neutral-400 line-clamp-2">
                         <FormattedText text={card.answer_short} className="text-inherit" />
                       </div>
                     </div>
-                  </Link>
+                  </button>
                   <div className="flex items-center gap-1 flex-shrink-0 mt-1 [&_svg]:max-mobile:!size-4">
                     <Link
                       href={`/decks/${params.id}/edit-card/${card.id}`}
@@ -426,6 +429,14 @@ export default function DeckPage({ params }: DeckPageProps) {
             </Button>
           </div>
         </section>
+
+        <FlashcardModal
+          cards={flashcards}
+          initialIndex={modalCardIndex ?? 0}
+          isOpen={modalCardIndex !== null}
+          onClose={() => setModalCardIndex(null)}
+          editBasePath={`/decks/${params.id}/edit-card`}
+        />
 
         {deleteConfirmId && (
           <div
