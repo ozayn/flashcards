@@ -117,6 +117,208 @@ def normalize_latex(text: str) -> str:
     return text
 
 
+# Low-value question patterns for transcript mode (substring match, case-insensitive).
+# Keep narrow—only obvious filler. Do NOT remove normal conceptual questions.
+_LOW_VALUE_QUESTION_PATTERNS = (
+    "purpose of the next video",
+    "topic of the next video",
+    "what will be discussed next",
+    "see you in the next video",
+    "what is the purpose of this video",
+    "what is the topic of this video",
+)
+
+
+def _filter_low_value_transcript_cards(cards: list) -> list:
+    """Remove cards with low-value question patterns (transcript housekeeping)."""
+    if not cards:
+        return []
+    kept = []
+    for c in cards:
+        q = (c.get("question") or c.get("front") or "").strip().lower()
+        if not q:
+            kept.append(c)
+            continue
+        if any(p in q for p in _LOW_VALUE_QUESTION_PATTERNS):
+            logger.debug("Dropping low-value transcript card: %s", q[:80])
+            continue
+        kept.append(c)
+    return kept
+
+
+# Question stems that often produce overlapping cards. (pattern_regex, canonical_stem_key)
+# Same stem_key + shared topic words = overlap.
+_TRANSCRIPT_OVERLAP_STEMS = [
+    (r"what is an example of (?:a |an |the )?", "example_of"),
+    (r"what are (?:some |)examples of (?:a |an |the )?", "example_of"),
+    (r"give(?: me)? an example of (?:a |an |the )?", "example_of"),
+    (r"what is the benefit of (?:using |)?", "benefit_of"),
+    (r"what are the benefits of (?:using |)?", "benefit_of"),
+    (r"why (?:use|is|are) (?:an? )?", "benefit_of"),
+    (r"what is the purpose of (?:using |)?", "purpose_of"),
+    (r"what is the goal of (?:using |)?", "purpose_of"),
+]
+
+_STOPWORDS = frozenset(
+    "a an the is are was were be been being have has had do does did will would could should may might must can to of in for on with at by from as".split()
+)
+
+
+def _extract_question_stem_and_topic(q: str) -> tuple[str, set[str]]:
+    """Extract stem pattern and topic key terms for overlap detection. Returns (stem_key, topic_words)."""
+    if not q or not isinstance(q, str):
+        return "", set()
+    s = q.strip().lower()
+    s = re.sub(r"\s+", " ", s)
+    stem_key = ""
+    topic_part = s
+    for pattern, canonical in _TRANSCRIPT_OVERLAP_STEMS:
+        m = re.search(pattern, s)
+        if m:
+            stem_key = canonical
+            topic_part = s[m.end() :].strip()
+            break
+    # Fallback: use first 4 words as stem for "what is X" style
+    if not stem_key and s.startswith("what "):
+        parts = s.split()
+        stem_key = " ".join(parts[:4]) if len(parts) >= 4 else s[:30]
+        topic_part = " ".join(parts[4:]) if len(parts) > 4 else ""
+    raw = [
+        w for w in re.split(r"\W+", topic_part) if len(w) >= 3 and w not in _STOPWORDS
+    ]
+    # Light stemming: agentic->agent, workflows->workflow, so related terms overlap
+    stemmed = []
+    for w in raw:
+        if w.endswith("ic") and len(w) > 4:
+            stemmed.append(w[:-2])
+        elif w.endswith("s") and len(w) > 3:
+            stemmed.append(w[:-1])
+        else:
+            stemmed.append(w)
+    return stem_key, set(stemmed)
+
+
+def _questions_overlap(q1: str, q2: str) -> bool:
+    """True if two questions are likely overlapping by meaning (same stem + shared topic words)."""
+    stem1, terms1 = _extract_question_stem_and_topic(q1)
+    stem2, terms2 = _extract_question_stem_and_topic(q2)
+    if not stem1 or not stem2:
+        return False
+    if stem1 != stem2:
+        return False
+    shared = terms1 & terms2
+    min_words = 1 if len(terms1) <= 2 or len(terms2) <= 2 else 2
+    return len(shared) >= min_words
+
+
+def _card_strength(card: dict) -> int:
+    """Higher = stronger. Prefer: definition > comparison > process > why/benefit > generic example."""
+    q = (card.get("question") or card.get("front") or "").lower()
+    a = (card.get("answer_short") or card.get("back") or card.get("answer") or "")
+    score = 0
+    if "difference between" in q or "compare" in q:
+        score += 40
+    elif "how does" in q or "what are the steps" in q or "what is the process":
+        score += 35
+    elif "why " in q or "benefit" in q or "advantage" in q:
+        score += 30
+    elif "what is " in q and "example" not in q:
+        score += 50  # definition preferred
+    elif "example" in q:
+        score += 10  # generic example deprioritized
+    score += min(len(a) // 20, 15)  # longer answer = more substance
+    score += min(len(q) // 10, 5)   # slightly prefer more specific question
+    return score
+
+
+def _reduce_transcript_overlaps(cards: list) -> list:
+    """Keep the stronger card when questions overlap by meaning. Lightweight, no embeddings."""
+    if len(cards) <= 1:
+        return cards
+    kept = []
+    for c in cards:
+        q = (c.get("question") or c.get("front") or "")
+        is_redundant = False
+        for k in kept:
+            kq = k.get("question") or k.get("front") or ""
+            if _questions_overlap(q, kq):
+                if _card_strength(c) <= _card_strength(k):
+                    is_redundant = True
+                    logger.debug("Dropping overlapping card (weaker): %s", q[:80])
+                    break
+                else:
+                    # Current is stronger; drop the kept one
+                    kept.remove(k)
+                    logger.debug("Replacing overlapping card with stronger: %s", q[:80])
+                    break
+        if not is_redundant:
+            kept.append(c)
+    return kept
+
+
+def _answer_definition_part(ans: str) -> str:
+    """Extract the Definition: part or first paragraph for quality checks."""
+    if not ans:
+        return ""
+    m = re.search(r"definition:\s*(.+?)(?=\n\s*(?:example:|$))", ans, re.I | re.DOTALL)
+    if m:
+        return m.group(1).strip()
+    return ans.split("\n\n")[0].strip() if ans else ""
+
+
+def _example_supports_definition(q: str, ans: str) -> bool:
+    """True if the example section appears to support the definition (shared key terms)."""
+    def_part = _answer_definition_part(ans)
+    ex_m = re.search(r"example:\s*(.+?)(?=\n\s*\w+:|$)", ans, re.I | re.DOTALL)
+    if not ex_m:
+        return True
+    example_part = ex_m.group(1).strip().lower()
+    def_lower = (def_part + " " + q).lower()
+    key_terms = [
+        w for w in re.split(r"\W+", def_lower)
+        if len(w) >= 4 and w not in _STOPWORDS
+    ][:8]
+    if not key_terms:
+        return True
+    matches = sum(1 for t in key_terms if t in example_part)
+    return matches >= 1
+
+
+def _filter_transcript_quality(cards: list) -> list:
+    """Remove cards with vague answers, example-definition mismatch, or obvious redundancy."""
+    if not cards:
+        return []
+    kept = []
+    for c in cards:
+        ans = c.get("answer_short") or c.get("back") or c.get("answer") or ""
+        def_part = _answer_definition_part(ans)
+        # Vague: definition too short or generic
+        if len(def_part) < 25:
+            logger.debug("Dropping vague definition (too short): %s", (c.get("question") or "")[:80])
+            continue
+        if def_part.lower().startswith(("it is when", "it's when", "this is when")):
+            if len(def_part) < 50:
+                logger.debug("Dropping vague definition (generic opener): %s", (c.get("question") or "")[:80])
+                continue
+        # Example-definition mismatch
+        if "example:" in ans.lower() and not _example_supports_definition(
+            c.get("question") or "", ans
+        ):
+            logger.debug("Dropping example-definition mismatch: %s", (c.get("question") or "")[:80])
+            continue
+        kept.append(c)
+    return kept
+
+
+def _select_best_transcript_cards(cards: list, max_cards: int = 8) -> list:
+    """If too many cards, keep the strongest up to max_cards."""
+    if len(cards) <= max_cards:
+        return cards
+    scored = [(c, _card_strength(c)) for c in cards]
+    scored.sort(key=lambda x: -x[1])
+    return [c for c, _ in scored[:max_cards]]
+
+
 def _evidence_matches_passage(evidence: str, passage: str) -> bool:
     """Return True if evidence appears in passage (exact or normalized substring match)."""
     if not evidence or not passage:
@@ -220,6 +422,14 @@ Rules:
 
         if not result:
             logger.warning("Grounding removed all cards — falling back to original cards")
+            return cards
+        # Transcript fail-open: if grounding kept very few but we had many candidates, use originals
+        if len(cards) >= 5 and len(result) < 3:
+            logger.warning(
+                "Grounding kept %d of %d cards; falling back to originals to avoid over-filtering",
+                len(result),
+                len(cards),
+            )
             return cards
         return result
 
@@ -734,7 +944,9 @@ def _extract_concepts(
 - Do NOT expand using external knowledge.
 - Do NOT add generic background terms (e.g. dopamine, ion channels) unless the passage explicitly discusses them.
 - Prefer concrete terms that appear in the paragraph.
-- Each extracted concept must have explicit support in the passage."""
+- Each extracted concept must have explicit support in the passage.
+
+For lectures/transcripts: Extract high-value concepts—definitions, comparisons, process steps, frameworks, key examples—not transitions, filler, or video housekeeping."""
         else:
             grounding_rules = """Rules:
 - Prefer concepts that appear in or are clearly implied by the text.
@@ -895,6 +1107,8 @@ Example acceptable cards (passage-specific):
 - Where is the theta rhythm coordinated according to the text?
 - What device recorded the intracranial activity?
 
+When including examples: The example must illustrate the definition tightly. Good: task decomposition → outline→research→draft→revise; research agent → planning, searching, synthesizing, ranking, drafting. Bad: loosely related or generic sentences. Do NOT just repeat a nearby sentence with "Example:" in front.
+
 ANSWER FORMAT: Format each answer as:
 Definition:
 <one concise sentence>
@@ -922,6 +1136,8 @@ Example acceptable cards (passage-specific):
 When the passage contains formulas, include them. Use simple math notation or LaTeX. Keep formulas concise."""
         elif wants_examples:
             grounding_block = f"""{RELAXED_TEXT_GROUNDING_RULES}
+
+When including examples: The example must illustrate the definition tightly (e.g. process steps, workflow comparison). Bad: loosely related or generic sentences.
 
 ANSWER FORMAT: Format each answer as:
 Definition:
@@ -983,9 +1199,11 @@ Text:
 
 {grounding_block}
 
-Extract key facts and create one flashcard per important point.
+{TRANSCRIPT_STUDY_RULES}
 
-{_build_count_instruction(num_cards)}
+Extract key facts and create one flashcard per important point. Aim for coverage across definitions, comparisons, process steps, benefits, and examples.
+
+{_build_transcript_count_instruction(num_cards)}
 
 {CONTENT_RULES}
 
@@ -1116,12 +1334,15 @@ def _generate_flashcards_from_concepts(
             if wants_examples:
                 style_instruction = f"""{STRICT_TEXT_GROUNDING_RULES}
 {no_background}
+{TRANSCRIPT_STUDY_RULES}
 
 For each card: verify the answer is recoverable from the passage alone, without outside knowledge. If not, do not include it.
 
 Example (passage-specific, not generic):
 Bad: What is dopamine? (generic)
 Good: What frequency range defines theta rhythm in the passage? (grounded)
+
+When including examples: The example must illustrate the definition tightly. Good: task decomposition → outline→research→draft→revise; research agent → planning, searching, synthesizing, ranking, drafting. Bad: loosely related or generic sentences. Do NOT just repeat a nearby sentence with "Example:" in front.
 
 ANSWER FORMAT: Format each answer as:
 Definition:
@@ -1134,6 +1355,7 @@ Do NOT combine into a single paragraph. Include a blank line between definition 
             else:
                 style_instruction = f"""{STRICT_TEXT_GROUNDING_RULES}
 {no_background}
+{TRANSCRIPT_STUDY_RULES}
 
 For each card: verify the answer is recoverable from the passage alone, without outside knowledge. If not, do not include it.
 
@@ -1145,6 +1367,9 @@ Good: What frequency range defines theta rhythm in the passage? (grounded)
         else:
             if wants_examples:
                 style_instruction = f"""{RELAXED_TEXT_GROUNDING_RULES}
+{TRANSCRIPT_STUDY_RULES}
+
+When including examples: The example must illustrate the definition tightly (e.g. process steps, workflow comparison). Bad: loosely related or generic sentences.
 
 ANSWER FORMAT: Format each answer as:
 Definition:
@@ -1156,6 +1381,7 @@ Example:
 Do NOT combine into a single paragraph. Include a blank line between definition and Example."""
             else:
                 style_instruction = f"""{RELAXED_TEXT_GROUNDING_RULES}
+{TRANSCRIPT_STUDY_RULES}
 
 {DEFINITION_ONLY_FORMAT}"""
     elif is_vocab:
@@ -1299,8 +1525,8 @@ Concepts:
 {topic}
 {f'Anchor keywords:\n{anchors_str}\n' if anchors else ''}
 
-{_build_count_instruction(num_cards)}
-If there are more concepts than needed, select the most important. If fewer concepts, create multiple cards per concept (e.g. definition, example, application).
+{_build_transcript_count_instruction(num_cards) if is_from_text else _build_count_instruction(num_cards)}
+If there are more concepts than needed, {'select for coverage (definition, comparison, process, benefit, example)' if is_from_text else 'select the most important'}. If fewer concepts, create multiple cards per concept (e.g. definition, example, application).
 
 {style_instruction}
 
@@ -2046,6 +2272,15 @@ def _build_count_instruction(num_cards: int) -> str:
 - If needed, prioritize the most important concepts first"""
 
 
+def _build_transcript_count_instruction(num_cards: int) -> str:
+    """Build card count instruction for transcript/lecture mode. Encourages coverage, not collapse."""
+    return f"""CARD COUNT:
+- Aim for {num_cards} flashcards (roughly 5–8 for typical lectures)
+- It is acceptable to return between {num_cards - 3} and {num_cards + 3}
+- Do NOT significantly exceed {num_cards}
+- Cover diverse content types: definitions, comparisons, process steps, benefits, examples"""
+
+
 STRICT_TEXT_GROUNDING_RULES = """STRICT GROUNDING RULES (text-based generation):
 1. The answer to each card MUST be recoverable from the passage alone—without domain knowledge, textbook knowledge, or any information outside the passage.
 2. KEEP a card only if: the passage explicitly states the answer, or a simple paraphrase of it (same meaning, different words).
@@ -2057,6 +2292,17 @@ STRICT_TEXT_GROUNDING_RULES = """STRICT GROUNDING RULES (text-based generation):
 Example:
 Bad: "What is dopamine?" (generic, not passage-specific)
 Good: "What frequency range defines theta rhythm in the passage?" (grounded in passage)"""
+
+TRANSCRIPT_STUDY_RULES = """LECTURE/TRANSCRIPT QUALITY (course study):
+- Generate several distinct study-worthy flashcards (roughly 5–8). Cover main ideas, comparisons, process steps, and examples.
+- Avoid filler, but do NOT collapse the deck to one card.
+- PREFER strong question types: What is X? (definition), What is the difference between X and Y? (comparison), What are the steps in X? (process), Why is X useful? (benefit/reason).
+- DEPRIORITIZE generic "What is an example of X?"—prefer one concrete process/application card instead of multiple overlapping example cards.
+- For examples: the example must illustrate the definition tightly. E.g. task decomposition → outline→research→draft→revise; research agent → planning, searching, synthesizing, ranking, drafting.
+- Do NOT allow loosely related or generic examples. The example should show the concept in action.
+- Ignore transition sentences, filler narration, and video housekeeping (e.g. "In the next video...", "Welcome back").
+- AVOID low-value cards: purpose of next video, topic of next video, what will be discussed next, see you in next video.
+- Avoid multiple overlapping cards on the same concept (e.g. "What is an example of agentic workflow?" and "What is an example of a research agent?"—keep the stronger, more specific one)."""
 
 RELAXED_TEXT_GROUNDING_RULES = """GROUNDING PREFERENCES (text-based generation):
 - Prefer cards grounded in the provided text.
@@ -2652,7 +2898,8 @@ async def generate_flashcards(
 
         cards: list = parsed_json["flashcards"]
         logger.info("Parsed cards preview: %s", cards[:2])
-        logger.info("Generated %d candidate cards", len(cards))
+        if text_input:
+            logger.info("[text-mode] Stage 1 - candidate cards after generation: %d", len(cards))
 
         # RULE: If at least 1 valid card exists → SUCCESS. Only 503 when ZERO valid cards.
         # Never fail for len(cards) < num_cards (partial results are accepted).
@@ -2663,21 +2910,48 @@ async def generate_flashcards(
 
         # Grounding check: when text mode and strict_text_only, filter out unsupported cards
         if text_input and payload.strict_text_only and cards:
+            before_ground = len(cards)
             cards = _filter_ungrounded_cards(cards, text_input)
-            logger.info("After grounding filter: %d cards kept", len(cards))
+            logger.info("[text-mode] Stage 2 - after grounding: %d kept (removed %d)", len(cards), before_ground - len(cards))
+
+        # Low-value filter: when text mode, remove transcript housekeeping cards
+        if text_input and cards:
+            before_lv = len(cards)
+            cards = _filter_low_value_transcript_cards(cards)
+            logger.info("[text-mode] Stage 3 - after low-value filter: %d kept (removed %d)", len(cards), before_lv - len(cards))
 
         # Example requirement: when topic requested examples, keep only cards with Example section
         wants_examples = _topic_wants_examples(topic_str) or (
             bool(text_input) and _topic_wants_examples((text_input or "")[:500])
         )
         if wants_examples and cards:
+            before_ex = len(cards)
             cards = [c for c in cards if "Example:" in (c.get("answer_short") or "")]
+            if text_input:
+                logger.info("[text-mode] Stage 4 - after example filter: %d kept (removed %d)", len(cards), before_ex - len(cards))
             if len(cards) == 0:
                 raise HTTPException(
                     status_code=503,
                     detail="No valid cards with examples generated",
                 )
-            logger.info("After example filter: %d cards with examples", len(cards))
+            if not text_input:
+                logger.info("After example filter: %d cards with examples", len(cards))
+
+        # Transcript-only: overlap reduction, quality filter, cap at 5-8
+        if text_input and cards:
+            before_overlap = len(cards)
+            cards = _reduce_transcript_overlaps(cards)
+            logger.info("[text-mode] Stage 4b - after overlap reduction: %d kept (removed %d)", len(cards), before_overlap - len(cards))
+            before_quality = len(cards)
+            cards = _filter_transcript_quality(cards)
+            logger.info("[text-mode] Stage 4c - after quality filter: %d kept (removed %d)", len(cards), before_quality - len(cards))
+            before_cap = len(cards)
+            cards = _select_best_transcript_cards(cards, max_cards=8)
+            if before_cap > 8 and len(cards) == 8:
+                logger.info("[text-mode] Stage 4d - capped at 8 (had %d)", before_cap)
+
+        if text_input:
+            logger.info("[text-mode] Stage 5 - cards entering create loop (before duplicate check): %d", len(cards))
 
         # Preload existing questions for duplicate prevention (one query for entire batch)
         existing_result = await db.execute(
@@ -2688,6 +2962,8 @@ async def generate_flashcards(
         batch_normalized: set[tuple[str, str]] = set()
 
         created = 0
+        skipped_batch_dup = 0
+        skipped_db_dup = 0
         for raw_card in cards:
             if not isinstance(raw_card, dict):
                 logger.warning("Skipping invalid card (not a dict): %s", raw_card)
@@ -2711,11 +2987,13 @@ async def generate_flashcards(
             dup_key = (norm, answer)
 
             if norm and (dup_key in batch_normalized):
+                skipped_batch_dup += 1
                 logger.warning("Skipping duplicate within batch: %s", question[:80])
                 continue
 
             # Only block exact duplicates from DB (not fuzzy)
             if question in existing_exact:
+                skipped_db_dup += 1
                 logger.warning("Skipping exact duplicate from DB: %s", question[:80])
                 continue
 
@@ -2760,6 +3038,13 @@ async def generate_flashcards(
         deck.generation_status = GenerationStatus.completed.value
         await db.flush()
 
+        if text_input:
+            logger.info(
+                "[text-mode] Stage 6 - final created: %d (skipped batch_dup=%d, db_dup=%d)",
+                created,
+                skipped_batch_dup,
+                skipped_db_dup,
+            )
         logger.info("Inserted %d cards", created)
         return GenerateFlashcardsResponse(created=created)
 
