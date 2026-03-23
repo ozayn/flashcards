@@ -214,12 +214,21 @@ export function FlashcardModal({
               </div>
             </div>
           ) : (
-            <div className="flex items-center justify-center min-h-[200px]">
+            <div className="flex items-center justify-center min-h-[280px] py-4">
               <FlashcardFlip
                 key={card.id}
-                question={card.question}
-                answer={<FormattedText text={card.answer_short} className="text-inherit" />}
-                className="w-full max-w-lg"
+                question={
+                  <span className="text-2xl font-medium leading-relaxed text-foreground">
+                    {card.question}
+                  </span>
+                }
+                answer={
+                  <FormattedText
+                    text={card.answer_short}
+                    className="whitespace-pre-line text-xl leading-relaxed text-foreground"
+                  />
+                }
+                className="w-full"
                 flipped={flipState}
                 onFlip={() => setFlipState((f) => !f)}
               />

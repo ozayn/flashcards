@@ -15,8 +15,8 @@ export interface FlashcardFlipProps {
 
 /**
  * Reusable flashcard that shows question first and flips to answer on click.
+ * Uses same proportions as study mode (aspect-[3/2], max-w-2xl) and shared flashcard CSS.
  * Supports controlled mode (flipped + onFlip) for external triggers (e.g. Space key).
- * Resets to unflipped when the card changes (parent should use key={cardId}).
  */
 export function FlashcardFlip({
   question,
@@ -49,32 +49,28 @@ export function FlashcardFlip({
         }
       }}
       className={cn(
-        "cursor-pointer select-none rounded-2xl border border-border bg-card shadow-md [perspective:1200px]",
-        "transition-shadow hover:shadow-lg active:shadow-md",
-        "min-h-[140px] w-full overflow-hidden",
+        "flashcard relative w-full max-w-2xl aspect-[3/2] overflow-hidden rounded-2xl",
+        "border border-neutral-200 shadow-lg flashcard-paper dark:border-neutral-700",
+        "cursor-pointer select-none transition-shadow hover:shadow-xl active:shadow-md",
         className
       )}
     >
       <div
-        className="relative h-full w-full transition-transform duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] [transform-style:preserve-3d]"
-        style={{ transform: flipped ? "rotateY(180deg)" : "rotateY(0deg)" }}
+        className={cn(
+          "flashcard-inner absolute inset-0 w-full h-full",
+          flipped && "flipped"
+        )}
       >
-        <div
-          className="absolute inset-0 flex flex-col items-stretch justify-center p-5 [backface-visibility:hidden]"
-          style={{ transform: "rotateY(0deg)" }}
-        >
-          <p className="text-base font-medium leading-relaxed text-foreground text-start">
+        {/* Front face - question */}
+        <div className="flashcard-face flashcard-front absolute inset-0 w-full h-full flex flex-col items-stretch justify-start p-6 md:p-10 text-start rounded-2xl border border-neutral-200 shadow-lg flashcard-paper dark:border-neutral-700">
+          <div className="flex-1 min-h-0 w-full overflow-y-auto overflow-x-hidden">
             {question}
-          </p>
-          <p className="mt-2 text-xs text-muted-foreground">
-            Click or press Space to reveal
-          </p>
+          </div>
         </div>
-        <div
-          className="absolute inset-0 flex flex-col items-stretch justify-start overflow-y-auto p-5 [backface-visibility:hidden]"
-          style={{ transform: "rotateY(180deg)" }}
-        >
-          <div className="text-base leading-relaxed text-foreground text-start">
+
+        {/* Back face - answer */}
+        <div className="flashcard-face flashcard-back absolute inset-0 w-full h-full flex flex-col items-stretch justify-start px-6 md:px-10 pt-6 pb-4 text-start rounded-2xl border border-neutral-200 shadow-lg flashcard-paper dark:border-neutral-700">
+          <div className="flex-1 min-h-0 w-full overflow-y-auto overflow-x-hidden">
             {answer}
           </div>
         </div>
