@@ -100,6 +100,15 @@ export async function getDeck(deckId: string) {
   return res.json();
 }
 
+export async function getRelatedDecks(deckId: string, limit = 4) {
+  const res = await fetch(
+    `${API_BASE}/decks/${deckId}/related?limit=${limit}`,
+    { cache: "no-store" }
+  );
+  if (!res.ok) throw new Error("Failed to fetch related decks");
+  return res.json();
+}
+
 export async function createDeck(data: {
   user_id: string;
   name: string;

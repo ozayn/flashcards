@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import {
   getDeck,
   getFlashcards,
+  getRelatedDecks,
   generateFlashcards,
   updateDeck,
   deleteDeck,
@@ -28,6 +29,13 @@ interface Deck {
   name: string;
   description: string | null;
   archived?: boolean;
+  category_id?: string | null;
+}
+
+interface RelatedDeck {
+  id: string;
+  name: string;
+  card_count: number;
 }
 
 interface Flashcard {
@@ -40,6 +48,7 @@ export default function DeckPage({ params }: DeckPageProps) {
   const router = useRouter();
   const [deck, setDeck] = useState<Deck | null>(null);
   const [flashcards, setFlashcards] = useState<Flashcard[]>([]);
+  const [relatedDecks, setRelatedDecks] = useState<RelatedDeck[]>([]);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [generating, setGenerating] = useState(false);
@@ -67,6 +76,16 @@ export default function DeckPage({ params }: DeckPageProps) {
         if (!cancelled) {
           setDeck(deckData);
           setFlashcards(Array.isArray(flashcardsData) ? flashcardsData : []);
+        }
+        if (!cancelled && deckData?.category_id) {
+          try {
+            const related = await getRelatedDecks(params.id);
+            if (!cancelled) setRelatedDecks(Array.isArray(related) ? related : []);
+          } catch {
+            if (!cancelled) setRelatedDecks([]);
+          }
+        } else if (!cancelled) {
+          setRelatedDecks([]);
         }
       } catch {
         if (!cancelled) setNotFound(true);
@@ -412,6 +431,26 @@ export default function DeckPage({ params }: DeckPageProps) {
             </div>
           )}
         </section>
+
+        {relatedDecks.length > 0 && (
+          <section className="section space-y-4 pt-8 border-t border-border">
+            <h2 className="text-lg font-semibold">More from this category</h2>
+            <div className="space-y-2">
+              {relatedDecks.map((d) => (
+                <Link
+                  key={d.id}
+                  href={`/decks/${d.id}`}
+                  className="block rounded-xl border border-neutral-200 px-4 py-3 bg-white dark:bg-neutral-900 dark:border-neutral-700 hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-colors max-mobile:p-3.5 max-mobile:rounded-[12px]"
+                >
+                  <span className="font-medium text-foreground">{d.name}</span>
+                  <span className="text-sm text-muted-foreground ml-2">
+                    {d.card_count} {d.card_count === 1 ? "card" : "cards"}
+                  </span>
+                </Link>
+              ))}
+            </div>
+          </section>
+        )}
 
         <section className="section space-y-4 pt-8 border-t border-border">
           <h2 className="text-lg font-semibold">Danger Zone</h2>

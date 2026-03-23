@@ -106,6 +106,44 @@ async def get_deck(
     return DeckResponse.model_validate(deck).model_copy(update={"card_count": card_count})
 
 
+@router.get("/{deck_id}/related", response_model=List[DeckResponse])
+async def get_related_decks(
+    deck_id: str,
+    limit: int = Query(4, ge=1, le=10),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get other decks in the same category as this deck. Excludes current deck and archived."""
+    result = await db.execute(select(Deck).where(Deck.id == deck_id))
+    deck = result.scalar_one_or_none()
+    if not deck or not deck.category_id:
+        return []
+    related = await db.execute(
+        select(Deck)
+        .where(
+            Deck.category_id == deck.category_id,
+            Deck.id != deck_id,
+            Deck.archived == False,
+            Deck.user_id == deck.user_id,
+        )
+        .order_by(Deck.created_at.desc())
+        .limit(limit)
+    )
+    decks = related.scalars().all()
+    if not decks:
+        return []
+    deck_ids = [d.id for d in decks]
+    count_result = await db.execute(
+        select(Flashcard.deck_id, func.count(Flashcard.id))
+        .where(Flashcard.deck_id.in_(deck_ids))
+        .group_by(Flashcard.deck_id)
+    )
+    counts = {row[0]: row[1] for row in count_result.all()}
+    return [
+        DeckResponse.model_validate(d).model_copy(update={"card_count": counts.get(d.id, 0)})
+        for d in decks
+    ]
+
+
 @router.patch("/{deck_id}", response_model=DeckResponse)
 async def update_deck(
     deck_id: str,
