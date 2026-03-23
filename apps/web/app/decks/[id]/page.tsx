@@ -11,10 +11,12 @@ import {
   getDeck,
   getFlashcards,
   getRelatedDecks,
+  getCategories,
   generateFlashcards,
   updateDeck,
   deleteDeck,
   deleteFlashcard,
+  moveDeckToCategory,
 } from "@/lib/api";
 import PageContainer from "@/components/layout/page-container";
 import FormattedText from "@/components/FormattedText";
@@ -30,6 +32,12 @@ interface Deck {
   description: string | null;
   archived?: boolean;
   category_id?: string | null;
+  user_id?: string;
+}
+
+interface Category {
+  id: string;
+  name: string;
 }
 
 interface RelatedDeck {
@@ -44,11 +52,17 @@ interface Flashcard {
   answer_short: string;
 }
 
+const UNCATEGORIZED = "__uncategorized__";
+
 export default function DeckPage({ params }: DeckPageProps) {
   const router = useRouter();
   const [deck, setDeck] = useState<Deck | null>(null);
   const [flashcards, setFlashcards] = useState<Flashcard[]>([]);
   const [relatedDecks, setRelatedDecks] = useState<RelatedDeck[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [categoryModalOpen, setCategoryModalOpen] = useState(false);
+  const [categoryModalSelectedId, setCategoryModalSelectedId] = useState<string>(UNCATEGORIZED);
+  const [categorySaving, setCategorySaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [generating, setGenerating] = useState(false);
@@ -86,6 +100,14 @@ export default function DeckPage({ params }: DeckPageProps) {
           }
         } else if (!cancelled) {
           setRelatedDecks([]);
+        }
+        if (!cancelled && deckData?.user_id) {
+          try {
+            const cats = await getCategories(deckData.user_id);
+            if (!cancelled) setCategories(Array.isArray(cats) ? cats : []);
+          } catch {
+            if (!cancelled) setCategories([]);
+          }
         }
       } catch {
         if (!cancelled) setNotFound(true);
@@ -150,6 +172,31 @@ export default function DeckPage({ params }: DeckPageProps) {
       setDeleteConfirmId(null);
     } catch {
       // ignore
+    }
+  }
+
+  async function handleMoveCategory(e: React.FormEvent) {
+    e.preventDefault();
+    if (!deck || categorySaving) return;
+    const categoryId = categoryModalSelectedId === UNCATEGORIZED ? null : categoryModalSelectedId;
+    if (categoryId === (deck.category_id ?? null)) {
+      setCategoryModalOpen(false);
+      return;
+    }
+    setCategorySaving(true);
+    try {
+      await moveDeckToCategory(deck.id, categoryId);
+      const [deckData, related] = await Promise.all([
+        getDeck(params.id),
+        categoryId ? getRelatedDecks(params.id) : Promise.resolve([]),
+      ]);
+      setDeck(deckData);
+      setRelatedDecks(Array.isArray(related) ? related : []);
+      setCategoryModalOpen(false);
+    } catch {
+      // ignore
+    } finally {
+      setCategorySaving(false);
     }
   }
 
@@ -292,6 +339,75 @@ export default function DeckPage({ params }: DeckPageProps) {
                 </p>
               )}
             </div>
+            <div className="flex flex-wrap items-center gap-2 mb-4">
+              <span className="text-sm text-muted-foreground">
+                Category:{" "}
+                <span className="font-medium text-foreground">
+                  {deck.category_id
+                    ? categories.find((c) => c.id === deck.category_id)?.name ?? "—"
+                    : "Uncategorized"}
+                </span>
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setCategoryModalSelectedId(deck.category_id ?? UNCATEGORIZED);
+                  setCategoryModalOpen(true);
+                }}
+                className="text-muted-foreground hover:text-foreground h-7 px-2"
+              >
+                {deck.category_id ? "Change category" : "Assign category"}
+              </Button>
+            </div>
+            {categoryModalOpen && (
+              <div
+                className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+                onClick={() => !categorySaving && setCategoryModalOpen(false)}
+              >
+                <div
+                  className="bg-background rounded-lg shadow-lg p-6 w-full max-w-sm mx-4"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <h2 className="text-lg font-semibold mb-4">Move to category</h2>
+                  <form onSubmit={handleMoveCategory} className="space-y-4">
+                    <div>
+                      <label htmlFor="deck-category" className="sr-only">
+                        Category
+                      </label>
+                      <select
+                        id="deck-category"
+                        name="category"
+                        value={categoryModalSelectedId}
+                        onChange={(e) => setCategoryModalSelectedId(e.target.value)}
+                        disabled={categorySaving}
+                        className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm min-h-[44px]"
+                      >
+                        <option value={UNCATEGORIZED}>Uncategorized</option>
+                        {categories.map((cat) => (
+                          <option key={cat.id} value={cat.id}>
+                            {cat.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="flex justify-end gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => !categorySaving && setCategoryModalOpen(false)}
+                        disabled={categorySaving}
+                      >
+                        Cancel
+                      </Button>
+                      <Button type="submit" disabled={categorySaving}>
+                        {categorySaving ? "Moving..." : "Move"}
+                      </Button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            )}
             <div className="flex flex-wrap gap-2">
               <Link
                 href={`/study/${deck.id}`}
