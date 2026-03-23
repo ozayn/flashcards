@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Archive, ArchiveRestore, Pencil, Trash2 } from "lucide-react";
+import { Archive, ArchiveRestore, Download, Pencil, Trash2 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -50,9 +50,55 @@ interface Flashcard {
   id: string;
   question: string;
   answer_short: string;
+  answer_detailed?: string | null;
 }
 
 const UNCATEGORIZED = "__uncategorized__";
+
+function slugFromTitle(title: string): string {
+  return (
+    title
+      .trim()
+      .toLowerCase()
+      .replace(/[^\w\s-]/g, "")
+      .replace(/\s+/g, "-")
+      .replace(/-+/g, "-")
+      .replace(/^-|-$/g, "") || "deck"
+  );
+}
+
+function exportDeckAsTxt(
+  deckName: string,
+  categoryName: string,
+  cards: Flashcard[]
+): void {
+  const lines: string[] = [
+    `Deck: ${deckName}`,
+    `Category: ${categoryName}`,
+    "",
+  ];
+  if (cards.length === 0) {
+    lines.push("No cards available.");
+  } else {
+    cards.forEach((card, i) => {
+      lines.push(`${i + 1}.`);
+      lines.push(`Q: ${(card.question || "").trim()}`);
+      lines.push(`A: ${(card.answer_short || "").trim()}`);
+      const detailed = (card.answer_detailed || "").trim();
+      if (detailed && detailed !== (card.answer_short || "").trim()) {
+        lines.push(`Details: ${detailed}`);
+      }
+      lines.push("");
+    });
+  }
+  const blob = new Blob([lines.join("\n")], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${slugFromTitle(deckName)}.txt`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
 
 export default function DeckPage({ params }: DeckPageProps) {
   const router = useRouter();
@@ -421,6 +467,21 @@ export default function DeckPage({ params }: DeckPageProps) {
               >
                 Add Card
               </Link>
+              <Button
+                variant="outline"
+                size="default"
+                className="inline-flex h-10 gap-2"
+                disabled={flashcards.length === 0}
+                onClick={() => {
+                  const catName = deck.category_id
+                    ? categories.find((c) => c.id === deck.category_id)?.name ?? "—"
+                    : "Uncategorized";
+                  exportDeckAsTxt(title || deck.name, catName, flashcards);
+                }}
+              >
+                <Download className="size-4" />
+                Export .txt
+              </Button>
             </div>
             <div className="generate-box mt-4 pt-4 border-t border-border space-y-3 max-mobile:p-3.5 max-mobile:rounded-[12px]">
               <p className="text-sm font-medium max-mobile:text-[15px] max-mobile:font-semibold">Generate flashcards</p>

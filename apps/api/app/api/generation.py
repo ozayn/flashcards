@@ -130,17 +130,18 @@ def _evidence_matches_passage(evidence: str, passage: str) -> bool:
     # Normalized: collapse whitespace, remove punctuation
     norm_ev = re.sub(r"\s+", " ", re.sub(r"[^\w\s]", "", ev.lower())).strip()
     norm_pass = re.sub(r"\s+", " ", re.sub(r"[^\w\s]", "", passage.lower()))
-    if not norm_ev or len(norm_ev) < 3:
+    if not norm_ev:
         return False
     return norm_ev in norm_pass
 
 
 def _filter_ungrounded_cards(cards: list, passage: str) -> list:
-    """Filter out cards whose answers are not directly supported by the passage."""
+    """Filter out cards whose answers are not directly supported by the passage.
+    Fail-open: if grounding fails or removes all cards, return original cards."""
     if not cards:
         return []
     if not (passage and passage.strip()):
-        return []  # Fail closed: cannot verify without passage
+        return cards  # No passage to verify against — use originals
 
     passage_preview = passage[:4000].strip()
     if len(passage) > 4000:
@@ -182,7 +183,7 @@ Rules:
 
     try:
         response_text = generate_completion(prompt)
-        parsed = _extract_json(response_text)
+        parsed = _parse_json_object(response_text)
 
         kept_raw = parsed.get("kept")
         if not isinstance(kept_raw, list):
@@ -216,11 +217,15 @@ Rules:
                 if i in evidence_by_index:
                     card["source_span"] = evidence_by_index[i]
                 result.append(card)
+
+        if not result:
+            logger.warning("Grounding removed all cards — falling back to original cards")
+            return cards
         return result
 
     except (ValueError, json.JSONDecodeError, KeyError, TypeError) as e:
-        logger.warning("Grounding verification failed, no cards kept: %s", e)
-        return []
+        logger.warning("Grounding fallback triggered — using original cards: %s", e)
+        return cards
 
 
 def _extract_balanced_json(text: str) -> str | None:
@@ -476,6 +481,33 @@ def _repair_json_latex_escapes(text: str) -> str:
     """Fix invalid JSON escapes from LaTeX (e.g. \\sum, \\mathbf). LLMs often output \\sum which is invalid JSON."""
     # Valid JSON escapes: \", \\, \/, \b, \f, \n, \r, \t, \uXXXX. Others (e.g. \s, \m, \c) are invalid.
     return re.sub(r'\\(?!["\\/bfnrt]|u[0-9a-fA-F]{4})', r"\\\\", text)
+
+
+def _parse_json_object(text: str) -> dict:
+    """Parse arbitrary JSON object from LLM response. No flashcard schema validation.
+    Used for grounding verifier output like {"kept": [...]}."""
+    raw = text.strip()
+    json_chunk = _isolate_json_chunk(raw)
+    if not json_chunk:
+        raise ValueError("No valid JSON found")
+    if not _is_balanced_json(json_chunk):
+        raise ValueError("LLM response appears truncated")
+    json_chunk = _repair_json_latex_escapes(json_chunk)
+    try:
+        data = json.loads(json_chunk)
+    except json.JSONDecodeError:
+        fixed = re.sub(r",\s*([}\]])", r"\1", json_chunk)
+        try:
+            data = json.loads(fixed)
+        except json.JSONDecodeError:
+            try:
+                from json_repair import repair_json
+                data = json.loads(repair_json(json_chunk))
+            except Exception:
+                raise ValueError("Failed to parse JSON")
+    if not isinstance(data, dict):
+        raise ValueError("Expected JSON object")
+    return data
 
 
 def _extract_json(text: str) -> dict:
