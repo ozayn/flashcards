@@ -858,6 +858,90 @@ def _extract_formula_card_fallback(text: str, topic: str, card_index: int = 0) -
     return _make_card(default_q, cleaned)
 
 
+def _generate_formula_card_plaintext(
+    topic: str,
+    language_hint: Optional[str] = None,
+    skip_cache: bool = False,
+    max_tokens_override: Optional[int] = None,
+) -> str:
+    """Ask the LLM for a single formula flashcard in plain text (no JSON)."""
+    prompt = f"""{build_language_rule(topic, "", language_hint)}
+Generate ONE flashcard for the topic: "{topic}"
+
+Return ONLY this format — nothing else:
+
+Question: <short question about a formula or concept>
+Answer: <very short formula in $$...$$ or a one-line explanation>
+
+Rules:
+- Do NOT return JSON
+- Do NOT return markdown fences (``` or ```json)
+- Do NOT return multiple cards
+- Keep the answer very short: one compact formula or one sentence
+- Prefer a single formula in $$...$$ when appropriate
+- Each call should cover a DIFFERENT concept within the topic
+- Do NOT repeat a previous question"""
+
+    return generate_completion(prompt, skip_cache=skip_cache, max_tokens=max_tokens_override or 256)
+
+
+_LATEX_BLOCK_RE = re.compile(r"\$\$(.+?)\$\$", re.DOTALL)
+_QA_PLAINTEXT_RE = re.compile(
+    r"(?:^|\n)\s*(?:Q(?:uestion)?)\s*[:：]\s*(.+?)(?:\n\s*(?:A(?:nswer)?)\s*[:：]\s*(.+?))\s*$",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def _parse_formula_plaintext_card(text: str, topic: str, card_index: int = 0) -> dict | None:
+    """Parse a plain-text formula response into a single flashcard dict.
+
+    Parsing order:
+    1. Question: ... / Answer: ...
+    2. First $$...$$ LaTeX block as answer with a default question
+    3. Short single-line text as answer with a default question
+    """
+    if not text or not text.strip():
+        return None
+    raw = text.strip()
+    # Strip markdown fences
+    raw = re.sub(r"^```\w*\s*\n?", "", raw)
+    raw = re.sub(r"\n?```\s*$", "", raw).strip()
+
+    topic_clean = re.sub(r"\b(?:formulas?|equations?)\b", "", topic, flags=re.IGNORECASE).strip().rstrip(",. ")
+    label = topic_clean or "this topic"
+    template = _FORMULA_FALLBACK_QUESTION_TEMPLATES[card_index % len(_FORMULA_FALLBACK_QUESTION_TEMPLATES)]
+    default_q = template.format(topic=label)
+
+    def _card(q: str, a: str) -> dict:
+        return {"question": q, "answer_short": a[:500], "answer_detailed": None, "difficulty": "easy"}
+
+    # --- 1. Question/Answer pattern ---
+    m = _QA_PLAINTEXT_RE.search(raw)
+    if m:
+        q = (m.group(1) or "").strip().rstrip("?").strip()
+        a = (m.group(2) or "").strip()
+        if q and a and not _looks_like_json(a):
+            logger.info("Formula plaintext parser recovered Q/A (card %d)", card_index + 1)
+            return _card(q + "?", a)
+
+    # --- 2. LaTeX $$...$$ block ---
+    m_latex = _LATEX_BLOCK_RE.search(raw)
+    if m_latex:
+        formula = m_latex.group(0).strip()
+        logger.info("Formula plaintext parser recovered LaTeX block (card %d)", card_index + 1)
+        return _card(default_q, formula)
+
+    # --- 3. Short raw text (reject JSON-like) ---
+    if _looks_like_json(raw):
+        logger.info("Formula plaintext parser rejected JSON-like text (card %d)", card_index + 1)
+        return None
+    if len(raw) > 500 or raw.count("\n\n") > 1:
+        logger.info("Formula plaintext parser failed: too long or multi-paragraph (card %d)", card_index + 1)
+        return None
+    logger.info("Formula plaintext parser recovered short raw answer (card %d)", card_index + 1)
+    return _card(default_q, raw)
+
+
 def _is_question_style_topic(topic: str) -> bool:
     """Return True if topic looks like a question or conceptual topic (contains ? or starts with question words)."""
     if not topic or not topic.strip():
@@ -2670,101 +2754,55 @@ async def generate_flashcards(
                 topic_str = payload.topic or ""
                 is_vocab = is_vocabulary_topic(topic_str)
 
-                # Formula topics: one card per call with retries (parse failure only)
+                # Formula topics: one plaintext card per call (no JSON dependency)
                 if _is_formula_topic(topic_str):
                     seen_questions: set[tuple[str, str]] = set()
-                    all_cards = []
+                    all_cards: list[dict] = []
 
                     for i in range(num_cards):
-                        parsed_json = None
+                        card = None
 
                         for attempt in range(3):
                             try:
-                                response_text = _generate_flashcards_simple(
+                                response_text = _generate_formula_card_plaintext(
                                     topic_str,
                                     lang_hint,
-                                    num_cards=1,
                                     skip_cache=(attempt > 0 or i > 0),
-                                    max_tokens_override=512,
+                                    max_tokens_override=256,
                                 )
-
-                                result = _extract_json(response_text)
-                                cards = result.get("flashcards", [])
-
-                                if not cards:
-                                    raise ValueError("No flashcards generated")
-
-                                parsed_json = {"flashcards": cards}
-                                break
-
-                            except Exception as e:
-                                logger.warning(
-                                    "Formula strict parse failed (card %d, attempt %d): %s",
-                                    i + 1, attempt + 1, e,
-                                )
-                                # On final attempt, try lenient parsers before giving up
+                                logger.debug("Formula plaintext received (card %d, attempt %d): %s", i + 1, attempt + 1, response_text[:200])
+                            except ValueError as e:
+                                logger.warning("Formula plaintext generation failed (card %d, attempt %d): %s", i + 1, attempt + 1, e)
                                 if attempt == 2:
-                                    try:
-                                        result = _extract_json_simple(response_text)
-                                        cards = result.get("flashcards", [])
-                                        if cards:
-                                            logger.info(
-                                                "Formula simple parse fallback succeeded (card %d): %d cards",
-                                                i + 1, len(cards),
-                                            )
-                                            parsed_json = {"flashcards": cards}
-                                            break
-                                    except Exception:
-                                        logger.warning("Formula simple parse also failed (card %d)", i + 1)
-
-                                    heuristic = _extract_formula_card_fallback(response_text, topic_str, card_index=i)
-                                    if heuristic and heuristic.get("flashcards"):
-                                        fallback_q = heuristic["flashcards"][0].get("question", "")
-                                        logger.info(
-                                            "Formula heuristic fallback succeeded (card %d): %s",
-                                            i + 1, fallback_q,
-                                        )
-                                        parsed_json = heuristic
-                                        break
-
-                                    msg = str(e) if str(e) else "Failed to generate flashcard"
-                                    logger.warning("Formula generation failed after 3 attempts, all parsers failed: %s", msg)
-                                    raise HTTPException(status_code=503, detail=msg)
-
-                        if not parsed_json:
-                            continue
-
-                        cards = parsed_json.get("flashcards", [])
-                        if not cards:
-                            continue
-
-                        for card in cards:
-                            q_raw = card.get("question", "").strip()
-                            q = q_raw.lower()
-                            a = card.get("answer_short", "").strip()
-
-                            if not q:
-                                logger.warning("Skipping card with empty question")
+                                    raise HTTPException(status_code=503, detail=str(e))
                                 continue
 
-                            # Allow same question if answer is different
-                            key = (q, a)
+                            card = _parse_formula_plaintext_card(response_text, topic_str, card_index=i)
+                            if card:
+                                break
+                            logger.warning("Formula plaintext parser failed (card %d, attempt %d)", i + 1, attempt + 1)
 
-                            if key in seen_questions:
-                                logger.warning("Skipping exact duplicate (q+a): %s", q)
-                                continue
+                        if not card:
+                            continue
 
-                            seen_questions.add(key)
-                            all_cards.append(card)
-                            break  # still keep one card per iteration
+                        q = card.get("question", "").strip().lower()
+                        a = card.get("answer_short", "").strip()
+
+                        if not q:
+                            logger.warning("Skipping card with empty question")
+                            continue
+
+                        key = (q, a)
+                        if key in seen_questions:
+                            logger.warning("Skipping exact duplicate (q+a): %s", q)
+                            continue
+
+                        seen_questions.add(key)
+                        all_cards.append(card)
 
                     if len(all_cards) == 0:
-                        logger.warning("All cards filtered out due to duplication — forcing first valid card")
-
-                        if parsed_json and parsed_json.get("flashcards"):
-                            all_cards = [parsed_json["flashcards"][0]]
-                        else:
-                            raise HTTPException(status_code=503, detail="No flashcards generated")
+                        logger.warning("Formula generation produced zero valid cards")
+                        raise HTTPException(status_code=503, detail="No flashcards generated")
 
                     parsed_json = {"flashcards": all_cards}
                     break
