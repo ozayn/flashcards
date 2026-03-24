@@ -2102,33 +2102,28 @@ def _generate_flashcards_simple(
 
     if is_formula:
         if num_cards == 1:
-            prompt = f"""Return ONLY valid JSON.
+            prompt = f"""Return ONLY a single JSON object. No markdown fences. No explanation text. No prose outside the JSON.
 {build_language_rule(topic, "", language_hint)}
 Generate EXACTLY ONE flashcard for the topic: "{topic}"
 
 Rules:
 - Include formulas using LaTeX inside $$...$$
 - In JSON strings, escape backslashes: use \\\\sum for \\sum, \\\\frac for \\frac, etc.
-- Answers must be VERY short (1 line max)
-- Use compact formulas only
-- Each flashcard should test one DIFFERENT concept
+- answer_short must be a single short string (one formula or one sentence, not both)
+- Use compact formulas only — no derivations, no multi-step explanations
+- Do NOT wrap the JSON in ```json or ``` fences
 
-Return this exact JSON format:
+Return ONLY this JSON (nothing else before or after):
 {{
   "flashcards": [
     {{
       "question": "<question>",
-      "answer_short": "<formula only or very short explanation>",
+      "answer_short": "<formula or very short explanation>",
       "answer_detailed": null,
       "difficulty": "easy"
     }}
   ]
-}}
-
-IMPORTANT:
-- Return ONLY ONE flashcard
-- Do NOT return multiple flashcards
-"""
+}}"""
         else:
             prompt = f"""Return ONLY valid JSON.
 {build_language_rule(topic, "", language_hint)}
@@ -2605,9 +2600,26 @@ async def generate_flashcards(
                                 break
 
                             except Exception as e:
+                                logger.warning(
+                                    "Formula strict parse failed (card %d, attempt %d): %s",
+                                    i + 1, attempt + 1, e,
+                                )
+                                # On final attempt, try lenient parser before giving up
                                 if attempt == 2:
+                                    try:
+                                        result = _extract_json_simple(response_text)
+                                        cards = result.get("flashcards", [])
+                                        if cards:
+                                            logger.info(
+                                                "Formula simple parse fallback succeeded (card %d): %d cards",
+                                                i + 1, len(cards),
+                                            )
+                                            parsed_json = {"flashcards": cards}
+                                            break
+                                    except Exception:
+                                        pass
                                     msg = str(e) if str(e) else "Failed to generate flashcard"
-                                    logger.warning("Formula generation failed after 3 attempts: %s", msg)
+                                    logger.warning("Formula generation failed after 3 attempts, both parsers failed: %s", msg)
                                     raise HTTPException(status_code=503, detail=msg)
 
                         if not parsed_json:

@@ -235,6 +235,7 @@ export default function DeckPage({ params }: DeckPageProps) {
   const [genTopic, setGenTopic] = useState("");
   const [genText, setGenText] = useState("");
   const [genMode, setGenMode] = useState<"topic" | "text">("topic");
+  const [useNameAsTopic, setUseNameAsTopic] = useState(false);
   const [cardCount, setCardCount] = useState(10);
   const GEN_TEXT_MAX_LENGTH = 10000;
   const CARD_COUNT_OPTIONS = [5, 10, 20, 30, 40, 50] as const;
@@ -306,7 +307,9 @@ export default function DeckPage({ params }: DeckPageProps) {
     if (!deck || generating) return;
     const topicTrimmed = genTopic.trim();
     const textTrimmed = genText.trim();
-    if (genMode === "topic" && !topicTrimmed) return;
+    const effectiveTopic =
+      topicTrimmed || (useNameAsTopic && !topicTrimmed ? title.trim() : "");
+    if (genMode === "topic" && !effectiveTopic) return;
     if (genMode === "text" && !textTrimmed) return;
     setGenerating(true);
     try {
@@ -320,7 +323,7 @@ export default function DeckPage({ params }: DeckPageProps) {
       } else {
         await generateFlashcards({
           deck_id: deck.id,
-          topic: topicTrimmed,
+          topic: effectiveTopic,
           num_cards: cardCount,
           language: "en",
         });
@@ -699,9 +702,22 @@ export default function DeckPage({ params }: DeckPageProps) {
                         className="min-w-0"
                       />
                       <p className="text-xs text-muted-foreground">
-                        Use a short topic or concept.
+                        Optional. Leave empty to skip generation.
                       </p>
                     </div>
+                    {!genTopic.trim() && (
+                      <label className="flex cursor-pointer items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={useNameAsTopic}
+                          onChange={(e) => setUseNameAsTopic(e.target.checked)}
+                          className="rounded border-input"
+                        />
+                        <span className="text-muted-foreground">
+                          Use deck name as topic for generation
+                        </span>
+                      </label>
+                    )}
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
                       <label htmlFor="cardCount-topic" className="text-sm font-medium shrink-0">
                         Number of cards
