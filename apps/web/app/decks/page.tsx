@@ -49,6 +49,7 @@ export type Deck = {
   description: string | null;
   source_type: string | null;
   source_url: string | null;
+  source_topic?: string | null;
   source_text: string | null;
   generation_status?: string;
   generated_by_ai?: boolean;

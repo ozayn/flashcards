@@ -25,6 +25,7 @@ function CreateDeckForm() {
   const [topic, setTopic] = useState("");
   const [text, setText] = useState("");
   const [generationMode, setGenerationMode] = useState<GenerationMode>("topic");
+  const [emptyDeckMode, setEmptyDeckMode] = useState(false);
   const [cardCount, setCardCount] = useState(10);
   const [loading, setLoading] = useState(false);
   const router = useRouter();
@@ -43,20 +44,28 @@ function CreateDeckForm() {
   const textTrimmed = text.trim();
 
   const willGenerate =
-    generationMode === "topic"
+    !emptyDeckMode &&
+    (generationMode === "topic"
       ? Boolean(topicTrimmed)
-      : Boolean(textTrimmed);
+      : Boolean(textTrimmed));
 
   const submitLabel = loading
     ? "Creating..."
-    : willGenerate
-      ? "Create Deck and Generate Cards"
-      : "Create Deck";
+    : emptyDeckMode
+      ? "Create Empty Deck"
+      : willGenerate
+        ? "Create Deck and Generate Cards"
+        : "Create Deck";
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (generationMode === "topic") {
+    if (emptyDeckMode) {
+      if (!nameTrimmed) {
+        alert("Enter a deck name for your empty deck.");
+        return;
+      }
+    } else if (generationMode === "topic") {
       if (!nameTrimmed && !topicTrimmed) {
         alert("Enter a deck name or a topic to continue.");
         return;
@@ -85,17 +94,35 @@ function CreateDeckForm() {
     if (!userId) return;
 
     const effectiveDeckName =
-      generationMode === "topic"
-        ? nameTrimmed || topicTrimmed
-        : nameTrimmed;
+      emptyDeckMode || generationMode === "text"
+        ? nameTrimmed
+        : nameTrimmed || topicTrimmed;
 
     setLoading(true);
 
     try {
+      if (emptyDeckMode) {
+        const deck = await createDeck({
+          user_id: userId,
+          name: effectiveDeckName,
+          source_type: "manual",
+        });
+        const deckId = (deck as { id: string }).id;
+        router.push(`/decks/${deckId}`);
+        return;
+      }
+
       const deck = await createDeck({
         user_id: userId,
         name: effectiveDeckName,
-        source_type: "manual",
+        source_type:
+          generationMode === "text"
+            ? "text"
+            : topicTrimmed
+              ? "topic"
+              : "manual",
+        source_topic:
+          generationMode === "topic" && topicTrimmed ? topicTrimmed : undefined,
       });
       const deckId = (deck as { id: string }).id;
 
@@ -136,11 +163,12 @@ function CreateDeckForm() {
       <Card>
         <CardHeader>
           <CardTitle>Create Deck</CardTitle>
-          <CardDescription>Create a new flashcard deck</CardDescription>
+          <CardDescription>
+            Create a deck and optionally generate cards from a topic or text.
+          </CardDescription>
         </CardHeader>
         <CardContent className="pb-6">
           <form onSubmit={handleSubmit} className="space-y-0">
-            {/* Section 1: Deck details */}
             <section className="space-y-3 pb-8">
               <h2 className="text-sm font-semibold tracking-tight text-foreground">
                 Deck details
@@ -157,140 +185,166 @@ function CreateDeckForm() {
                   autoComplete="off"
                 />
                 <p className="text-xs text-muted-foreground leading-relaxed">
-                  Optional if Topic is filled—the topic becomes the deck name when this is
-                  empty.
+                  {emptyDeckMode
+                    ? "Required for an empty deck."
+                    : "Optional. If left blank, the topic will be used as the deck name."}
                 </p>
               </div>
+
+              <label className="flex cursor-pointer items-start gap-3 rounded-md border border-dashed border-border/80 bg-muted/20 px-3 py-3 text-sm">
+                <input
+                  type="checkbox"
+                  checked={emptyDeckMode}
+                  onChange={(e) => {
+                    setEmptyDeckMode(e.target.checked);
+                  }}
+                  className="mt-0.5 rounded border-input"
+                />
+                <span>
+                  <span className="font-medium text-foreground">
+                    Create empty deck (no cards)
+                  </span>
+                  <span className="block text-muted-foreground text-xs mt-1 leading-relaxed">
+                    Skip adding cards now. You can add them later.
+                  </span>
+                </span>
+              </label>
             </section>
 
-            <div className="border-t border-border/40" aria-hidden />
+            {!emptyDeckMode && (
+              <>
+                <div className="border-t border-border/40" aria-hidden />
 
-            {/* Section 2: Optional generation */}
-            <section className="space-y-4 pt-8">
-              <h2 className="text-sm font-semibold tracking-tight text-foreground">
-                Add cards now (optional)
-              </h2>
-
-              <div
-                className="inline-flex rounded-lg border border-border/50 bg-muted/30 p-0.5"
-                role="radiogroup"
-                aria-label="How to add cards"
-              >
-                {(
-                  [
-                    { value: "topic" as const, label: "Topic" },
-                    { value: "text" as const, label: "Text" },
-                  ] as const
-                ).map(({ value, label }) => (
-                  <button
-                    key={value}
-                    type="button"
-                    role="radio"
-                    aria-checked={generationMode === value}
-                    onClick={() => setGenerationMode(value)}
-                    className={`min-w-[5.5rem] rounded-md px-4 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
-                      generationMode === value
-                        ? "bg-background text-foreground shadow-sm ring-1 ring-border/60"
-                        : "text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-              <p className="text-xs text-muted-foreground leading-relaxed">
-                Want a blank deck? Enter a deck name and leave the topic (or pasted text)
-                empty.
-              </p>
-
-              {generationMode === "topic" && (
-                <div className="space-y-3 pt-1">
-                  <div className="space-y-2">
-                    <label htmlFor="topic" className="text-sm font-medium">
-                      Topic
-                    </label>
-                    <Input
-                      id="topic"
-                      placeholder="e.g. Photosynthesis, Spanish verbs"
-                      value={topic}
-                      onChange={(e) => setTopic(e.target.value)}
-                      className="min-w-0"
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      Use a short topic, concept, or subject.
+                <section className="space-y-4 pt-8">
+                  <div className="space-y-1">
+                    <h2 className="text-sm font-semibold tracking-tight text-foreground">
+                      Add cards
+                    </h2>
+                    <p className="text-xs text-muted-foreground leading-relaxed">
+                      Choose Topic or Text, then fill in the fields below. Cards are
+                      generated after the deck is created.
                     </p>
                   </div>
-                  <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-                    <label
-                      htmlFor="cardCount-topic"
-                      className="text-sm font-medium shrink-0"
-                    >
-                      Number of cards
-                    </label>
-                    <select
-                      id="cardCount-topic"
-                      value={cardCount}
-                      onChange={(e) => setCardCount(Number(e.target.value))}
-                      className="h-9 min-w-[4.5rem] rounded-md border border-input bg-background px-2.5 py-1 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                    >
-                      {CARD_COUNT_OPTIONS.map((n) => (
-                        <option key={n} value={n}>
-                          {n}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-              )}
 
-              {generationMode === "text" && (
-                <div className="space-y-3 pt-1">
-                  <div className="space-y-2">
-                    <label htmlFor="text" className="text-sm font-medium">
-                      Paste notes or transcript
-                    </label>
-                    <textarea
-                      id="text"
-                      placeholder="Paste notes or text to generate flashcards..."
-                      value={text}
-                      onChange={(e) => setText(e.target.value)}
-                      maxLength={10000}
-                      className="w-full min-h-[160px] max-mobile:min-h-[120px] rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                    />
-                    <div className="flex justify-between items-center">
-                      <span className="text-xs text-muted-foreground">
-                        {text.length} / 10000 characters
-                      </span>
-                      {text.length >= 10000 && (
-                        <span className="text-xs text-destructive">
-                          Text is too long
-                        </span>
-                      )}
+                  <div
+                    className="inline-flex rounded-lg border border-border/50 bg-muted/30 p-0.5"
+                    role="radiogroup"
+                    aria-label="Generation source"
+                  >
+                    {(
+                      [
+                        { value: "topic" as const, label: "Topic" },
+                        { value: "text" as const, label: "Text" },
+                      ] as const
+                    ).map(({ value, label }) => (
+                      <button
+                        key={value}
+                        type="button"
+                        role="radio"
+                        aria-checked={generationMode === value}
+                        onClick={() => setGenerationMode(value)}
+                        className={`min-w-[5.5rem] rounded-md px-4 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
+                          generationMode === value
+                            ? "bg-background text-foreground shadow-sm ring-1 ring-border/60"
+                            : "text-muted-foreground hover:text-foreground"
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {generationMode === "topic" && (
+                    <div className="space-y-3 pt-1">
+                      <div className="space-y-2">
+                        <label htmlFor="topic" className="text-sm font-medium">
+                          Topic
+                        </label>
+                        <Input
+                          id="topic"
+                          placeholder="e.g. Photosynthesis, Spanish verbs"
+                          value={topic}
+                          onChange={(e) => setTopic(e.target.value)}
+                          className="min-w-0"
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          Use a short topic or concept. Saved for later reference and
+                          regeneration.
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                        <label
+                          htmlFor="cardCount-topic"
+                          className="text-sm font-medium shrink-0"
+                        >
+                          Number of cards
+                        </label>
+                        <select
+                          id="cardCount-topic"
+                          value={cardCount}
+                          onChange={(e) => setCardCount(Number(e.target.value))}
+                          className="h-9 min-w-[4.5rem] rounded-md border border-input bg-background px-2.5 py-1 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                        >
+                          {CARD_COUNT_OPTIONS.map((n) => (
+                            <option key={n} value={n}>
+                              {n}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
                     </div>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-                    <label
-                      htmlFor="cardCount-text"
-                      className="text-sm font-medium shrink-0"
-                    >
-                      Number of cards
-                    </label>
-                    <select
-                      id="cardCount-text"
-                      value={cardCount}
-                      onChange={(e) => setCardCount(Number(e.target.value))}
-                      className="h-9 min-w-[4.5rem] rounded-md border border-input bg-background px-2.5 py-1 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                    >
-                      {CARD_COUNT_OPTIONS.map((n) => (
-                        <option key={n} value={n}>
-                          {n}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-              )}
-            </section>
+                  )}
+
+                  {generationMode === "text" && (
+                    <div className="space-y-3 pt-1">
+                      <div className="space-y-2">
+                        <label htmlFor="text" className="text-sm font-medium">
+                          Paste notes or transcript
+                        </label>
+                        <textarea
+                          id="text"
+                          placeholder="Paste notes or text to generate flashcards..."
+                          value={text}
+                          onChange={(e) => setText(e.target.value)}
+                          maxLength={10000}
+                          className="w-full min-h-[160px] max-mobile:min-h-[120px] rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                        />
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs text-muted-foreground">
+                            {text.length} / 10000 characters
+                          </span>
+                          {text.length >= 10000 && (
+                            <span className="text-xs text-destructive">
+                              Text is too long
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                        <label
+                          htmlFor="cardCount-text"
+                          className="text-sm font-medium shrink-0"
+                        >
+                          Number of cards
+                        </label>
+                        <select
+                          id="cardCount-text"
+                          value={cardCount}
+                          onChange={(e) => setCardCount(Number(e.target.value))}
+                          className="h-9 min-w-[4.5rem] rounded-md border border-input bg-background px-2.5 py-1 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                        >
+                          {CARD_COUNT_OPTIONS.map((n) => (
+                            <option key={n} value={n}>
+                              {n}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  )}
+                </section>
+              </>
+            )}
 
             <div className="mt-8 border-t border-border/40 pt-5">
               <Button type="submit" disabled={loading} className="w-full sm:w-auto">

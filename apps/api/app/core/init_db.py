@@ -108,6 +108,11 @@ async def init_db() -> None:
                 pg_if_not_exists="ALTER TABLE decks ADD COLUMN IF NOT EXISTS source_title TEXT"
             )
             _add_column_if_missing(
+                sync_conn, "decks", "source_topic",
+                "ALTER TABLE decks ADD COLUMN source_topic TEXT",
+                pg_if_not_exists="ALTER TABLE decks ADD COLUMN IF NOT EXISTS source_topic VARCHAR(512)"
+            )
+            _add_column_if_missing(
                 sync_conn, "decks", "generation_status",
                 "ALTER TABLE decks ADD COLUMN generation_status VARCHAR(32) DEFAULT 'completed'",
                 pg_if_not_exists="ALTER TABLE decks ADD COLUMN IF NOT EXISTS generation_status VARCHAR(32) DEFAULT 'completed'"

@@ -30,6 +30,8 @@ interface Deck {
   id: string;
   name: string;
   description: string | null;
+  source_type?: string | null;
+  source_topic?: string | null;
   archived?: boolean;
   category_id?: string | null;
   user_id?: string;
@@ -509,6 +511,12 @@ export default function DeckPage({ params }: DeckPageProps) {
                 {deck.category_id ? "Change category" : "Assign category"}
               </Button>
             </div>
+            {deck.source_topic?.trim() && (
+              <p className="text-sm text-muted-foreground mb-4">
+                <span className="font-medium text-foreground">Generated from topic:</span>{" "}
+                {deck.source_topic.trim()}
+              </p>
+            )}
             {categoryModalOpen && (
               <div
                 className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"

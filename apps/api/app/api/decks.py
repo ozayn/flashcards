@@ -273,6 +273,7 @@ async def create_deck(
         description=payload.description,
         source_type=payload.source_type,
         source_url=payload.source_url,
+        source_topic=payload.source_topic,
         source_text=payload.source_text,
     )
     db.add(deck)

@@ -135,14 +135,22 @@ export async function createDeck(data: {
   name: string;
   description?: string;
   source_type?: string;
+  source_topic?: string | null;
 }) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 15000);
   try {
+    const body: Record<string, unknown> = {
+      ...data,
+      source_type: data.source_type ?? "topic",
+    };
+    if (data.source_topic === undefined) {
+      delete body.source_topic;
+    }
     const res = await fetch(`${API_BASE}/decks`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...data, source_type: data.source_type ?? "topic" }),
+      body: JSON.stringify(body),
       signal: controller.signal,
     });
     clearTimeout(timeout);
