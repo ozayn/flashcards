@@ -247,10 +247,10 @@ export default function DeckPage({ params }: DeckPageProps) {
   useEffect(() => {
     const n = flashcards.length;
     const prev = prevFlashcardCountRef.current;
-    if (prev === 0 && n > 0) {
+    if (n > 0 && (prev === 0 || prev === -1)) {
       setGenPanelExpanded(false);
     }
-    if (n === 0) {
+    if (n === 0 && prev !== -1) {
       setGenPanelExpanded(true);
     }
     prevFlashcardCountRef.current = n;
