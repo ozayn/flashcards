@@ -1,9 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Archive, ArchiveRestore, Download, Pencil, Trash2 } from "lucide-react";
+import {
+  Archive,
+  ArchiveRestore,
+  ChevronRight,
+  ChevronUp,
+  Download,
+  Pencil,
+  Trash2,
+} from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -226,9 +234,26 @@ export default function DeckPage({ params }: DeckPageProps) {
   const [modalCardIndex, setModalCardIndex] = useState<number | null>(null);
   const [genTopic, setGenTopic] = useState("");
   const [genText, setGenText] = useState("");
+  const [genMode, setGenMode] = useState<"topic" | "text">("topic");
   const [cardCount, setCardCount] = useState(10);
   const GEN_TEXT_MAX_LENGTH = 10000;
   const CARD_COUNT_OPTIONS = [5, 10, 20, 30, 40, 50] as const;
+
+  const hasFlashcards = flashcards.length > 0;
+  const [genPanelExpanded, setGenPanelExpanded] = useState(true);
+  const prevFlashcardCountRef = useRef(-1);
+
+  useEffect(() => {
+    const n = flashcards.length;
+    const prev = prevFlashcardCountRef.current;
+    if (prev === 0 && n > 0) {
+      setGenPanelExpanded(false);
+    }
+    if (n === 0) {
+      setGenPanelExpanded(true);
+    }
+    prevFlashcardCountRef.current = n;
+  }, [flashcards.length]);
 
   useEffect(() => {
     let cancelled = false;
@@ -281,12 +306,11 @@ export default function DeckPage({ params }: DeckPageProps) {
     if (!deck || generating) return;
     const topicTrimmed = genTopic.trim();
     const textTrimmed = genText.trim();
-    if (!topicTrimmed && !textTrimmed) return;
+    if (genMode === "topic" && !topicTrimmed) return;
+    if (genMode === "text" && !textTrimmed) return;
     setGenerating(true);
     try {
-      // Text mode takes precedence: when user pastes text, generate only from that text.
-      // Do not use deck name or topic as fallback—that would inject generic cards (e.g. "notes" → note-taking).
-      if (textTrimmed) {
+      if (genMode === "text") {
         await generateFlashcards({
           deck_id: deck.id,
           text: textTrimmed,
@@ -294,15 +318,12 @@ export default function DeckPage({ params }: DeckPageProps) {
           language: "en",
         });
       } else {
-        const topicToUse = topicTrimmed || deck.name || "";
-        if (topicToUse) {
-          await generateFlashcards({
-            deck_id: deck.id,
-            topic: topicToUse,
-            num_cards: cardCount,
-            language: "en",
-          });
-        }
+        await generateFlashcards({
+          deck_id: deck.id,
+          topic: topicTrimmed,
+          num_cards: cardCount,
+          language: "en",
+        });
       }
       setGenTopic("");
       setGenText("");
@@ -512,9 +533,9 @@ export default function DeckPage({ params }: DeckPageProps) {
               </Button>
             </div>
             {deck.source_topic?.trim() && (
-              <p className="text-sm text-muted-foreground mb-4">
-                <span className="font-medium text-foreground">Generated from topic:</span>{" "}
-                {deck.source_topic.trim()}
+              <p className="text-sm mb-4 leading-relaxed">
+                <span className="text-muted-foreground">Generated from topic:</span>{" "}
+                <span className="font-medium text-foreground">{deck.source_topic.trim()}</span>
               </p>
             )}
             {categoryModalOpen && (
@@ -594,74 +615,169 @@ export default function DeckPage({ params }: DeckPageProps) {
                 Export .txt
               </Button>
             </div>
-            <div className="generate-box mt-4 pt-4 border-t border-border space-y-3 max-mobile:p-3.5 max-mobile:rounded-[12px]">
-              <p className="text-sm font-medium max-mobile:text-[15px] max-mobile:font-semibold">Generate flashcards</p>
-              <p className="text-xs text-muted-foreground max-mobile:text-[13px] max-mobile:text-[#777] dark:max-mobile:text-neutral-400">
-                Add AI-generated cards from topic, text, or both.
-              </p>
-              <div className="space-y-2">
-                <label htmlFor="cardCount" className="text-sm font-medium">
-                  Number of cards
-                </label>
-                <select
-                  id="cardCount"
-                  value={cardCount}
-                  onChange={(e) => setCardCount(Number(e.target.value))}
-                  className="h-10 w-[80px] rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            {hasFlashcards && !genPanelExpanded ? (
+              <div className="mt-4 pt-4 border-t border-border/80">
+                <button
+                  type="button"
+                  onClick={() => setGenPanelExpanded(true)}
+                  className="flex w-full items-center justify-between gap-2 rounded-lg border border-dashed border-border/80 bg-muted/20 px-3 py-2.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted/35 hover:text-foreground"
                 >
-                  {CARD_COUNT_OPTIONS.map((n) => (
-                    <option key={n} value={n}>
-                      {n}
-                    </option>
-                  ))}
-                </select>
+                  <span className="font-medium">Add more cards</span>
+                  <ChevronRight className="size-4 shrink-0 opacity-70" aria-hidden />
+                </button>
               </div>
-              <div className="space-y-2">
-                <Input
-                  id="gen-topic"
-                  name="genTopic"
-                  placeholder="Topic (e.g. Spanish vocabulary)"
-                  value={genTopic}
-                  onChange={(e) => setGenTopic(e.target.value)}
-                  autoComplete="off"
-                  className="w-full"
-                />
-                <textarea
-                  id="gen-text"
-                  name="genText"
-                  placeholder="Or paste text to generate from..."
-                  value={genText}
-                  onChange={(e) => setGenText(e.target.value)}
-                  maxLength={GEN_TEXT_MAX_LENGTH}
-                  className="w-full min-h-[100px] max-mobile:min-h-[120px] rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                />
-                <div className="flex justify-between items-center">
-                  <span className="text-xs text-muted-foreground">
-                    {genText.length} / {GEN_TEXT_MAX_LENGTH} characters
-                  </span>
-                  {genText.length >= GEN_TEXT_MAX_LENGTH && (
-                    <span className="text-xs text-destructive">Text is too long</span>
+            ) : (
+              <div
+                className={`generate-box mt-4 pt-4 border-t border-border space-y-4 ${
+                  hasFlashcards
+                    ? "rounded-lg border border-border/50 bg-muted/20 px-4 py-4 max-mobile:px-3 max-mobile:py-3"
+                    : "max-mobile:p-3.5"
+                }`}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="space-y-0.5">
+                    <p className={`font-semibold tracking-tight ${hasFlashcards ? "text-xs text-muted-foreground" : "text-sm"}`}>
+                      {hasFlashcards ? "Add more cards" : "Generate flashcards"}
+                    </p>
+                    <p className="text-xs text-muted-foreground leading-relaxed">
+                      Choose Topic or Text, then generate cards.
+                    </p>
+                  </div>
+                  {hasFlashcards && (
+                    <button
+                      type="button"
+                      onClick={() => setGenPanelExpanded(false)}
+                      className="shrink-0 rounded-md p-1 text-muted-foreground hover:bg-muted/80 hover:text-foreground"
+                      aria-label="Collapse add-cards section"
+                    >
+                      <ChevronUp className="size-4" aria-hidden />
+                    </button>
                   )}
                 </div>
+
+                <div
+                  className="inline-flex rounded-lg border border-border/50 bg-muted/30 p-0.5"
+                  role="radiogroup"
+                  aria-label="Generation source"
+                >
+                  {(
+                    [
+                      { value: "topic" as const, label: "Topic" },
+                      { value: "text" as const, label: "Text" },
+                    ] as const
+                  ).map(({ value, label }) => (
+                    <button
+                      key={value}
+                      type="button"
+                      role="radio"
+                      aria-checked={genMode === value}
+                      onClick={() => setGenMode(value)}
+                      className={`min-w-[5.5rem] rounded-md px-4 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
+                        genMode === value
+                          ? "bg-background text-foreground shadow-sm ring-1 ring-border/60"
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+
+                {genMode === "topic" && (
+                  <div className="space-y-3 pt-1">
+                    <div className="space-y-2">
+                      <label htmlFor="gen-topic" className="text-sm font-medium">
+                        Topic
+                      </label>
+                      <Input
+                        id="gen-topic"
+                        name="genTopic"
+                        placeholder="e.g. Photosynthesis, Spanish verbs"
+                        value={genTopic}
+                        onChange={(e) => setGenTopic(e.target.value)}
+                        autoComplete="off"
+                        className="min-w-0"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Use a short topic or concept.
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                      <label htmlFor="cardCount-topic" className="text-sm font-medium shrink-0">
+                        Number of cards
+                      </label>
+                      <select
+                        id="cardCount-topic"
+                        value={cardCount}
+                        onChange={(e) => setCardCount(Number(e.target.value))}
+                        className="h-9 min-w-[4.5rem] rounded-md border border-input bg-background px-2.5 py-1 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                      >
+                        {CARD_COUNT_OPTIONS.map((n) => (
+                          <option key={n} value={n}>{n}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                )}
+
+                {genMode === "text" && (
+                  <div className="space-y-3 pt-1">
+                    <div className="space-y-2">
+                      <label htmlFor="gen-text" className="text-sm font-medium">
+                        Paste notes or transcript
+                      </label>
+                      <textarea
+                        id="gen-text"
+                        name="genText"
+                        placeholder="Paste notes or text to generate flashcards..."
+                        value={genText}
+                        onChange={(e) => setGenText(e.target.value)}
+                        maxLength={GEN_TEXT_MAX_LENGTH}
+                        className="w-full min-h-[120px] rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                      />
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs text-muted-foreground">
+                          {genText.length} / {GEN_TEXT_MAX_LENGTH} characters
+                        </span>
+                        {genText.length >= GEN_TEXT_MAX_LENGTH && (
+                          <span className="text-xs text-destructive">Text is too long</span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                      <label htmlFor="cardCount-text" className="text-sm font-medium shrink-0">
+                        Number of cards
+                      </label>
+                      <select
+                        id="cardCount-text"
+                        value={cardCount}
+                        onChange={(e) => setCardCount(Number(e.target.value))}
+                        className="h-9 min-w-[4.5rem] rounded-md border border-input bg-background px-2.5 py-1 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                      >
+                        {CARD_COUNT_OPTIONS.map((n) => (
+                          <option key={n} value={n}>{n}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                )}
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleGenerate}
+                  disabled={generating || genText.length > GEN_TEXT_MAX_LENGTH}
+                  className="w-full sm:w-auto"
+                >
+                  {generating ? "Generating..." : "Generate Cards"}
+                </Button>
               </div>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={handleGenerate}
-                disabled={
-                  generating ||
-                  genText.length > GEN_TEXT_MAX_LENGTH
-                }
-                className="w-full sm:w-auto"
-              >
-                {generating ? "Generating..." : "Generate"}
-              </Button>
-            </div>
+            )}
           </div>
         </Card>
 
-        <section className="section space-y-4">
-          <h2 className="text-lg font-semibold">Flashcards</h2>
+        <section className="section space-y-4 mt-10">
+          <h2 className="text-xl font-semibold tracking-tight">Flashcards</h2>
           {flashcards.length === 0 ? (
             <p className="text-muted-foreground text-sm">No flashcards yet.</p>
           ) : (
