@@ -589,13 +589,13 @@ export default function DeckPage({ params }: DeckPageProps) {
             <div className="flex flex-wrap gap-2">
               <Link
                 href={`/study/${deck.id}`}
-                className="inline-flex h-10 items-center justify-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/80 w-full sm:w-auto"
+                className="inline-flex h-10 items-center justify-center rounded-lg bg-neutral-900 text-white hover:bg-neutral-800 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200 px-4 text-sm font-medium w-full sm:w-auto max-mobile:min-h-[44px] max-mobile:rounded-[10px] max-mobile:font-semibold max-mobile:text-[15px]"
               >
                 Study
               </Link>
               <Link
                 href={`/decks/${deck.id}/add-card`}
-                className="inline-flex h-10 items-center justify-center rounded-lg border border-border bg-background px-4 text-sm font-medium hover:bg-muted w-full sm:w-auto"
+                className="inline-flex h-10 items-center justify-center rounded-lg border border-neutral-300 bg-white hover:bg-neutral-50 dark:border-neutral-600 dark:bg-neutral-900 dark:hover:bg-neutral-800 px-4 text-sm font-medium w-full sm:w-auto max-mobile:min-h-[44px] max-mobile:rounded-[10px] max-mobile:text-[15px]"
               >
                 Add Card
               </Link>
@@ -764,7 +764,6 @@ export default function DeckPage({ params }: DeckPageProps) {
 
                 <Button
                   type="button"
-                  variant="outline"
                   onClick={handleGenerate}
                   disabled={generating || genText.length > GEN_TEXT_MAX_LENGTH}
                   className="w-full sm:w-auto"

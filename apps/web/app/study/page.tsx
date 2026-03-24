@@ -42,7 +42,7 @@ function StudyContent() {
             {!deckId && (
               <Link
                 href="/decks"
-                className="mt-4 inline-flex h-8 items-center justify-center rounded-lg bg-primary px-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/80"
+                className="mt-4 inline-flex h-8 items-center justify-center rounded-lg bg-neutral-900 text-white hover:bg-neutral-800 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200 px-2.5 text-sm font-medium max-mobile:min-h-[44px] max-mobile:rounded-[10px] max-mobile:font-semibold max-mobile:text-[15px]"
               >
                 Choose a Deck
               </Link>

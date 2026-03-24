@@ -547,7 +547,7 @@ export default function DecksPage() {
             </Button>
             <Link
               href="/create-deck"
-              className="inline-flex h-10 items-center justify-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/80"
+              className="inline-flex h-10 items-center justify-center rounded-lg bg-neutral-900 text-white hover:bg-neutral-800 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200 px-4 text-sm font-medium max-mobile:min-h-[44px] max-mobile:rounded-[10px] max-mobile:font-semibold max-mobile:text-[15px]"
             >
               Create Deck
             </Link>

@@ -223,7 +223,7 @@ export default function StudyPage({ params }: StudyPageProps) {
           <div className="flex flex-col sm:flex-row gap-3 justify-center">
             <Link
               href="/decks"
-              className="inline-flex h-10 items-center justify-center rounded-lg bg-primary px-6 text-sm font-medium text-primary-foreground hover:bg-primary/80 w-fit"
+              className="inline-flex h-10 items-center justify-center rounded-lg bg-neutral-900 text-white hover:bg-neutral-800 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200 px-6 text-sm font-medium w-fit max-mobile:min-h-[44px] max-mobile:rounded-[10px] max-mobile:font-semibold max-mobile:text-[15px]"
             >
               Choose user
             </Link>
@@ -270,7 +270,7 @@ export default function StudyPage({ params }: StudyPageProps) {
               </p>
               <Link
                 href={`/decks/${params.deck_id}/add-card`}
-                className="inline-flex h-10 items-center justify-center rounded-lg bg-primary px-6 text-sm font-medium text-primary-foreground hover:bg-primary/80 w-fit"
+                className="inline-flex h-10 items-center justify-center rounded-lg bg-neutral-900 text-white hover:bg-neutral-800 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200 px-6 text-sm font-medium w-fit max-mobile:min-h-[44px] max-mobile:rounded-[10px] max-mobile:font-semibold max-mobile:text-[15px]"
               >
                 Add Cards
               </Link>

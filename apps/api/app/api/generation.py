@@ -997,6 +997,233 @@ Rules:
     return []
 
 
+def _is_persian_text(text: str) -> bool:
+    """Return True when text is predominantly Persian/Arabic-script characters."""
+    if not text:
+        return False
+    sample = text[:2000]
+    arabic_script = sum(1 for c in sample if "\u0600" <= c <= "\u06FF" or "\uFB50" <= c <= "\uFDFF" or "\uFE70" <= c <= "\uFEFF")
+    alpha = sum(1 for c in sample if c.isalpha())
+    return alpha > 0 and arabic_script / alpha >= 0.40
+
+
+_PERSIAN_MAPPING_MARKERS = (
+    "بن مضارع",
+    "بن ماضی",
+    "مشتقات",
+    "بن فعل",
+    "صرف فعل",
+    "وجه وصفی",
+    "ماده ماضی",
+    "اسم مصدر",
+)
+
+
+def _is_persian_mapping_text(text: str) -> bool:
+    """Return True when text looks like structured Persian linguistic mapping content."""
+    if not _is_persian_text(text):
+        return False
+    lower = text.lower()
+    hits = sum(1 for marker in _PERSIAN_MAPPING_MARKERS if marker in lower)
+    return hits >= 1
+
+
+def _parse_persian_verb_entries(text: str) -> list[dict]:
+    """Parse structured Persian verb content into a list of entry dicts.
+
+    Recognises patterns like:
+        افراشتن (بن مضارع: افراز)
+        مشتقات: سرافراز، افراشته
+        بن ماضی: افراشت
+
+    Returns list of {"verb": str, "stem": str|None, "past_stem": str|None, "derivatives": list[str]}.
+    """
+    entries: list[dict] = []
+    current: dict | None = None
+
+    stem_re = re.compile(
+        r"^(.+?)\s*[\(（]\s*بن\s*مضارع\s*[:：]\s*(.+?)\s*[\)）]",
+    )
+    past_stem_re = re.compile(r"بن\s*ماضی\s*[:：]\s*(.+?)(?:[\)）]|$)")
+    deriv_re = re.compile(r"مشتقات\s*[:：]\s*(.+)")
+    standalone_stem_re = re.compile(r"^بن\s*مضارع\s*[:：]\s*(.+)")
+
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+
+        m_stem = stem_re.match(line)
+        if m_stem:
+            if current:
+                entries.append(current)
+            verb = m_stem.group(1).strip().rstrip(":")
+            stem = m_stem.group(2).strip()
+            current = {"verb": verb, "stem": stem, "past_stem": None, "derivatives": []}
+            m_past = past_stem_re.search(line)
+            if m_past:
+                current["past_stem"] = m_past.group(1).strip()
+            m_deriv = deriv_re.search(line)
+            if m_deriv:
+                current["derivatives"] = [d.strip() for d in re.split(r"[،,]", m_deriv.group(1)) if d.strip()]
+            continue
+
+        if current:
+            m_deriv = deriv_re.match(line)
+            if m_deriv:
+                current["derivatives"] = [d.strip() for d in re.split(r"[،,]", m_deriv.group(1)) if d.strip()]
+                continue
+            m_past = re.match(r"بن\s*ماضی\s*[:：]\s*(.+)", line)
+            if m_past:
+                current["past_stem"] = m_past.group(1).strip()
+                continue
+            m_standalone = standalone_stem_re.match(line)
+            if m_standalone:
+                current["stem"] = m_standalone.group(1).strip()
+                continue
+
+    if current:
+        entries.append(current)
+
+    return entries
+
+
+def _build_persian_mapping_cards(entries: list[dict]) -> list[dict]:
+    """Deterministically generate flashcards from parsed Persian verb entries."""
+    cards: list[dict] = []
+    for entry in entries:
+        verb = entry["verb"]
+        stem = entry.get("stem")
+        past_stem = entry.get("past_stem")
+        derivatives = entry.get("derivatives") or []
+
+        if stem:
+            cards.append({
+                "question": f"بن مضارع {verb} چیست؟",
+                "answer_short": stem,
+                "answer_detailed": None,
+                "difficulty": "easy",
+            })
+            cards.append({
+                "question": f"{stem} بن مضارع کدام فعل است؟",
+                "answer_short": verb,
+                "answer_detailed": None,
+                "difficulty": "easy",
+            })
+        if past_stem:
+            cards.append({
+                "question": f"بن ماضی {verb} چیست؟",
+                "answer_short": past_stem,
+                "answer_detailed": None,
+                "difficulty": "easy",
+            })
+        if derivatives:
+            cards.append({
+                "question": f"مشتقات {verb} چیست؟",
+                "answer_short": "، ".join(derivatives),
+                "answer_detailed": None,
+                "difficulty": "easy",
+            })
+
+    return cards
+
+
+_PERSIAN_MAPPING_RULES = """
+CRITICAL RULES FOR PERSIAN STRUCTURED CONTENT:
+- Write ALL questions in Persian (فارسی). Do NOT use English.
+- Write ALL answers in Persian (فارسی). Do NOT use English.
+- Use SHORT recall-style answers: a single word or comma-separated list. No full sentences.
+- Generate mapping/relationship cards, NOT dictionary definitions.
+- Test فعل ↔ بن مضارع ↔ مشتقات relationships in BOTH directions.
+- Cover ALL entries in the input. Do NOT skip any verb. Do NOT select only a subset.
+
+Question styles to use:
+- بن مضارع X چیست؟ → Y
+- X بن مضارع کدام فعل است؟ → Y
+- مشتقات X چیست؟ → comma-separated list
+- بن ماضی X چیست؟ → Y
+
+AVOID:
+- "What is the present stem of the Persian verb..."
+- "The present stem of ... is ..."
+- Full-sentence explanatory answers
+- English words anywhere in questions or answers
+- Definition-style cards ("Definition:" / "Example:" format)
+
+Answer format: single word or short comma-separated list. Nothing more.
+"""
+
+
+def _generate_flashcards_from_persian_mapping(
+    text: str,
+    num_cards: int = 10,
+    skip_cache: bool = False,
+    max_tokens_override: Optional[int] = None,
+) -> str:
+    """Generate mapping-style flashcards from Persian structured linguistic content.
+
+    Tries deterministic generation first (parsing structured entries into cards).
+    Falls back to LLM prompt if parsing yields too few entries.
+    """
+    entries = _parse_persian_verb_entries(text)
+    if entries:
+        cards = _build_persian_mapping_cards(entries)
+        logger.info(
+            "Persian mapping: parsed %d entries → %d deterministic cards",
+            len(entries), len(cards),
+        )
+        if cards:
+            return json.dumps({"flashcards": cards}, ensure_ascii=False)
+
+    logger.info("Persian mapping: parser found %d entries, falling back to LLM", len(entries))
+    text_preview = text[:8000].strip()
+    if len(text) > 8000:
+        text_preview += "\n\n[... text truncated ...]"
+
+    json_schema = '''{
+  "flashcards": [
+    {
+      "question": "<سوال به فارسی>",
+      "answer_short": "<پاسخ کوتاه به فارسی>",
+      "answer_detailed": null,
+      "difficulty": "easy"
+    }
+  ]
+}'''
+
+    prompt = f"""{JSON_HEADER}
+
+LANGUAGE REQUIREMENT (HIGHEST PRIORITY):
+- ALL output (questions AND answers) MUST be in Persian (فارسی)
+- DO NOT use English
+- DO NOT mix languages
+- If you output in the wrong language, the response is INVALID
+
+You are generating flashcards from structured Persian linguistic content.
+
+Text:
+{text_preview}
+
+{_PERSIAN_MAPPING_RULES}
+
+Generate flashcards for ALL entries in the input. Do NOT omit any verb.
+If there are N verbs, you must cover all N.
+For each verb/item, generate cards testing BOTH directions (verb→stem AND stem→verb).
+
+{CONTENT_RULES}
+
+{JSON_OUTPUT_REQUIREMENT}
+
+Return ONLY this JSON structure (no other text):
+{json_schema}
+
+Rules:
+- Output MUST be valid JSON. No plain text, no Q/A format. Use double quotes. Escape newlines as \\n.
+{JSON_CLOSING_CONSTRAINT}"""
+
+    return generate_completion(prompt, skip_cache=skip_cache, max_tokens=max_tokens_override)
+
+
 def _generate_flashcards_from_text(
     text: str,
     language_hint: Optional[str] = None,
@@ -1008,6 +1235,12 @@ def _generate_flashcards_from_text(
     max_tokens_override: Optional[int] = None,
 ) -> str:
     """Generate flashcards from text: extract concepts first, then generate from concepts."""
+    if _is_persian_mapping_text(text):
+        logger.info("Detected Persian mapping text — using specialized mapping prompt")
+        return _generate_flashcards_from_persian_mapping(
+            text, num_cards=num_cards, skip_cache=skip_cache, max_tokens_override=max_tokens_override,
+        )
+
     concepts = _extract_concepts(
         text=text,
         language_hint=language_hint,
