@@ -3087,14 +3087,20 @@ async def generate_flashcards(
 
         topic_str = (payload.topic or "").strip()
 
+        is_persian_mapping_mode = bool(
+            text_input and _is_persian_mapping_text(text_input)
+        )
+        if is_persian_mapping_mode:
+            logger.info("Persian mapping mode detected — skipping transcript filters")
+
         # Grounding check: when text mode and strict_text_only, filter out unsupported cards
-        if text_input and payload.strict_text_only and cards:
+        if text_input and payload.strict_text_only and cards and not is_persian_mapping_mode:
             before_ground = len(cards)
             cards = _filter_ungrounded_cards(cards, text_input)
             logger.info("[text-mode] Stage 2 - after grounding: %d kept (removed %d)", len(cards), before_ground - len(cards))
 
         # Low-value filter: when text mode, remove transcript housekeeping cards
-        if text_input and cards:
+        if text_input and cards and not is_persian_mapping_mode:
             before_lv = len(cards)
             cards = _filter_low_value_transcript_cards(cards)
             logger.info("[text-mode] Stage 3 - after low-value filter: %d kept (removed %d)", len(cards), before_lv - len(cards))
@@ -3114,8 +3120,8 @@ async def generate_flashcards(
             if not text_input:
                 logger.info("After example filter: %d cards with examples", len(cards))
 
-        # Transcript-only: overlap reduction, cap at 8
-        if text_input and cards:
+        # Transcript-only: overlap reduction, cap at 8 (skip for Persian mapping mode)
+        if text_input and cards and not is_persian_mapping_mode:
             before_overlap = len(cards)
             cards = _reduce_transcript_overlaps(cards)
             logger.info("[text-mode] Stage 4 - after overlap reduction: %d kept (removed %d)", len(cards), before_overlap - len(cards))

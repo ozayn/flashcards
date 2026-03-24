@@ -26,6 +26,7 @@ function CreateDeckForm() {
   const [text, setText] = useState("");
   const [generationMode, setGenerationMode] = useState<GenerationMode>("topic");
   const [emptyDeckMode, setEmptyDeckMode] = useState(false);
+  const [useNameAsTopic, setUseNameAsTopic] = useState(false);
   const [cardCount, setCardCount] = useState(10);
   const [loading, setLoading] = useState(false);
   const router = useRouter();
@@ -43,10 +44,13 @@ function CreateDeckForm() {
   const topicTrimmed = topic.trim();
   const textTrimmed = text.trim();
 
+  const topicForGeneration =
+    topicTrimmed || (useNameAsTopic && !topicTrimmed ? nameTrimmed : "");
+
   const willGenerate =
     !emptyDeckMode &&
     (generationMode === "topic"
-      ? Boolean(topicTrimmed)
+      ? Boolean(topicForGeneration)
       : Boolean(textTrimmed));
 
   const submitLabel = loading
@@ -112,17 +116,20 @@ function CreateDeckForm() {
         return;
       }
 
+      const effectiveTopic =
+        generationMode === "topic" ? topicForGeneration : "";
+
       const deck = await createDeck({
         user_id: userId,
         name: effectiveDeckName,
         source_type:
           generationMode === "text"
             ? "text"
-            : topicTrimmed
+            : effectiveTopic
               ? "topic"
               : "manual",
         source_topic:
-          generationMode === "topic" && topicTrimmed ? topicTrimmed : undefined,
+          generationMode === "topic" && effectiveTopic ? effectiveTopic : undefined,
       });
       const deckId = (deck as { id: string }).id;
 
@@ -133,10 +140,10 @@ function CreateDeckForm() {
           num_cards: cardCount,
           language: "en",
         });
-      } else if (generationMode === "topic" && topicTrimmed) {
+      } else if (generationMode === "topic" && effectiveTopic) {
         await generateFlashcards({
           deck_id: deckId,
-          topic: topicTrimmed,
+          topic: effectiveTopic,
           num_cards: cardCount,
           language: "en",
         });
@@ -187,7 +194,7 @@ function CreateDeckForm() {
                 <p className="text-xs text-muted-foreground leading-relaxed">
                   {emptyDeckMode
                     ? "Required for an empty deck."
-                    : "Optional. If left blank, the topic will be used as the deck name."}
+                    : "If left blank and a topic is provided, the topic becomes the deck name."}
                 </p>
               </div>
 
@@ -221,8 +228,8 @@ function CreateDeckForm() {
                       Add cards
                     </h2>
                     <p className="text-xs text-muted-foreground leading-relaxed">
-                      Choose Topic or Text, then fill in the fields below. Cards are
-                      generated after the deck is created.
+                      Optional. Fill in a topic or text to generate cards automatically.
+                      Leave empty to create the deck without cards.
                     </p>
                   </div>
 
@@ -268,10 +275,22 @@ function CreateDeckForm() {
                           className="min-w-0"
                         />
                         <p className="text-xs text-muted-foreground">
-                          Use a short topic or concept. Saved for later reference and
-                          regeneration.
+                          Optional. Leave empty to create a deck without generating cards.
                         </p>
                       </div>
+                      {!topicTrimmed && (
+                        <label className="flex cursor-pointer items-center gap-2 text-sm">
+                          <input
+                            type="checkbox"
+                            checked={useNameAsTopic}
+                            onChange={(e) => setUseNameAsTopic(e.target.checked)}
+                            className="rounded border-input"
+                          />
+                          <span className="text-muted-foreground">
+                            Use deck name as topic for generation
+                          </span>
+                        </label>
+                      )}
                       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
                         <label
                           htmlFor="cardCount-topic"
