@@ -760,6 +760,104 @@ def _extract_json_simple(text: str) -> dict:
     return result
 
 
+_FORMULA_QA_PATTERNS = [
+    re.compile(r"(?:^|\n)\s*(?:Q|Question)\s*[:：]\s*(.+?)(?:\n\s*(?:A|Answer)\s*[:：]\s*(.+?))?(?:\n|$)", re.IGNORECASE | re.DOTALL),
+]
+
+
+_FORMULA_FALLBACK_QUESTION_TEMPLATES = [
+    "What is a key formula for {topic}?",
+    "What is the update rule for {topic}?",
+    "What equation is used in {topic}?",
+    "What is a common expression in {topic}?",
+    "How is {topic} expressed mathematically?",
+    "What is the main relationship in {topic}?",
+    "What is the iterative step in {topic}?",
+    "What is the parameter update equation for {topic}?",
+    "What is another formula related to {topic}?",
+    "What mathematical rule defines {topic}?",
+]
+
+
+_ANSWER_SHORT_RE = re.compile(
+    r'"answer_short"\s*:\s*"((?:[^"\\]|\\.)*)"\s*', re.DOTALL,
+)
+_QUESTION_RE = re.compile(
+    r'"question"\s*:\s*"((?:[^"\\]|\\.)*)"\s*', re.DOTALL,
+)
+
+
+def _looks_like_json(text: str) -> bool:
+    """Return True if text appears to be raw JSON/object structure."""
+    if not text:
+        return False
+    for marker in ('"flashcards"', '"answer_short"', '"question"', '"answer_detailed"'):
+        if marker in text:
+            return True
+    stripped = text.lstrip()
+    return stripped.startswith("{") or stripped.startswith("[")
+
+
+def _extract_formula_card_fallback(text: str, topic: str, card_index: int = 0) -> dict | None:
+    """Last-resort recovery for formula topics when JSON parsing fails entirely.
+
+    Fallback order:
+    1. Explicit Q/A patterns (Q: ... A: ...)
+    2. Extract answer_short (and optionally question) from malformed JSON
+    3. Raw short-text fallback (only if text is not JSON-like)
+    """
+    if not text or not text.strip():
+        return None
+    raw = text.strip()
+
+    topic_clean = re.sub(r"\b(?:formulas?|equations?)\b", "", topic, flags=re.IGNORECASE).strip().rstrip(",. ")
+    label = topic_clean or "this topic"
+    template = _FORMULA_FALLBACK_QUESTION_TEMPLATES[card_index % len(_FORMULA_FALLBACK_QUESTION_TEMPLATES)]
+    default_q = template.format(topic=label)
+
+    def _make_card(q: str, a: str) -> dict:
+        return {"flashcards": [{"question": q, "answer_short": a[:500], "answer_detailed": None, "difficulty": "easy"}]}
+
+    # --- Stage 1: explicit Q/A patterns ---
+    for pat in _FORMULA_QA_PATTERNS:
+        m = pat.search(raw)
+        if m:
+            q = (m.group(1) or "").strip().rstrip("?").strip()
+            a = (m.group(2) or "").strip() if m.lastindex and m.lastindex >= 2 else ""
+            if q and a and not _looks_like_json(a):
+                logger.debug("Formula fallback: Q/A pattern recovered")
+                return _make_card(q + "?", a)
+
+    # --- Stage 2: salvage answer_short from malformed JSON ---
+    m_ans = _ANSWER_SHORT_RE.search(raw)
+    if m_ans:
+        answer_val = m_ans.group(1).replace("\\n", "\n").replace('\\"', '"').replace("\\\\", "\\").strip()
+        if answer_val and not _looks_like_json(answer_val):
+            m_q = _QUESTION_RE.search(raw)
+            if m_q:
+                q_val = m_q.group(1).replace("\\n", "\n").replace('\\"', '"').replace("\\\\", "\\").strip()
+                if q_val and not _looks_like_json(q_val):
+                    q_val = q_val.rstrip("?").strip() + "?"
+                    logger.info("Formula fallback: extracted Q+A from malformed JSON")
+                    return _make_card(q_val, answer_val)
+            logger.info("Formula fallback: extracted answer_short from malformed JSON")
+            return _make_card(default_q, answer_val)
+
+    # --- Stage 3: raw short-text fallback (reject JSON-like content) ---
+    cleaned = re.sub(r"^```\w*\s*\n?", "", raw)
+    cleaned = re.sub(r"\n?```\s*$", "", cleaned).strip()
+    if not cleaned or len(cleaned) > 800:
+        return None
+    if cleaned.count("\n\n") > 2:
+        return None
+    if _looks_like_json(cleaned):
+        logger.info("Formula fallback: rejected JSON-like raw text")
+        return None
+
+    logger.debug("Formula fallback: used raw short-text")
+    return _make_card(default_q, cleaned)
+
+
 def _is_question_style_topic(topic: str) -> bool:
     """Return True if topic looks like a question or conceptual topic (contains ? or starts with question words)."""
     if not topic or not topic.strip():
@@ -2604,7 +2702,7 @@ async def generate_flashcards(
                                     "Formula strict parse failed (card %d, attempt %d): %s",
                                     i + 1, attempt + 1, e,
                                 )
-                                # On final attempt, try lenient parser before giving up
+                                # On final attempt, try lenient parsers before giving up
                                 if attempt == 2:
                                     try:
                                         result = _extract_json_simple(response_text)
@@ -2617,9 +2715,20 @@ async def generate_flashcards(
                                             parsed_json = {"flashcards": cards}
                                             break
                                     except Exception:
-                                        pass
+                                        logger.warning("Formula simple parse also failed (card %d)", i + 1)
+
+                                    heuristic = _extract_formula_card_fallback(response_text, topic_str, card_index=i)
+                                    if heuristic and heuristic.get("flashcards"):
+                                        fallback_q = heuristic["flashcards"][0].get("question", "")
+                                        logger.info(
+                                            "Formula heuristic fallback succeeded (card %d): %s",
+                                            i + 1, fallback_q,
+                                        )
+                                        parsed_json = heuristic
+                                        break
+
                                     msg = str(e) if str(e) else "Failed to generate flashcard"
-                                    logger.warning("Formula generation failed after 3 attempts, both parsers failed: %s", msg)
+                                    logger.warning("Formula generation failed after 3 attempts, all parsers failed: %s", msg)
                                     raise HTTPException(status_code=503, detail=msg)
 
                         if not parsed_json:
