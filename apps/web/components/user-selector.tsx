@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from "react";
 import { ChevronDown, Plus } from "lucide-react";
-import { getUsers, createUser, checkApiAvailability, apiUrl } from "@/lib/api";
+import { getUsers, createUser, waitForApiReadiness, apiUrl } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 const STORAGE_KEY = "flashcard_user_id";
@@ -32,7 +32,10 @@ export function UserSelector() {
   async function loadUsers() {
     setApiError(false);
     try {
-      const available = await checkApiAvailability();
+      const available = await waitForApiReadiness({
+        budgetMs: 14_000,
+        retryDelayMs: 1_500,
+      });
       if (!available) {
         setApiError(true);
         setUsers([]);
@@ -114,7 +117,13 @@ export function UserSelector() {
     }
   };
 
-  if (loading) return <span className="text-muted-foreground text-sm animate-pulse">Loading…</span>;
+  if (loading) {
+    return (
+      <span className="text-muted-foreground text-sm animate-pulse" title="Checking API">
+        Connecting…
+      </span>
+    );
+  }
 
   if (apiError) {
     return (

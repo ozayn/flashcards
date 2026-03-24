@@ -86,6 +86,22 @@ function getGenerationStatusIcon(deck: Deck): DeckMetadata | null {
 
 const UNCATEGORIZED = "__uncategorized__";
 
+function DeckListSkeleton({ rows = 4 }: { rows?: number }) {
+  return (
+    <div className="space-y-3" aria-hidden>
+      {Array.from({ length: rows }).map((_, i) => (
+        <div
+          key={i}
+          className="rounded-xl border border-neutral-200 dark:border-neutral-700 px-5 py-5 max-mobile:px-4 max-mobile:py-3.5 bg-muted/40 animate-pulse"
+        >
+          <div className="h-5 bg-muted-foreground/15 rounded w-[min(100%,14rem)] mb-2" />
+          <div className="h-4 bg-muted-foreground/10 rounded w-24" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function normalizeCategoryName(s: string): string {
   return s.trim().toLowerCase().replace(/\s+/g, " ");
 }
@@ -183,6 +199,8 @@ export default function DecksPage() {
   const [decks, setDecks] = useState<Deck[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [userId, setUserId] = useState<string | null>(null);
+  const [userResolved, setUserResolved] = useState(false);
+  const [decksLoading, setDecksLoading] = useState(false);
   const [decksError, setDecksError] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
   const [categoryModalOpen, setCategoryModalOpen] = useState(false);
@@ -216,18 +234,22 @@ export default function DecksPage() {
 
   useEffect(() => {
     async function resolveUserId() {
-      const stored = getStoredUserId();
-      if (stored) {
-        setUserId(stored);
-        return;
-      }
       try {
-        const users = await getUsers();
-        if (Array.isArray(users) && users.length > 0) {
-          setUserId(users[0].id);
+        const stored = getStoredUserId();
+        if (stored) {
+          setUserId(stored);
+          return;
         }
-      } catch {
-        setUserId(null);
+        try {
+          const users = await getUsers();
+          if (Array.isArray(users) && users.length > 0) {
+            setUserId(users[0].id);
+          }
+        } catch {
+          setUserId(null);
+        }
+      } finally {
+        setUserResolved(true);
       }
     }
     resolveUserId();
@@ -259,21 +281,33 @@ export default function DecksPage() {
   useEffect(() => {
     if (!userId) {
       setDecks([]);
+      setDecksLoading(false);
       return;
     }
     const uid = userId;
+    let cancelled = false;
     async function fetchDecks() {
+      setDecksLoading(true);
+      setDecksError(false);
       try {
-        setDecksError(false);
         const data = await getDecks(uid, showArchived);
-        setDecks(Array.isArray(data) ? data : []);
+        if (!cancelled) {
+          setDecks(Array.isArray(data) ? data : []);
+        }
       } catch (err) {
         console.error("Failed to load decks", err);
-        setDecks([]);
-        setDecksError(true);
+        if (!cancelled) {
+          setDecks([]);
+          setDecksError(true);
+        }
+      } finally {
+        if (!cancelled) setDecksLoading(false);
       }
     }
     fetchDecks();
+    return () => {
+      cancelled = true;
+    };
   }, [userId, showArchived, refreshKey]);
 
   async function handleArchiveDeck(deckId: string, archive: boolean, e: React.MouseEvent) {
@@ -493,6 +527,9 @@ export default function DecksPage() {
       return () => document.removeEventListener("click", handleClickOutside);
     }
   }, [openDeckMenuId]);
+
+  const showDeckListSkeleton =
+    !userResolved || (Boolean(userId) && decksLoading);
 
   return (
     <PageContainer>
@@ -763,9 +800,11 @@ export default function DecksPage() {
           </div>
         )}
 
-        <p className="text-muted-foreground text-sm">
-          Your flashcard decks will appear here.
-        </p>
+        {!showDeckListSkeleton && (
+          <p className="text-muted-foreground text-sm">
+            Your flashcard decks will appear here.
+          </p>
+        )}
 
         <label className="flex items-center gap-2 text-sm cursor-pointer">
           <input
@@ -778,7 +817,9 @@ export default function DecksPage() {
         </label>
 
         <div className="space-y-3">
-          {decksError ? (
+          {showDeckListSkeleton ? (
+            <DeckListSkeleton rows={5} />
+          ) : decksError ? (
             <Card>
               <CardHeader>
                 <CardTitle>Unable to load decks</CardTitle>

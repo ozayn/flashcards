@@ -29,16 +29,37 @@ export async function fetchApi<T>(
 }
 
 /** Lightweight API availability check using GET /. */
-export async function checkApiAvailability(): Promise<boolean> {
+export async function checkApiAvailability(timeoutMs = 8000): Promise<boolean> {
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 3000);
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
     const res = await fetch(`${API_BASE}/`, { signal: controller.signal });
     clearTimeout(timeout);
     return res.ok;
   } catch {
     return false;
   }
+}
+
+/** Poll until the API responds or the time budget is exhausted (cold-start friendly). */
+export async function waitForApiReadiness(options?: {
+  budgetMs?: number;
+  retryDelayMs?: number;
+  timeoutPerAttemptMs?: number;
+}): Promise<boolean> {
+  const budgetMs = options?.budgetMs ?? 14_000;
+  const retryDelayMs = options?.retryDelayMs ?? 1_500;
+  const timeoutPerAttemptMs = options?.timeoutPerAttemptMs ?? 8000;
+  const start = Date.now();
+  while (Date.now() - start < budgetMs) {
+    if (await checkApiAvailability(timeoutPerAttemptMs)) {
+      return true;
+    }
+    const remaining = budgetMs - (Date.now() - start);
+    if (remaining <= 0) break;
+    await new Promise((r) => setTimeout(r, Math.min(retryDelayMs, remaining)));
+  }
+  return false;
 }
 
 export async function getUsers() {
