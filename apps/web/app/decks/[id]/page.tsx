@@ -67,30 +67,133 @@ function slugFromTitle(title: string): string {
   );
 }
 
+const CARD_DIVIDER = "--------------------------------------------------";
+
+/** Collapse runs of blank lines; trim ends */
+function collapseBlankLines(s: string): string {
+  return s
+    .trim()
+    .replace(/\r\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n");
+}
+
+/**
+ * Strip leading "What is a/an X?" → "X" when the pattern is a simple definitional question.
+ * Keeps the original question if it looks like "What is the …" or other non-obvious forms.
+ */
+function cleanupExportTitle(question: string): string {
+  const q = question.trim();
+  if (!q) return q;
+
+  let m = /^what\s+is\s+a\s+(.+?)\?*\s*$/i.exec(q);
+  if (m) return m[1].trim();
+
+  m = /^what\s+is\s+an\s+(.+?)\?*\s*$/i.exec(q);
+  if (m) return m[1].trim();
+
+  m = /^what\s+is\s+(.+?)\?*\s*$/i.exec(q);
+  if (m) {
+    const inner = m[1].trim();
+    if (!/^the\b/i.test(inner)) return inner;
+  }
+
+  return q;
+}
+
+/** Split answer_short into Definition / Example blocks when labels are present */
+function parseAnswerForExport(answer: string): {
+  definition: string | null;
+  example: string | null;
+  plain: string | null;
+} {
+  const raw = answer.replace(/\r\n/g, "\n").trim();
+  if (!raw) return { definition: null, example: null, plain: null };
+
+  const exRe = /(?:^|\n)\s*example:\s*/i;
+  const exMatch = exRe.exec(raw);
+  let beforeExample = raw;
+  let exampleBody: string | null = null;
+  if (exMatch && exMatch.index !== undefined) {
+    beforeExample = raw.slice(0, exMatch.index).trim();
+    exampleBody = raw.slice(exMatch.index + exMatch[0].length).trim();
+  }
+
+  const defLabel = beforeExample.match(/^\s*definition:\s*([\s\S]*)/i);
+  if (defLabel) {
+    return {
+      definition: collapseBlankLines(defLabel[1]),
+      example: exampleBody ? collapseBlankLines(exampleBody) : null,
+      plain: null,
+    };
+  }
+
+  if (exampleBody !== null) {
+    return {
+      definition: beforeExample ? collapseBlankLines(beforeExample) : null,
+      example: collapseBlankLines(exampleBody),
+      plain: null,
+    };
+  }
+
+  return { definition: null, example: null, plain: collapseBlankLines(raw) };
+}
+
 function exportDeckAsTxt(
   deckName: string,
   categoryName: string,
   cards: Flashcard[]
 ): void {
   const lines: string[] = [
-    `Deck: ${deckName}`,
+    deckName.trim().toUpperCase(),
     `Category: ${categoryName}`,
+    `Cards: ${cards.length}`,
     "",
   ];
+
   if (cards.length === 0) {
     lines.push("No cards available.");
   } else {
     cards.forEach((card, i) => {
-      lines.push(`${i + 1}.`);
-      lines.push(`Q: ${(card.question || "").trim()}`);
-      lines.push(`A: ${(card.answer_short || "").trim()}`);
-      const detailed = (card.answer_detailed || "").trim();
-      if (detailed && detailed !== (card.answer_short || "").trim()) {
-        lines.push(`Details: ${detailed}`);
-      }
+      const q = (card.question || "").trim();
+      const title = cleanupExportTitle(q);
+      const lineTitle = `${i + 1}. ${title}`;
+
+      const shortTrim = (card.answer_short || "").trim();
+      const detailedTrim = (card.answer_detailed || "").trim();
+      const { definition, example, plain } = parseAnswerForExport(
+        card.answer_short || ""
+      );
+
+      lines.push(CARD_DIVIDER);
+      lines.push(lineTitle);
       lines.push("");
+
+      if (plain) {
+        lines.push(plain);
+      } else {
+        if (definition) {
+          lines.push("Definition:");
+          lines.push(definition);
+        }
+        if (example) {
+          lines.push("");
+          lines.push("Example:");
+          lines.push(example);
+        }
+        if (!definition && !example) {
+          lines.push(shortTrim || "(empty answer)");
+        }
+      }
+
+      if (detailedTrim && detailedTrim !== shortTrim) {
+        lines.push("");
+        lines.push("More detail:");
+        lines.push(collapseBlankLines(detailedTrim));
+      }
     });
+    lines.push(CARD_DIVIDER);
   }
+
   const blob = new Blob([lines.join("\n")], { type: "text/plain;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
