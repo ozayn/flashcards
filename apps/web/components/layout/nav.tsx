@@ -10,14 +10,19 @@ import { UserSettings } from "@/components/user-settings";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 
-type NavLink = { href: string; label: string; primary?: boolean };
+type NavLink = { href: string; label: string; primary?: boolean; matchPrefixes?: string[] };
 
 const appNavLinks: NavLink[] = [
-  { href: "/decks", label: "Decks" },
+  { href: "/decks", label: "Decks", matchPrefixes: ["/decks", "/categories"] },
   { href: "/study", label: "Study" },
   { href: "/create-deck", label: "Create Deck" },
   { href: "/about", label: "About" },
 ];
+
+function isNavActive(link: NavLink, pathname: string): boolean {
+  const prefixes = link.matchPrefixes ?? [link.href];
+  return prefixes.some((p) => pathname === p || pathname.startsWith(p + "/"));
+}
 
 const landingNavLinks: NavLink[] = [
   { href: "/about", label: "About" },
@@ -52,20 +57,24 @@ export function Nav() {
 
         {/* Center: Desktop nav (hidden on mobile) */}
         <div className="hidden md:flex items-center gap-6">
-          {navLinks.map(({ href, label, primary }) => (
-            primary ? (
-              <Link key={href} href={href}>
+          {navLinks.map((link) => (
+            link.primary ? (
+              <Link key={link.href} href={link.href}>
                 <Button size="sm" className="rounded-lg">
-                  {label}
+                  {link.label}
                 </Button>
               </Link>
             ) : (
               <Link
-                key={href}
-                href={href}
-                className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+                key={link.href}
+                href={link.href}
+                className={`text-sm transition-colors ${
+                  isNavActive(link, pathname)
+                    ? "text-foreground font-medium"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
               >
-                {label}
+                {link.label}
               </Link>
             )
           ))}
@@ -102,20 +111,24 @@ export function Nav() {
         <div className="md:hidden border-t border-border bg-background">
           <div className="max-w-4xl mx-auto px-6 md:px-8 py-4 max-mobile:px-4">
             <div className="flex flex-col gap-2">
-              {navLinks.map(({ href, label, primary }) => (
+              {navLinks.map((link) => (
                 <Link
-                  key={href}
-                  href={href}
+                  key={link.href}
+                  href={link.href}
                   onClick={() => setMobileOpen(false)}
-                  className={primary ? "block" : ""}
+                  className={link.primary ? "block" : ""}
                 >
-                  {primary ? (
+                  {link.primary ? (
                     <Button size="sm" className="rounded-lg w-full">
-                      {label}
+                      {link.label}
                     </Button>
                   ) : (
-                    <span className="block py-2 text-sm text-muted-foreground hover:text-foreground">
-                      {label}
+                    <span className={`block py-2 text-sm ${
+                      isNavActive(link, pathname)
+                        ? "text-foreground font-medium"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}>
+                      {link.label}
                     </span>
                   )}
                 </Link>

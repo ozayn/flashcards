@@ -994,7 +994,7 @@ export default function DecksPage() {
                           onClick={(e) => e.stopPropagation()}
                           className="inline-flex h-7 items-center rounded-md border border-neutral-300 dark:border-neutral-600 px-2.5 text-xs font-medium text-muted-foreground hover:text-foreground active:opacity-80"
                         >
-                          Open
+                          Explore
                         </Link>
                         <button
                           type="button"

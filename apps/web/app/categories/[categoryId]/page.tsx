@@ -90,15 +90,28 @@ export default function CategoryPage({ params }: CategoryPageProps) {
               {totalCards > 0 && <> · {totalCards} card{totalCards !== 1 ? "s" : ""}</>}
             </p>
           </div>
-          {decks.length > 0 && (
-            <Link
-              href={`/study/category/${params.categoryId}`}
-              className="inline-flex h-11 items-center gap-2 justify-center rounded-lg bg-neutral-900 text-white hover:bg-neutral-800 active:opacity-80 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200 px-5 text-sm font-medium shrink-0 w-full sm:w-auto"
+          <div className="flex rounded-lg border border-neutral-200 dark:border-neutral-700 overflow-hidden shrink-0 w-full sm:w-auto">
+            <span
+              className="inline-flex h-10 sm:h-9 items-center justify-center px-4 text-sm font-medium bg-neutral-900 text-white dark:bg-neutral-100 dark:text-neutral-900 flex-1 sm:flex-none cursor-default"
+              aria-current="page"
             >
-              <BookOpen className="size-4" />
-              Study category
-            </Link>
-          )}
+              Explore
+            </span>
+            {decks.length > 0 ? (
+              <Link
+                href={`/study/category/${params.categoryId}`}
+                className="inline-flex h-10 sm:h-9 items-center justify-center gap-1.5 px-4 text-sm font-medium bg-background text-muted-foreground hover:text-foreground hover:bg-muted active:opacity-80 transition-colors flex-1 sm:flex-none border-l border-neutral-200 dark:border-neutral-700"
+              >
+                <BookOpen className="size-3.5" />
+                Study
+              </Link>
+            ) : (
+              <span className="inline-flex h-10 sm:h-9 items-center justify-center gap-1.5 px-4 text-sm font-medium bg-background text-muted-foreground/40 cursor-not-allowed flex-1 sm:flex-none border-l border-neutral-200 dark:border-neutral-700">
+                <BookOpen className="size-3.5" />
+                Study
+              </span>
+            )}
+          </div>
         </div>
 
         {decks.length === 0 ? (

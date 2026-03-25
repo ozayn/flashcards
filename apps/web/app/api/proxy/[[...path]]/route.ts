@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getBackendUrl } from "@/lib/backend-url";
 
+const PROXY_TIMEOUT_MS = 15_000;
+
+// Rate-limit error logging: at most once per 10 seconds
+let lastErrorLogMs = 0;
+const ERROR_LOG_INTERVAL_MS = 10_000;
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ path?: string[] }> }
@@ -60,18 +66,23 @@ async function proxy(
     body = await request.text();
   }
 
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), PROXY_TIMEOUT_MS);
+
   try {
     const res = await fetch(targetUrl, {
       method: request.method,
       headers,
       body,
+      signal: controller.signal,
     });
+
+    clearTimeout(timeout);
 
     const resBody = await res.text();
     const responseHeaders = new Headers();
     const contentType = res.headers.get("content-type");
     if (contentType) responseHeaders.set("content-type", contentType);
-    // 204/304 must not have a body per HTTP spec
     const responseBody = (res.status === 204 || res.status === 304) ? null : resBody;
     return new NextResponse(responseBody, {
       status: res.status,
@@ -79,17 +90,32 @@ async function proxy(
       headers: responseHeaders,
     });
   } catch (err) {
-    let urlHint = "unknown";
-    try {
-      const u = new URL(targetUrl);
-      urlHint = `${u.protocol}//${u.hostname}:${u.port || "(default)"}`;
-    } catch {
-      urlHint = targetUrl.slice(0, 50);
+    clearTimeout(timeout);
+
+    const now = Date.now();
+    if (now - lastErrorLogMs >= ERROR_LOG_INTERVAL_MS) {
+      lastErrorLogMs = now;
+      let urlHint = "unknown";
+      try {
+        const u = new URL(targetUrl);
+        urlHint = `${u.protocol}//${u.hostname}:${u.port || "(default)"}`;
+      } catch {
+        urlHint = targetUrl.slice(0, 50);
+      }
+      const msg = err instanceof Error ? err.message : String(err);
+      const isTimeout = controller.signal.aborted;
+      console.error(
+        `Proxy error: ${isTimeout ? "timeout" : msg} | target: ${urlHint} | ${request.method} /${pathStr}`
+      );
     }
-    console.error("Proxy error:", err instanceof Error ? err.message : err, "| target:", urlHint);
+
+    const retryAfter = controller.signal.aborted ? "5" : "3";
     return NextResponse.json(
-      { detail: "Backend unavailable" },
-      { status: 503 }
+      { detail: "Backend unavailable", retry: true },
+      {
+        status: 503,
+        headers: { "Retry-After": retryAfter },
+      }
     );
   }
 }
