@@ -218,14 +218,14 @@ export function FlashcardModal({
               <FlashcardFlip
                 key={card.id}
                 question={
-                  <span className="text-2xl font-medium leading-relaxed text-foreground">
+                  <span className="text-2xl sm:text-3xl lg:text-4xl font-medium leading-snug sm:leading-relaxed text-foreground">
                     {card.question}
                   </span>
                 }
                 answer={
                   <FormattedText
                     text={card.answer_short}
-                    className="whitespace-pre-line text-xl leading-relaxed text-foreground"
+                    className="whitespace-pre-line text-xl sm:text-2xl lg:text-[1.75rem] leading-relaxed text-foreground"
                   />
                 }
                 className="w-full"

@@ -49,7 +49,7 @@ export function FlashcardFlip({
         }
       }}
       className={cn(
-        "flashcard relative w-full max-w-2xl aspect-[3/2] overflow-hidden rounded-2xl",
+        "flashcard relative w-full max-w-2xl sm:max-w-3xl aspect-[3/2] overflow-hidden rounded-2xl",
         "border border-neutral-200 shadow-lg flashcard-paper dark:border-neutral-700",
         "cursor-pointer select-none transition-shadow hover:shadow-xl active:shadow-md",
         className
@@ -62,14 +62,14 @@ export function FlashcardFlip({
         )}
       >
         {/* Front face - question */}
-        <div className="flashcard-face flashcard-front absolute inset-0 w-full h-full flex flex-col items-stretch justify-start p-6 md:p-10 text-start rounded-2xl border border-neutral-200 shadow-lg flashcard-paper dark:border-neutral-700">
+        <div className="flashcard-face flashcard-front absolute inset-0 w-full h-full flex flex-col items-stretch justify-start p-6 md:p-10 lg:p-12 text-start rounded-2xl border border-neutral-200 shadow-lg flashcard-paper dark:border-neutral-700">
           <div className="flex-1 min-h-0 w-full overflow-y-auto overflow-x-hidden">
             {question}
           </div>
         </div>
 
         {/* Back face - answer */}
-        <div className="flashcard-face flashcard-back absolute inset-0 w-full h-full flex flex-col items-stretch justify-start px-6 md:px-10 pt-6 pb-4 text-start rounded-2xl border border-neutral-200 shadow-lg flashcard-paper dark:border-neutral-700">
+        <div className="flashcard-face flashcard-back absolute inset-0 w-full h-full flex flex-col items-stretch justify-start px-6 md:px-10 lg:px-12 pt-6 pb-4 text-start rounded-2xl border border-neutral-200 shadow-lg flashcard-paper dark:border-neutral-700">
           <div className="flex-1 min-h-0 w-full overflow-y-auto overflow-x-hidden">
             {answer}
           </div>

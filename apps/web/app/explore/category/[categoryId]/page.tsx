@@ -428,7 +428,7 @@ export default function CategoryExplorePage({ params }: CategoryExplorePageProps
               onTouchStart={handleTouchStart}
               onTouchEnd={handleTouchEnd}
               dir="auto"
-              className="flashcard relative w-full max-w-2xl aspect-[3/2] rounded-2xl shadow-lg overflow-hidden flex flex-col touch-pan-y transition-all duration-200 ease-out hover:-translate-y-1 hover:shadow-xl hover:rotate-[0.3deg] active:translate-y-0 active:shadow-md"
+              className="flashcard relative w-full max-w-2xl sm:max-w-3xl aspect-[3/2] rounded-2xl shadow-lg overflow-hidden flex flex-col touch-pan-y transition-all duration-200 ease-out hover:-translate-y-1 hover:shadow-xl hover:rotate-[0.3deg] active:translate-y-0 active:shadow-md"
             >
               <div className="absolute top-4 right-4 sm:top-6 sm:right-6 text-xs sm:text-sm text-muted-foreground z-10">
                 {currentCardIndex + 1} / {flashcards.length}
@@ -439,7 +439,7 @@ export default function CategoryExplorePage({ params }: CategoryExplorePageProps
                   <div className="flex-1 min-h-0 w-full overflow-y-auto">
                     <FormattedText
                       text={card.question}
-                      className="text-2xl font-medium leading-relaxed"
+                      className="text-2xl sm:text-3xl lg:text-4xl font-medium leading-snug sm:leading-relaxed"
                     />
                   </div>
                 }
@@ -447,13 +447,13 @@ export default function CategoryExplorePage({ params }: CategoryExplorePageProps
                   <div className="flex-1 min-h-0 flex flex-col items-stretch justify-start w-full overflow-y-auto cursor-pointer">
                     <FormattedText
                       text={card.answer_short}
-                      className="whitespace-pre-line text-xl leading-relaxed mt-6"
+                      className="whitespace-pre-line text-xl sm:text-2xl lg:text-[1.75rem] leading-relaxed mt-6 sm:mt-8"
                     />
                     {card.answer_detailed &&
                       card.answer_detailed.trim() !== card.answer_short.trim() && (
                         <FormattedText
                           text={card.answer_detailed}
-                          className="whitespace-pre-line text-muted-foreground mt-4"
+                          className="whitespace-pre-line text-base sm:text-lg lg:text-xl text-muted-foreground mt-4 sm:mt-5"
                         />
                       )}
                   </div>
