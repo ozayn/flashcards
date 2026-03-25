@@ -248,7 +248,7 @@ export default function DecksPage() {
       try {
         localStorage.setItem(
           "flashcards_collapsed_categories",
-          JSON.stringify([...next])
+          JSON.stringify(Array.from(next))
         );
       } catch {}
       return next;
