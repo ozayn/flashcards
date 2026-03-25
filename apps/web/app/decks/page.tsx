@@ -937,36 +937,24 @@ export default function DecksPage() {
                         <div className="hidden sm:flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity shrink-0">
                           {group.decks.length > 0 && (
                             <>
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <Link
-                                    href={`/explore/category/${group.categoryId}`}
-                                    onClick={(e) => e.stopPropagation()}
-                                    className="p-1.5 rounded hover:bg-muted/60 transition-colors"
-                                    aria-label="Explore this category"
-                                  >
-                                    <Eye className="w-4 h-4 text-muted-foreground" />
-                                  </Link>
-                                </TooltipTrigger>
-                                <TooltipContent side="top" className="text-xs">
-                                  Explore cards
-                                </TooltipContent>
-                              </Tooltip>
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <Link
-                                    href={`/study/category/${group.categoryId}`}
-                                    onClick={(e) => e.stopPropagation()}
-                                    className="p-1.5 rounded hover:bg-primary/10 transition-colors"
-                                    aria-label="Study this category"
-                                  >
-                                    <BookOpen className="w-4 h-4 text-muted-foreground" />
-                                  </Link>
-                                </TooltipTrigger>
-                                <TooltipContent side="top" className="text-xs">
-                                  Study category
-                                </TooltipContent>
-                              </Tooltip>
+                              <Link
+                                href={`/explore/category/${group.categoryId}`}
+                                onClick={(e) => e.stopPropagation()}
+                                className="p-1.5 rounded hover:bg-muted/60 transition-colors"
+                                aria-label="Explore this category"
+                                title="Explore cards"
+                              >
+                                <Eye className="w-4 h-4 text-muted-foreground" />
+                              </Link>
+                              <Link
+                                href={`/study/category/${group.categoryId}`}
+                                onClick={(e) => e.stopPropagation()}
+                                className="p-1.5 rounded hover:bg-primary/10 transition-colors"
+                                aria-label="Study this category"
+                                title="Study category"
+                              >
+                                <BookOpen className="w-4 h-4 text-muted-foreground" />
+                              </Link>
                             </>
                           )}
                           <button
