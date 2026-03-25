@@ -20,6 +20,7 @@ import {
   BookOpen,
   ChevronDown,
   CircleAlert,
+  Eye,
   FolderInput,
   Loader2,
   MoreVertical,
@@ -935,21 +936,38 @@ export default function DecksPage() {
                       {group.categoryId !== UNCATEGORIZED && (
                         <div className="hidden sm:flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity shrink-0">
                           {group.decks.length > 0 && (
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Link
-                                  href={`/study/category/${group.categoryId}`}
-                                  onClick={(e) => e.stopPropagation()}
-                                  className="p-1.5 rounded hover:bg-primary/10 transition-colors"
-                                  aria-label="Study this category"
-                                >
-                                  <BookOpen className="w-4 h-4 text-muted-foreground" />
-                                </Link>
-                              </TooltipTrigger>
-                              <TooltipContent side="top" className="text-xs">
-                                Study this category
-                              </TooltipContent>
-                            </Tooltip>
+                            <>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Link
+                                    href={`/explore/category/${group.categoryId}`}
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="p-1.5 rounded hover:bg-muted/60 transition-colors"
+                                    aria-label="Explore this category"
+                                  >
+                                    <Eye className="w-4 h-4 text-muted-foreground" />
+                                  </Link>
+                                </TooltipTrigger>
+                                <TooltipContent side="top" className="text-xs">
+                                  Explore cards
+                                </TooltipContent>
+                              </Tooltip>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Link
+                                    href={`/study/category/${group.categoryId}`}
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="p-1.5 rounded hover:bg-primary/10 transition-colors"
+                                    aria-label="Study this category"
+                                  >
+                                    <BookOpen className="w-4 h-4 text-muted-foreground" />
+                                  </Link>
+                                </TooltipTrigger>
+                                <TooltipContent side="top" className="text-xs">
+                                  Study category
+                                </TooltipContent>
+                              </Tooltip>
+                            </>
                           )}
                           <button
                             type="button"
@@ -979,23 +997,27 @@ export default function DecksPage() {
                     {group.categoryId !== UNCATEGORIZED && (
                       <div className="flex sm:hidden items-center gap-2 mb-2 pl-7">
                         {group.decks.length > 0 && (
-                          <Link
-                            href={`/study/category/${group.categoryId}`}
-                            onClick={(e) => e.stopPropagation()}
-                            className="inline-flex h-7 items-center gap-1.5 rounded-md bg-neutral-900 text-white dark:bg-neutral-100 dark:text-neutral-900 px-2.5 text-xs font-medium active:opacity-80"
-                            aria-label="Study this category"
-                          >
-                            <BookOpen className="w-3.5 h-3.5" />
-                            Study
-                          </Link>
+                          <>
+                            <Link
+                              href={`/explore/category/${group.categoryId}`}
+                              onClick={(e) => e.stopPropagation()}
+                              className="inline-flex h-7 items-center gap-1.5 rounded-md border border-neutral-300 dark:border-neutral-600 px-2.5 text-xs font-medium text-muted-foreground hover:text-foreground active:opacity-80"
+                              aria-label="Explore this category"
+                            >
+                              <Eye className="w-3.5 h-3.5" />
+                              Explore
+                            </Link>
+                            <Link
+                              href={`/study/category/${group.categoryId}`}
+                              onClick={(e) => e.stopPropagation()}
+                              className="inline-flex h-7 items-center gap-1.5 rounded-md bg-neutral-900 text-white dark:bg-neutral-100 dark:text-neutral-900 px-2.5 text-xs font-medium active:opacity-80"
+                              aria-label="Study this category"
+                            >
+                              <BookOpen className="w-3.5 h-3.5" />
+                              Study
+                            </Link>
+                          </>
                         )}
-                        <Link
-                          href={`/categories/${group.categoryId}`}
-                          onClick={(e) => e.stopPropagation()}
-                          className="inline-flex h-7 items-center rounded-md border border-neutral-300 dark:border-neutral-600 px-2.5 text-xs font-medium text-muted-foreground hover:text-foreground active:opacity-80"
-                        >
-                          Explore
-                        </Link>
                         <button
                           type="button"
                           onClick={(e) => {

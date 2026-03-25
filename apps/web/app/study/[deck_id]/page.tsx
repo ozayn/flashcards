@@ -25,7 +25,13 @@ interface StudyFlashcard {
 type StudyMode = "study" | "explore";
 
 export default function StudyPage({ params }: StudyPageProps) {
-  const [mode, setMode] = useState<StudyMode>("study");
+  const [mode, setMode] = useState<StudyMode>(() => {
+    if (typeof window !== "undefined") {
+      const p = new URLSearchParams(window.location.search);
+      if (p.get("mode") === "explore") return "explore";
+    }
+    return "study";
+  });
   const [flashcards, setFlashcards] = useState<StudyFlashcard[]>([]);
   const [loading, setLoading] = useState(true);
   const [noUserForStudy, setNoUserForStudy] = useState(false);
