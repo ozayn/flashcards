@@ -807,11 +807,11 @@ export default function DeckPage({ params }: DeckPageProps) {
                     onClick={() => setModalCardIndex(index)}
                     className="flex-1 min-w-0 text-start cursor-pointer hover:opacity-90 transition-opacity"
                   >
-                    <div className="flex flex-col gap-1">
-                      <div dir="auto" className="font-medium text-base leading-snug max-mobile:text-[15px] max-mobile:leading-[1.4]">
+                    <div className="flex flex-col gap-1.5">
+                      <div dir="auto" className="font-semibold text-xl leading-snug max-mobile:text-lg max-mobile:leading-snug">
                         {card.question}
                       </div>
-                      <div dir="auto" className="text-sm text-neutral-500 leading-snug dark:text-neutral-400 max-mobile:text-[14px] max-mobile:text-[#555] dark:max-mobile:text-neutral-400 line-clamp-2">
+                      <div dir="auto" className="text-sm text-muted-foreground leading-relaxed max-mobile:text-[13px] line-clamp-2">
                         <FormattedText text={card.answer_short} className="text-inherit" />
                       </div>
                     </div>
