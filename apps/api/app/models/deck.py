@@ -38,6 +38,9 @@ class Deck(Base):
     category_id: Mapped[Optional[str]] = mapped_column(
         UUID(as_uuid=False), ForeignKey("categories.id", ondelete="SET NULL"), nullable=True
     )
+    category_assigned_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime, nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, nullable=False
     )

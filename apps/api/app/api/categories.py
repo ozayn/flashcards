@@ -1,12 +1,13 @@
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select, update
+from sqlalchemy import case, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.models import Category, Deck
+from app.models import Category, Deck, Flashcard
 from app.schemas.category import CategoryCreate, CategoryResponse, CategoryUpdate
+from app.schemas.deck import DeckResponse
 
 router = APIRouter(prefix="/categories", tags=["categories"])
 
@@ -90,6 +91,48 @@ async def update_category(
     return CategoryResponse.model_validate(category)
 
 
+@router.get("/{category_id}/decks", response_model=List[DeckResponse])
+async def get_category_decks(
+    category_id: str,
+    user_id: str = Query(..., description="User ID (must own the category)"),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get non-archived decks in a category, ordered by category_assigned_at ASC.
+    Nulls (legacy decks) sort to the end, using created_at as tiebreaker."""
+    result = await db.execute(
+        select(Category).where(Category.id == category_id, Category.user_id == user_id)
+    )
+    if result.scalar_one_or_none() is None:
+        raise HTTPException(status_code=404, detail="Category not found")
+    sort_key = case(
+        (Deck.category_assigned_at.isnot(None), Deck.category_assigned_at),
+        else_=Deck.created_at,
+    )
+    decks_result = await db.execute(
+        select(Deck)
+        .where(
+            Deck.category_id == category_id,
+            Deck.user_id == user_id,
+            Deck.archived == False,
+        )
+        .order_by(sort_key.asc())
+    )
+    decks = decks_result.scalars().all()
+    if not decks:
+        return []
+    deck_ids = [d.id for d in decks]
+    count_result = await db.execute(
+        select(Flashcard.deck_id, func.count(Flashcard.id))
+        .where(Flashcard.deck_id.in_(deck_ids))
+        .group_by(Flashcard.deck_id)
+    )
+    counts = {row[0]: row[1] for row in count_result.all()}
+    return [
+        DeckResponse.model_validate(d).model_copy(update={"card_count": counts.get(d.id, 0)})
+        for d in decks
+    ]
+
+
 @router.delete("/{category_id}", status_code=204)
 async def delete_category(
     category_id: str,
@@ -104,6 +147,6 @@ async def delete_category(
     if not category:
         raise HTTPException(status_code=404, detail="Category not found")
     # Explicitly nullify deck.category_id before delete (ensures SQLite works; DB ON DELETE SET NULL is backup)
-    await db.execute(update(Deck).where(Deck.category_id == category_id).values(category_id=None))
+    await db.execute(update(Deck).where(Deck.category_id == category_id).values(category_id=None, category_assigned_at=None))
     await db.delete(category)
     await db.flush()

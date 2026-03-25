@@ -242,6 +242,15 @@ export async function updateCategory(
   return res.json();
 }
 
+export async function getCategoryDecks(categoryId: string, userId: string) {
+  const res = await fetch(
+    `${API_BASE}/categories/${categoryId}/decks?user_id=${encodeURIComponent(userId)}`,
+    { cache: "no-store" }
+  );
+  if (!res.ok) throw new Error("Failed to fetch category decks");
+  return res.json();
+}
+
 export async function deleteCategory(id: string, userId: string) {
   const res = await fetch(`${API_BASE}/categories/${id}?user_id=${userId}`, {
     method: "DELETE",

@@ -180,7 +180,10 @@ async def update_deck(
                     status_code=403,
                     detail="Category not found or does not belong to you",
                 )
+        old_cat_id = deck.category_id
         deck.category_id = new_cat_id
+        if new_cat_id != old_cat_id:
+            deck.category_assigned_at = datetime.utcnow() if new_cat_id else None
 
     await db.flush()
     await db.refresh(deck)
@@ -202,6 +205,7 @@ async def move_deck(
 
     raw = payload.category_id
     category_id = (raw.strip() if raw else None) or None
+    old_cat_id = deck.category_id
     if not category_id:
         deck.category_id = None
     else:
@@ -217,6 +221,8 @@ async def move_deck(
                 detail="Category not found or does not belong to you",
             )
         deck.category_id = category_id
+    if category_id != old_cat_id:
+        deck.category_assigned_at = datetime.utcnow() if category_id else None
 
     await db.flush()
     await db.refresh(deck)

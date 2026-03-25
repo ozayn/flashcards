@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -17,6 +17,8 @@ import {
 import {
   Archive,
   ArchiveRestore,
+  BookOpen,
+  ChevronDown,
   CircleAlert,
   FolderInput,
   Loader2,
@@ -228,6 +230,29 @@ export default function DecksPage() {
   const [renameDeckSaving, setRenameDeckSaving] = useState(false);
   const [deleteDeckConfirmId, setDeleteDeckConfirmId] = useState<string | null>(null);
   const [deleteDeckError, setDeleteDeckError] = useState<string | null>(null);
+  const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem("flashcards_collapsed_categories");
+      if (stored) setCollapsedCategories(new Set(JSON.parse(stored)));
+    } catch {}
+  }, []);
+
+  const toggleCollapsed = useCallback((categoryId: string) => {
+    setCollapsedCategories((prev) => {
+      const next = new Set(prev);
+      if (next.has(categoryId)) next.delete(categoryId);
+      else next.add(categoryId);
+      try {
+        localStorage.setItem(
+          "flashcards_collapsed_categories",
+          JSON.stringify([...next])
+        );
+      } catch {}
+      return next;
+    });
+  }, []);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
@@ -875,23 +900,112 @@ export default function DecksPage() {
                   isOver={isDropTarget}
                 >
                   <div
-                    className={`group flex items-center justify-between mb-2 ${idx === 0 ? "mt-0" : "mt-6"}`}
+                    className={`group ${idx === 0 ? "mt-0" : "mt-8"}`}
                   >
-                    <h2 className="text-xs font-medium text-muted-foreground tracking-wide">
-                      {group.categoryName}
-                    </h2>
+                    <div className="flex items-center gap-2 min-h-[44px] mb-1">
+                      <button
+                        type="button"
+                        onClick={() => toggleCollapsed(group.categoryId)}
+                        className="p-1.5 -ml-1.5 rounded hover:bg-muted transition-colors shrink-0"
+                        aria-label={collapsedCategories.has(group.categoryId) ? "Expand category" : "Collapse category"}
+                      >
+                        <ChevronDown
+                          className={`w-4 h-4 text-muted-foreground transition-transform duration-200 ${
+                            collapsedCategories.has(group.categoryId) ? "-rotate-90" : ""
+                          }`}
+                        />
+                      </button>
+                      <div className="flex items-center gap-2 flex-1 min-w-0">
+                        {group.categoryId !== UNCATEGORIZED ? (
+                          <Link
+                            href={`/categories/${group.categoryId}`}
+                            className="text-base font-semibold text-foreground hover:text-foreground/70 transition-colors truncate"
+                          >
+                            {group.categoryName}
+                          </Link>
+                        ) : (
+                          <span className="text-base font-semibold text-foreground truncate">
+                            {group.categoryName}
+                          </span>
+                        )}
+                        <span className="text-xs text-muted-foreground tabular-nums shrink-0">
+                          {group.decks.length}
+                        </span>
+                      </div>
+                      {group.categoryId !== UNCATEGORIZED && (
+                        <div className="hidden sm:flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity shrink-0">
+                          {group.decks.length > 0 && (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Link
+                                  href={`/study/category/${group.categoryId}`}
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="p-1.5 rounded hover:bg-primary/10 transition-colors"
+                                  aria-label="Study this category"
+                                >
+                                  <BookOpen className="w-4 h-4 text-muted-foreground" />
+                                </Link>
+                              </TooltipTrigger>
+                              <TooltipContent side="top" className="text-xs">
+                                Study this category
+                              </TooltipContent>
+                            </Tooltip>
+                          )}
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openRenameModal(group.categoryId, group.categoryName);
+                            }}
+                            className="p-1.5 rounded hover:bg-muted/60"
+                            aria-label="Rename category"
+                          >
+                            <Pencil className="w-4 h-4 text-muted-foreground" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setDeleteConfirmId(group.categoryId);
+                            }}
+                            className="p-1.5 rounded hover:bg-muted/60"
+                            aria-label="Delete category"
+                          >
+                            <Trash2 className="w-4 h-4 text-muted-foreground" />
+                          </button>
+                        </div>
+                      )}
+                    </div>
                     {group.categoryId !== UNCATEGORIZED && (
-                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className="flex sm:hidden items-center gap-2 mb-2 pl-7">
+                        {group.decks.length > 0 && (
+                          <Link
+                            href={`/study/category/${group.categoryId}`}
+                            onClick={(e) => e.stopPropagation()}
+                            className="inline-flex h-7 items-center gap-1.5 rounded-md bg-neutral-900 text-white dark:bg-neutral-100 dark:text-neutral-900 px-2.5 text-xs font-medium active:opacity-80"
+                            aria-label="Study this category"
+                          >
+                            <BookOpen className="w-3.5 h-3.5" />
+                            Study
+                          </Link>
+                        )}
+                        <Link
+                          href={`/categories/${group.categoryId}`}
+                          onClick={(e) => e.stopPropagation()}
+                          className="inline-flex h-7 items-center rounded-md border border-neutral-300 dark:border-neutral-600 px-2.5 text-xs font-medium text-muted-foreground hover:text-foreground active:opacity-80"
+                        >
+                          Open
+                        </Link>
                         <button
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
                             openRenameModal(group.categoryId, group.categoryName);
                           }}
-                          className="p-1 rounded hover:bg-muted/60"
+                          className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-neutral-300 dark:border-neutral-600 active:opacity-80"
                           aria-label="Rename category"
                         >
-                          <Pencil className="w-4 h-4 text-muted-foreground" />
+                          <Pencil className="w-3.5 h-3.5 text-muted-foreground" />
                         </button>
                         <button
                           type="button"
@@ -899,15 +1013,15 @@ export default function DecksPage() {
                             e.stopPropagation();
                             setDeleteConfirmId(group.categoryId);
                           }}
-                          className="p-1 rounded hover:bg-muted/60"
+                          className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-neutral-300 dark:border-neutral-600 active:opacity-80"
                           aria-label="Delete category"
                         >
-                          <Trash2 className="w-4 h-4 text-muted-foreground" />
+                          <Trash2 className="w-3.5 h-3.5 text-muted-foreground" />
                         </button>
                       </div>
                     )}
                   </div>
-                  <div className="space-y-3 max-mobile:space-y-2.5 pl-4">
+                  {!collapsedCategories.has(group.categoryId) && <div className="space-y-3 max-mobile:space-y-2.5 pl-6">
                     {group.decks.map((deck) => (
                       <DraggableDeckRow
                         key={deck.id}
@@ -1023,7 +1137,7 @@ export default function DecksPage() {
                         </div>
                       </DraggableDeckRow>
                     ))}
-                  </div>
+                  </div>}
                 </DroppableCategory>
               );
               })}

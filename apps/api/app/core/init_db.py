@@ -130,6 +130,11 @@ async def init_db() -> None:
                 else "ALTER TABLE decks ADD COLUMN category_id UUID REFERENCES categories(id) ON DELETE SET NULL",
                 pg_if_not_exists="ALTER TABLE decks ADD COLUMN IF NOT EXISTS category_id UUID REFERENCES categories(id) ON DELETE SET NULL"
             )
+            _add_column_if_missing(
+                sync_conn, "decks", "category_assigned_at",
+                "ALTER TABLE decks ADD COLUMN category_assigned_at TIMESTAMP",
+                pg_if_not_exists="ALTER TABLE decks ADD COLUMN IF NOT EXISTS category_assigned_at TIMESTAMP"
+            )
         await conn.run_sync(_migrate_decks)
     logger.info("Applied decks column migrations")
 

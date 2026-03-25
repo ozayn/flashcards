@@ -49,6 +49,7 @@ class DeckResponse(BaseModel):
     generated_by_ai: bool = False
     archived: bool = False
     category_id: Optional[str] = None
+    category_assigned_at: Optional[datetime] = None
     created_at: datetime
     card_count: int = 0
 
