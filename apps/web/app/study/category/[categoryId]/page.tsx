@@ -428,22 +428,22 @@ export default function CategoryStudyPage({ params }: CategoryStudyPageProps) {
     >
       <Link
         href={backHref}
-        className="fixed bottom-4 right-4 sm:bottom-8 sm:right-[max(0.5rem,calc(50vw-min(50vw,18rem)))] z-50 inline-flex items-center gap-1.5 rounded-full bg-background/95 backdrop-blur border border-border shadow-lg px-3 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm font-medium hover:bg-muted active:opacity-80 transition-colors"
+        className="fixed bottom-4 right-4 sm:bottom-8 sm:right-[max(0.5rem,calc(50vw-min(50vw,18rem)))] z-50 inline-flex items-center gap-1.5 rounded-full bg-background/95 backdrop-blur border border-border shadow-lg px-3 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm font-medium hover:bg-muted active:opacity-80 transition-colors landscape-mobile:bottom-2 landscape-mobile:right-2 landscape-mobile:px-2.5 landscape-mobile:py-1 landscape-mobile:text-xs landscape-mobile:gap-1"
       >
-        <X className="size-3.5 sm:size-4" />
-        <span className="hidden sm:inline">Exit Category Review</span>
+        <X className="size-3.5 sm:size-4 landscape-mobile:size-3" />
+        <span className="hidden sm:inline landscape-mobile:hidden">Exit Category Review</span>
         <span className="sm:hidden">Exit</span>
       </Link>
 
-      <div className="pt-4 sm:pt-6 shrink-0 w-full">
+      <div className="pt-4 sm:pt-6 landscape-mobile:pt-2 shrink-0 w-full">
         <div className="max-w-4xl mx-auto w-full px-4 sm:px-6 md:px-8">
           <Link
             href={backHref}
-            className="inline-flex h-7 items-center justify-center rounded-lg px-2.5 text-sm font-medium hover:bg-muted"
+            className="inline-flex h-7 items-center justify-center rounded-lg px-2.5 text-sm font-medium hover:bg-muted landscape-mobile:h-6 landscape-mobile:text-xs landscape-mobile:px-1.5"
           >
             ← Back
           </Link>
-          <div className="mt-1.5 space-y-1">
+          <div className="mt-1.5 space-y-1 landscape-mobile:mt-1 landscape-mobile:space-y-0.5">
             <p className="text-sm font-medium text-muted-foreground truncate">
               {categoryName ?? "Category review"}
             </p>
@@ -461,7 +461,7 @@ export default function CategoryStudyPage({ params }: CategoryStudyPageProps) {
         </div>
       </div>
 
-      <div className="flex flex-col items-center justify-center flex-1 min-h-0 w-full mt-2 sm:mt-0">
+      <div className="flex flex-col items-center justify-center flex-1 min-h-0 w-full mt-2 sm:mt-0 landscape-mobile:mt-1">
         <div className="flex-1 min-h-0 min-h-[200px] flex flex-col landscape:flex-row landscape:items-stretch landscape:min-h-0 justify-center items-center gap-2 w-full max-w-4xl mx-auto relative overflow-hidden [perspective:1000px]">
           <Button
             variant="outline"

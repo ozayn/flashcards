@@ -131,14 +131,20 @@ export default function CategoryExplorePage({ params }: CategoryExplorePageProps
     setCurrentCardIndex((i) => Math.max(i - 1, 0));
   }, []);
 
+  const touchStartY = useRef(0);
+
   function handleTouchStart(e: React.TouchEvent) {
     touchStartX.current = e.touches[0].clientX;
+    touchStartY.current = e.touches[0].clientY;
   }
 
   function handleTouchEnd(e: React.TouchEvent) {
-    const diff = e.changedTouches[0].clientX - touchStartX.current;
-    if (diff > 60) handlePrev();
-    if (diff < -60) handleNext();
+    const dx = e.changedTouches[0].clientX - touchStartX.current;
+    const dy = e.changedTouches[0].clientY - touchStartY.current;
+    if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+      if (dx > 0) handlePrev();
+      else handleNext();
+    }
   }
 
   useEffect(() => {
@@ -359,34 +365,34 @@ export default function CategoryExplorePage({ params }: CategoryExplorePageProps
     >
       <Link
         href={backHref}
-        className="fixed bottom-4 right-4 sm:bottom-8 sm:right-[max(0.5rem,calc(50vw-min(50vw,18rem)))] z-50 inline-flex items-center gap-1.5 rounded-full bg-background/95 backdrop-blur border border-border shadow-lg px-3 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm font-medium hover:bg-muted active:opacity-80 transition-colors"
+        className="fixed bottom-4 right-4 sm:bottom-8 sm:right-[max(0.5rem,calc(50vw-min(50vw,18rem)))] z-50 inline-flex items-center gap-1.5 rounded-full bg-background/95 backdrop-blur border border-border shadow-lg px-3 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm font-medium hover:bg-muted active:opacity-80 transition-colors landscape-mobile:bottom-2 landscape-mobile:right-2 landscape-mobile:px-2.5 landscape-mobile:py-1 landscape-mobile:text-xs landscape-mobile:gap-1"
       >
-        <X className="size-3.5 sm:size-4" />
-        <span className="hidden sm:inline">Exit Explore</span>
+        <X className="size-3.5 sm:size-4 landscape-mobile:size-3" />
+        <span className="hidden sm:inline landscape-mobile:hidden">Exit Explore</span>
         <span className="sm:hidden">Exit</span>
       </Link>
 
-      <div className="pt-4 sm:pt-6 shrink-0 w-full">
+      <div className="pt-4 sm:pt-6 landscape-mobile:pt-2 shrink-0 w-full">
         <div className="max-w-4xl mx-auto w-full px-4 sm:px-6 md:px-8">
           <Link
             href={backHref}
-            className="inline-flex h-7 items-center justify-center rounded-lg px-2.5 text-sm font-medium hover:bg-muted"
+            className="inline-flex h-7 items-center justify-center rounded-lg px-2.5 text-sm font-medium hover:bg-muted landscape-mobile:h-6 landscape-mobile:text-xs landscape-mobile:px-1.5"
           >
             ← Back
           </Link>
-          <div className="mt-1.5 space-y-1">
+          <div className="mt-1.5 space-y-1.5 landscape-mobile:mt-1 landscape-mobile:space-y-0.5">
             <div className="flex items-center justify-between flex-wrap gap-2">
-              <div className="flex items-center gap-2">
-                <p className="text-sm font-medium text-muted-foreground truncate">
-                  {categoryName ?? "Category"}
-                </p>
-                <span className="text-xs text-muted-foreground/60 font-medium">Explore</span>
-              </div>
+              <p className="text-sm text-muted-foreground truncate">
+                <span className="font-medium">{categoryName ?? "Category"}</span>
+                {currentDeck && (
+                  <> · {currentDeck.name} ({currentDeckIndex + 1}/{decks.length})</>
+                )}
+              </p>
               <div className="flex items-center gap-0.5 rounded-lg border border-border/60 p-0.5 bg-muted/20">
                 <button
                   type="button"
                   onClick={() => setExploreView("read")}
-                  className={`px-3 py-1 min-h-[32px] rounded-md text-xs sm:text-sm font-medium transition-colors ${
+                  className={`px-3 py-1 min-h-[32px] landscape-mobile:min-h-[28px] landscape-mobile:px-2 landscape-mobile:text-xs rounded-md text-xs sm:text-sm font-medium transition-colors ${
                     exploreView === "read"
                       ? "bg-background text-foreground shadow-sm"
                       : "text-muted-foreground hover:text-foreground"
@@ -397,7 +403,7 @@ export default function CategoryExplorePage({ params }: CategoryExplorePageProps
                 <button
                   type="button"
                   onClick={() => setExploreView("cards")}
-                  className={`px-3 py-1 min-h-[32px] rounded-md text-xs sm:text-sm font-medium transition-colors ${
+                  className={`px-3 py-1 min-h-[32px] landscape-mobile:min-h-[28px] landscape-mobile:px-2 landscape-mobile:text-xs rounded-md text-xs sm:text-sm font-medium transition-colors ${
                     exploreView === "cards"
                       ? "bg-background text-foreground shadow-sm"
                       : "text-muted-foreground hover:text-foreground"
@@ -407,15 +413,6 @@ export default function CategoryExplorePage({ params }: CategoryExplorePageProps
                 </button>
               </div>
             </div>
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="text-xs text-muted-foreground whitespace-nowrap">
-                Deck {currentDeckIndex + 1}/{decks.length}
-              </span>
-              <span className="text-xs text-muted-foreground">·</span>
-              <span className="text-xs font-medium truncate">
-                {currentDeck?.name}
-              </span>
-            </div>
             <DeckProgressBar current={currentDeckIndex} total={decks.length} />
           </div>
         </div>
@@ -423,21 +420,8 @@ export default function CategoryExplorePage({ params }: CategoryExplorePageProps
 
       {exploreView === "read" ? (
         <div className="flex-1 min-h-0 w-full overflow-y-auto">
-          <div className="max-w-2xl sm:max-w-3xl mx-auto w-full px-5 sm:px-6 md:px-8 py-6 sm:py-10">
-            <div className="flex items-center justify-between mb-5 sm:mb-8">
-              <span className="text-sm text-muted-foreground tabular-nums">
-                {currentCardIndex + 1} / {flashcards.length}
-              </span>
-              <div className="hidden sm:flex gap-2">
-                <Button variant="outline" size="icon" onClick={handlePrev} disabled={isFirst} className="h-9 w-9" aria-label="Previous card">
-                  <ChevronLeft className="size-4" />
-                </Button>
-                <Button variant="outline" size="icon" onClick={handleNext} disabled={isLast && deckComplete} className="h-9 w-9" aria-label="Next card">
-                  <ChevronRight className="size-4" />
-                </Button>
-              </div>
-            </div>
-            <article dir="auto" className="space-y-5 sm:space-y-8" onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
+          <div className="max-w-2xl sm:max-w-3xl mx-auto w-full px-5 sm:px-6 md:px-8 py-6 sm:py-10 landscape-mobile:py-3">
+            <article dir="auto" className="space-y-5 sm:space-y-8 landscape-mobile:space-y-3" onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
               <FormattedText
                 text={card.question}
                 className="text-2xl sm:text-3xl lg:text-4xl font-medium leading-snug sm:leading-relaxed"
@@ -457,11 +441,14 @@ export default function CategoryExplorePage({ params }: CategoryExplorePageProps
                   </div>
                 )}
             </article>
-            <div className="flex justify-center gap-4 mt-8 sm:mt-10 pb-4">
-              <Button variant="outline" size="icon" onClick={handlePrev} disabled={isFirst} className="h-11 w-11 sm:h-10 sm:w-10 lg:h-12 lg:w-12" aria-label="Previous card">
+            <div className="flex items-center justify-center gap-4 mt-8 sm:mt-10 pb-4 landscape-mobile:mt-3 landscape-mobile:pb-2">
+              <Button variant="outline" size="icon" onClick={handlePrev} disabled={isFirst} className="hidden sm:inline-flex h-10 w-10 lg:h-12 lg:w-12" aria-label="Previous card">
                 <ChevronLeft className="size-5 lg:size-6" />
               </Button>
-              <Button variant="outline" size="icon" onClick={handleNext} disabled={isLast && deckComplete} className="h-11 w-11 sm:h-10 sm:w-10 lg:h-12 lg:w-12" aria-label="Next card">
+              <span className="text-sm text-muted-foreground tabular-nums text-center landscape-mobile:text-xs">
+                {currentCardIndex + 1} / {flashcards.length}
+              </span>
+              <Button variant="outline" size="icon" onClick={handleNext} disabled={isLast && deckComplete} className="hidden sm:inline-flex h-10 w-10 lg:h-12 lg:w-12" aria-label="Next card">
                 <ChevronRight className="size-5 lg:size-6" />
               </Button>
             </div>

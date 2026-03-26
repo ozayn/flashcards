@@ -34,12 +34,12 @@ export function Nav() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const pathname = usePathname();
   const isLanding = pathname === "/";
-  const isDeckStudy = pathname?.startsWith("/study/") ?? false;
+  const isStudyOrExplore = (pathname?.startsWith("/study/") || pathname?.startsWith("/explore/")) ?? false;
   const navLinks = isLanding ? landingNavLinks : appNavLinks;
 
   return (
     <nav
-      className={`sticky top-0 z-50 border-b border-border/80 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 ${isDeckStudy ? "landscape-mobile:hidden" : ""} h-14`}
+      className={`sticky top-0 z-50 border-b border-border/80 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 ${isStudyOrExplore ? "landscape-mobile:hidden" : ""} h-14`}
     >
       <div className="max-w-4xl mx-auto h-full flex items-center justify-between px-4 sm:px-6 md:px-8">
         <Link
