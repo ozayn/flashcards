@@ -388,29 +388,34 @@ export default function CategoryExplorePage({ params }: CategoryExplorePageProps
                   <> · {currentDeck.name} ({currentDeckIndex + 1}/{decks.length})</>
                 )}
               </p>
-              <div className="flex items-center gap-0.5 rounded-lg border border-border/60 p-0.5 bg-muted/20">
-                <button
-                  type="button"
-                  onClick={() => setExploreView("read")}
-                  className={`px-3 py-1 min-h-[32px] landscape-mobile:min-h-[28px] landscape-mobile:px-2 landscape-mobile:text-xs rounded-md text-xs sm:text-sm font-medium transition-colors ${
-                    exploreView === "read"
-                      ? "bg-background text-foreground shadow-sm"
-                      : "text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  Read
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setExploreView("cards")}
-                  className={`px-3 py-1 min-h-[32px] landscape-mobile:min-h-[28px] landscape-mobile:px-2 landscape-mobile:text-xs rounded-md text-xs sm:text-sm font-medium transition-colors ${
-                    exploreView === "cards"
-                      ? "bg-background text-foreground shadow-sm"
-                      : "text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  Cards
-                </button>
+              <div className="flex items-center gap-2">
+                <span className="hidden landscape-mobile:inline text-xs text-muted-foreground tabular-nums">
+                  {currentCardIndex + 1}/{flashcards.length}
+                </span>
+                <div className="flex items-center gap-0.5 rounded-lg border border-border/60 p-0.5 bg-muted/20">
+                  <button
+                    type="button"
+                    onClick={() => setExploreView("read")}
+                    className={`px-3 py-1 min-h-[32px] landscape-mobile:min-h-[28px] landscape-mobile:px-2 landscape-mobile:text-xs rounded-md text-xs sm:text-sm font-medium transition-colors ${
+                      exploreView === "read"
+                        ? "bg-background text-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    Read
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setExploreView("cards")}
+                    className={`px-3 py-1 min-h-[32px] landscape-mobile:min-h-[28px] landscape-mobile:px-2 landscape-mobile:text-xs rounded-md text-xs sm:text-sm font-medium transition-colors ${
+                      exploreView === "cards"
+                        ? "bg-background text-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    Cards
+                  </button>
+                </div>
               </div>
             </div>
             <DeckProgressBar current={currentDeckIndex} total={decks.length} />
@@ -441,11 +446,11 @@ export default function CategoryExplorePage({ params }: CategoryExplorePageProps
                   </div>
                 )}
             </article>
-            <div className="flex items-center justify-center gap-4 mt-8 sm:mt-10 pb-4 landscape-mobile:mt-3 landscape-mobile:pb-2">
+            <div className="flex items-center justify-center gap-4 mt-8 sm:mt-10 pb-4 landscape-mobile:hidden">
               <Button variant="outline" size="icon" onClick={handlePrev} disabled={isFirst} className="hidden sm:inline-flex h-10 w-10 lg:h-12 lg:w-12" aria-label="Previous card">
                 <ChevronLeft className="size-5 lg:size-6" />
               </Button>
-              <span className="text-sm text-muted-foreground tabular-nums text-center landscape-mobile:text-xs">
+              <span className="text-sm text-muted-foreground tabular-nums text-center">
                 {currentCardIndex + 1} / {flashcards.length}
               </span>
               <Button variant="outline" size="icon" onClick={handleNext} disabled={isLast && deckComplete} className="hidden sm:inline-flex h-10 w-10 lg:h-12 lg:w-12" aria-label="Next card">
@@ -455,14 +460,14 @@ export default function CategoryExplorePage({ params }: CategoryExplorePageProps
           </div>
         </div>
       ) : (
-      <div className="flex flex-col items-center justify-center flex-1 min-h-0 w-full mt-2 sm:mt-0">
-        <div className="flex-1 min-h-0 min-h-[200px] flex flex-col landscape:flex-row landscape:items-stretch landscape:min-h-0 justify-center items-center gap-2 w-full max-w-4xl mx-auto relative overflow-hidden [perspective:1000px]">
+      <div className="flex flex-col items-center justify-center flex-1 min-h-0 w-full mt-2 sm:mt-0 landscape-mobile:mt-0">
+        <div className="flex-1 min-h-0 min-h-[200px] landscape-mobile:min-h-0 flex flex-col landscape:flex-row landscape:items-stretch landscape:min-h-0 justify-center items-center gap-2 landscape-mobile:gap-0 w-full max-w-4xl mx-auto relative overflow-hidden [perspective:1000px]">
           <Button
             variant="outline"
             size="icon"
             onClick={handlePrev}
             disabled={isFirst}
-            className="hidden landscape:flex h-10 w-10 shrink-0 order-2 landscape:order-1"
+            className="hidden landscape:flex landscape-mobile:!hidden h-10 w-10 shrink-0 order-2 landscape:order-1"
             aria-label="Previous card"
           >
             <ChevronLeft className="size-5" />
@@ -472,9 +477,9 @@ export default function CategoryExplorePage({ params }: CategoryExplorePageProps
               onTouchStart={handleTouchStart}
               onTouchEnd={handleTouchEnd}
               dir="auto"
-              className="flashcard relative w-full max-w-2xl sm:max-w-3xl aspect-[3/2] rounded-2xl shadow-lg overflow-hidden flex flex-col touch-pan-y transition-all duration-200 ease-out hover:-translate-y-1 hover:shadow-xl hover:rotate-[0.3deg] active:translate-y-0 active:shadow-md"
+              className="flashcard relative w-full max-w-2xl sm:max-w-3xl aspect-[3/2] landscape-mobile:aspect-auto landscape-mobile:h-[calc(100dvh-5rem)] rounded-2xl shadow-lg overflow-hidden flex flex-col touch-pan-y transition-all duration-200 ease-out hover:-translate-y-1 hover:shadow-xl hover:rotate-[0.3deg] active:translate-y-0 active:shadow-md"
             >
-              <div className="absolute top-4 right-4 sm:top-6 sm:right-6 text-xs sm:text-sm text-muted-foreground z-10">
+              <div className="absolute top-4 right-4 sm:top-6 sm:right-6 text-xs sm:text-sm text-muted-foreground z-10 landscape-mobile:top-2 landscape-mobile:right-3">
                 {currentCardIndex + 1} / {flashcards.length}
               </div>
               <Flashcard
@@ -491,13 +496,13 @@ export default function CategoryExplorePage({ params }: CategoryExplorePageProps
                   <div className="flex-1 min-h-0 flex flex-col items-stretch justify-start w-full overflow-y-auto cursor-pointer">
                     <FormattedText
                       text={card.answer_short}
-                      className="whitespace-pre-line text-xl sm:text-2xl lg:text-[1.75rem] leading-relaxed mt-6 sm:mt-8"
+                      className="whitespace-pre-line text-xl sm:text-2xl lg:text-[1.75rem] leading-relaxed mt-6 sm:mt-8 landscape-mobile:mt-2"
                     />
                     {card.answer_detailed &&
                       card.answer_detailed.trim() !== card.answer_short.trim() && (
                         <FormattedText
                           text={card.answer_detailed}
-                          className="whitespace-pre-line text-base sm:text-lg lg:text-xl text-muted-foreground mt-4 sm:mt-5"
+                          className="whitespace-pre-line text-base sm:text-lg lg:text-xl text-muted-foreground mt-4 sm:mt-5 landscape-mobile:mt-2"
                         />
                       )}
                   </div>
@@ -514,14 +519,14 @@ export default function CategoryExplorePage({ params }: CategoryExplorePageProps
             size="icon"
             onClick={handleNext}
             disabled={isLast && deckComplete}
-            className="hidden landscape:flex h-10 w-10 shrink-0 order-3"
+            className="hidden landscape:flex landscape-mobile:!hidden h-10 w-10 shrink-0 order-3"
             aria-label="Next card"
           >
             <ChevronRight className="size-5" />
           </Button>
         </div>
 
-        <div className="shrink-0 flex justify-center gap-4 mt-2 pb-2 landscape:hidden">
+        <div className="shrink-0 flex justify-center gap-4 mt-2 pb-2 landscape:hidden landscape-mobile:!hidden">
           <Button
             variant="outline"
             size="icon"

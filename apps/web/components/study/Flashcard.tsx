@@ -30,7 +30,7 @@ export function Flashcard({ front, back, flipped, onFlip, canFlip, cardStyle = "
     >
       {/* Front face */}
       <div
-        className={`${faceBase} justify-start items-center text-start p-6 md:p-10 lg:p-12 ${faceClass}`}
+        className={`${faceBase} justify-start items-center text-start p-6 md:p-10 lg:p-12 landscape-mobile:p-3 landscape-mobile:pt-2 ${faceClass}`}
         style={{ backfaceVisibility: "hidden" }}
       >
         {front}
@@ -38,7 +38,7 @@ export function Flashcard({ front, back, flipped, onFlip, canFlip, cardStyle = "
 
       {/* Back face */}
       <div
-        className={`flashcard-face flashcard-back absolute inset-0 w-full h-full flex flex-col items-stretch px-6 md:px-10 lg:px-12 pt-6 pb-4 text-start ${faceClass}`}
+        className={`flashcard-face flashcard-back absolute inset-0 w-full h-full flex flex-col items-stretch px-6 md:px-10 lg:px-12 pt-6 pb-4 landscape-mobile:px-3 landscape-mobile:pt-2 landscape-mobile:pb-2 text-start ${faceClass}`}
         style={{ backfaceVisibility: "hidden", transform: "rotateY(180deg)" }}
       >
         {back}
