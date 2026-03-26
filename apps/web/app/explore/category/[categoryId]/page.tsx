@@ -132,6 +132,9 @@ export default function CategoryExplorePage({ params }: CategoryExplorePageProps
   }, []);
 
   const touchStartY = useRef(0);
+  const touchLatestX = useRef(0);
+  const touchLatestY = useRef(0);
+  const readScrollRef = useRef<HTMLDivElement>(null);
 
   function handleTouchStart(e: React.TouchEvent) {
     touchStartX.current = e.touches[0].clientX;
@@ -146,6 +149,41 @@ export default function CategoryExplorePage({ params }: CategoryExplorePageProps
       else handleNext();
     }
   }
+
+  useEffect(() => {
+    const el = readScrollRef.current;
+    if (!el) return;
+    function onStart(e: TouchEvent) {
+      const t = e.touches[0];
+      touchStartX.current = t.clientX;
+      touchStartY.current = t.clientY;
+      touchLatestX.current = t.clientX;
+      touchLatestY.current = t.clientY;
+    }
+    function onMove(e: TouchEvent) {
+      const t = e.touches[0];
+      touchLatestX.current = t.clientX;
+      touchLatestY.current = t.clientY;
+    }
+    function onFinish() {
+      const dx = touchLatestX.current - touchStartX.current;
+      const dy = touchLatestY.current - touchStartY.current;
+      if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.2) {
+        if (dx > 0) handlePrev();
+        else handleNext();
+      }
+    }
+    el.addEventListener("touchstart", onStart, { passive: true });
+    el.addEventListener("touchmove", onMove, { passive: true });
+    el.addEventListener("touchend", onFinish, { passive: true });
+    el.addEventListener("touchcancel", onFinish, { passive: true });
+    return () => {
+      el.removeEventListener("touchstart", onStart);
+      el.removeEventListener("touchmove", onMove);
+      el.removeEventListener("touchend", onFinish);
+      el.removeEventListener("touchcancel", onFinish);
+    };
+  }, [handlePrev, handleNext, exploreView]);
 
   useEffect(() => {
     if (cardsLoading || flashcards.length === 0) return;
@@ -424,7 +462,7 @@ export default function CategoryExplorePage({ params }: CategoryExplorePageProps
       </div>
 
       {exploreView === "read" ? (
-        <div className="flex-1 min-h-0 w-full overflow-y-auto touch-pan-y" onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
+        <div ref={readScrollRef} className="flex-1 min-h-0 w-full overflow-y-auto touch-pan-y">
           <div className="max-w-2xl sm:max-w-3xl mx-auto w-full px-5 sm:px-6 md:px-8 py-6 sm:py-10 landscape-mobile:py-3">
             <article dir="auto" className="space-y-5 sm:space-y-8 landscape-mobile:space-y-3">
               <FormattedText
