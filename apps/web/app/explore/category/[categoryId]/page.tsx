@@ -2,9 +2,8 @@
 
 import { useEffect, useState, useRef, useCallback } from "react";
 import Link from "next/link";
-import { ChevronLeft, ChevronRight, X, CheckCircle2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Flashcard } from "@/components/study/Flashcard";
 import FormattedText from "@/components/FormattedText";
 import {
@@ -205,7 +204,7 @@ export default function CategoryExplorePage({ params }: CategoryExplorePageProps
           <div className="flex justify-center">
             <Link
               href="/decks"
-              className="inline-flex h-11 items-center justify-center rounded-lg bg-neutral-900 text-white hover:bg-neutral-800 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200 px-6 text-sm font-medium active:opacity-80"
+              className="inline-flex h-10 items-center justify-center rounded-lg bg-neutral-900 text-white hover:bg-neutral-800 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200 px-5 text-sm font-medium"
             >
               Choose user
             </Link>
@@ -226,7 +225,7 @@ export default function CategoryExplorePage({ params }: CategoryExplorePageProps
           <div className="flex justify-center">
             <Link
               href="/decks"
-              className="inline-flex h-11 items-center justify-center rounded-lg bg-neutral-900 text-white hover:bg-neutral-800 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200 px-6 text-sm font-medium active:opacity-80"
+              className="inline-flex h-10 items-center justify-center rounded-lg bg-neutral-900 text-white hover:bg-neutral-800 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200 px-5 text-sm font-medium"
             >
               Back to decks
             </Link>
@@ -241,56 +240,38 @@ export default function CategoryExplorePage({ params }: CategoryExplorePageProps
       <main className="h-full min-h-[50vh] flex flex-col pt-4 sm:pt-6 pb-8" data-study>
         <div className="max-w-4xl mx-auto w-full px-4 sm:px-6 md:px-8 flex flex-col flex-1">
           <ExploreHeader backHref={backHref} categoryName={categoryName} />
-          <div className="flex flex-1 w-full justify-center items-center mt-4 sm:mt-6">
-            <Card className="max-w-xl w-full mx-2 sm:mx-0">
-              <CardHeader>
-                <div className="flex items-center gap-3">
-                  <CheckCircle2 className="size-7 text-green-500 shrink-0" />
-                  <div>
-                    <CardTitle className="text-2xl">All cards explored!</CardTitle>
-                    {categoryName && (
-                      <p className="text-sm text-muted-foreground mt-1">{categoryName}</p>
-                    )}
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <p className="text-muted-foreground">
-                  You&apos;ve browsed all {decks.length} deck{decks.length !== 1 ? "s" : ""} in this
-                  category.
-                  {totalCardsSeen > 0 && (
-                    <> {totalCardsSeen} card{totalCardsSeen !== 1 ? "s" : ""} viewed.</>
-                  )}
-                </p>
-                <div className="flex flex-col gap-3 items-center w-full">
-                  <Link
-                    href={`/study/category/${params.categoryId}`}
-                    className="inline-flex h-11 items-center justify-center rounded-lg bg-neutral-900 text-white hover:bg-neutral-800 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200 px-6 text-sm font-medium active:opacity-80 w-full sm:w-auto"
-                  >
-                    Review this category
-                  </Link>
-                  <div className="flex flex-col sm:flex-row gap-3 justify-center w-full sm:w-auto">
-                    <Button
-                      variant="outline"
-                      className="h-11 w-full sm:w-auto active:opacity-80"
-                      onClick={() => {
-                        setCategoryComplete(false);
-                        setCurrentDeckIndex(0);
-                        setTotalCardsSeen(0);
-                      }}
-                    >
-                      Explore again
-                    </Button>
-                    <Link
-                      href="/decks"
-                      className="inline-flex h-11 items-center justify-center rounded-md border border-neutral-300 bg-white px-4 text-sm font-medium hover:bg-neutral-50 active:opacity-80 dark:border-neutral-600 dark:bg-neutral-900 dark:hover:bg-neutral-800 w-full sm:w-auto"
-                    >
-                      Back to decks
-                    </Link>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+          <div className="flex flex-1 w-full justify-center items-center mt-12">
+            <div className="max-w-md w-full text-center space-y-6">
+              <h2 className="text-2xl font-semibold">All cards explored</h2>
+              <p className="text-muted-foreground">
+                {decks.length} deck{decks.length !== 1 ? "s" : ""} browsed
+                {totalCardsSeen > 0 && <>, {totalCardsSeen} cards viewed</>}.
+              </p>
+              <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                <Link
+                  href={`/study/category/${params.categoryId}`}
+                  className="inline-flex h-10 items-center justify-center rounded-lg bg-neutral-900 text-white hover:bg-neutral-800 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200 px-5 text-sm font-medium"
+                >
+                  Review this category
+                </Link>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setCategoryComplete(false);
+                    setCurrentDeckIndex(0);
+                    setTotalCardsSeen(0);
+                  }}
+                >
+                  Explore again
+                </Button>
+                <Link
+                  href="/decks"
+                  className="inline-flex h-10 items-center justify-center rounded-lg border border-border px-4 text-sm font-medium hover:bg-muted"
+                >
+                  Back to decks
+                </Link>
+              </div>
+            </div>
           </div>
         </div>
       </main>
@@ -350,21 +331,17 @@ export default function CategoryExplorePage({ params }: CategoryExplorePageProps
             deckName={currentDeck?.name}
           />
           <div className="flex flex-1 w-full justify-center items-center">
-            <Card className="max-w-md w-full mx-2 sm:mx-0">
-              <CardContent className="pt-6 space-y-4">
-                <p className="text-center font-medium">
-                  Finished <span className="text-foreground">{currentDeck?.name}</span>
-                </p>
-                <p className="text-sm text-muted-foreground text-center">
-                  {flashcards.length} card{flashcards.length !== 1 ? "s" : ""} browsed
-                </p>
-                <div className="flex justify-center">
-                  <Button className="h-11 active:opacity-80" onClick={advanceToNextDeck}>
-                    {currentDeckIndex < decks.length - 1 ? "Next deck" : "Finish"}
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
+            <div className="max-w-md w-full text-center space-y-4">
+              <p className="font-medium">
+                Finished {currentDeck?.name}
+              </p>
+              <p className="text-sm text-muted-foreground">
+                {flashcards.length} card{flashcards.length !== 1 ? "s" : ""} browsed
+              </p>
+              <Button onClick={advanceToNextDeck}>
+                {currentDeckIndex < decks.length - 1 ? "Next deck" : "Finish"}
+              </Button>
+            </div>
           </div>
         </div>
       </main>
@@ -405,13 +382,13 @@ export default function CategoryExplorePage({ params }: CategoryExplorePageProps
                 </p>
                 <span className="text-xs text-muted-foreground/60 font-medium">Explore</span>
               </div>
-              <div className="flex items-center gap-1 rounded-lg border border-black/20 dark:border-white/10 p-0.5 bg-muted/30">
+              <div className="flex items-center gap-0.5 rounded-lg border border-border/60 p-0.5 bg-muted/20">
                 <button
                   type="button"
                   onClick={() => setExploreView("read")}
-                  className={`px-3 py-1.5 min-h-[36px] rounded-md text-xs sm:text-sm font-medium transition-colors ${
+                  className={`px-3 py-1 min-h-[32px] rounded-md text-xs sm:text-sm font-medium transition-colors ${
                     exploreView === "read"
-                      ? "bg-mondrian-blue/15 dark:bg-mondrian-blue/20 text-foreground shadow-sm ring-1 ring-mondrian-blue/30 dark:ring-mondrian-blue/40"
+                      ? "bg-background text-foreground shadow-sm"
                       : "text-muted-foreground hover:text-foreground"
                   }`}
                 >
@@ -420,9 +397,9 @@ export default function CategoryExplorePage({ params }: CategoryExplorePageProps
                 <button
                   type="button"
                   onClick={() => setExploreView("cards")}
-                  className={`px-3 py-1.5 min-h-[36px] rounded-md text-xs sm:text-sm font-medium transition-colors ${
+                  className={`px-3 py-1 min-h-[32px] rounded-md text-xs sm:text-sm font-medium transition-colors ${
                     exploreView === "cards"
-                      ? "bg-mondrian-blue/15 dark:bg-mondrian-blue/20 text-foreground shadow-sm ring-1 ring-mondrian-blue/30 dark:ring-mondrian-blue/40"
+                      ? "bg-background text-foreground shadow-sm"
                       : "text-muted-foreground hover:text-foreground"
                   }`}
                 >

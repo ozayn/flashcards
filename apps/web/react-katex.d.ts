@@ -4,6 +4,8 @@ declare module "react-katex" {
   interface KaTeXProps {
     math: string;
     errorColor?: string;
+    strict?: boolean | string | ((...args: unknown[]) => unknown);
+    settings?: Record<string, unknown>;
     renderError?: (error: Error) => ReactNode;
   }
 

@@ -1,9 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FileText, Sparkles, BookOpen } from "lucide-react";
 import { Logo } from "@/components/Logo";
-import { Flashcard } from "@/components/Flashcard";
 import { GenerateInput } from "@/components/GenerateInput";
 import { Button } from "@/components/ui/button";
 
@@ -15,27 +13,20 @@ const EXAMPLE_TOPICS = [
   "Biology basics",
 ];
 
-const DEMO_CARDS = [
-  { front: "Who is the Roman god of the sea?", back: "Neptune" },
-  { front: "Who is the Roman god of war?", back: "Mars" },
-  { front: "Who is the king of the Roman gods?", back: "Jupiter" },
-];
-
 export default function LandingPage() {
   return (
     <div data-landing className="min-h-screen bg-background text-foreground">
-      <main>
-        {/* 2. Hero Section */}
-        <section className="pt-20 pb-16 md:pt-28 md:pb-24 text-center">
-          <h1 className="text-4xl md:text-5xl lg:text-6xl font-semibold tracking-tight text-foreground max-w-3xl mx-auto leading-tight">
+      <main className="max-w-3xl mx-auto px-6 md:px-8">
+        <section className="pt-24 pb-16 md:pt-32 md:pb-20 text-center">
+          <h1 className="text-4xl md:text-5xl font-semibold tracking-tight leading-tight">
             Learn anything instantly.
           </h1>
-          <p className="mt-6 text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto">
-            Turn information into memory with AI-generated flashcards.
+          <p className="mt-5 text-lg text-muted-foreground max-w-xl mx-auto">
+            Turn any topic or text into flashcards with AI.
           </p>
-          <div className="mt-12">
+          <div className="mt-10">
             <GenerateInput
-              placeholder="Paste text or enter a topic…"
+              placeholder="Enter a topic or paste text…"
               suggestions={[
                 "Roman gods",
                 "Quantum mechanics basics",
@@ -46,82 +37,13 @@ export default function LandingPage() {
           </div>
         </section>
 
-        {/* 3. Demo Flashcards Preview */}
-        <section className="py-20 md:py-28">
-          <div className="flex flex-col items-center">
-            <p className="text-sm font-medium text-muted-foreground mb-8">
-              Preview
-            </p>
-            <div className="relative w-full max-w-sm mx-auto">
-              {DEMO_CARDS.map((card, i) => (
-                <div
-                  key={i}
-                  className="absolute w-full"
-                  style={{
-                    top: `${i * 12}px`,
-                    left: `${i * 8}px`,
-                    zIndex: DEMO_CARDS.length - i,
-                  }}
-                >
-                  <Flashcard
-                    front={card.front}
-                    back={card.back}
-                    className="aspect-[3/2] w-full rounded-2xl shadow-md"
-                  />
-                </div>
-              ))}
-              <div className="w-full" style={{ paddingBottom: "calc(66.666% + 24px)" }} />
-            </div>
-          </div>
-        </section>
-
-        {/* 4. How It Works */}
-        <section className="py-20 md:py-28 border-t border-border">
-          <h2 className="text-2xl font-semibold text-center mb-16">
-            How it works
-          </h2>
-          <div className="grid md:grid-cols-3 gap-12 md:gap-8">
-            <div className="text-center space-y-4">
-              <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl border border-border bg-muted/50">
-                <FileText className="size-6 text-muted-foreground" />
-              </div>
-              <h3 className="font-medium">Step 1</h3>
-              <p className="text-muted-foreground text-sm">
-                Paste text or enter a topic
-              </p>
-            </div>
-            <div className="text-center space-y-4">
-              <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl border border-border bg-muted/50">
-                <Sparkles className="size-6 text-muted-foreground" />
-              </div>
-              <h3 className="font-medium">Step 2</h3>
-              <p className="text-muted-foreground text-sm">
-                AI generates flashcards
-              </p>
-            </div>
-            <div className="text-center space-y-4">
-              <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl border border-border bg-muted/50">
-                <BookOpen className="size-6 text-muted-foreground" />
-              </div>
-              <h3 className="font-medium">Step 3</h3>
-              <p className="text-muted-foreground text-sm">
-                Study instantly
-              </p>
-            </div>
-          </div>
-        </section>
-
-        {/* 5. Example Topics */}
-        <section className="py-20 md:py-28 border-t border-border">
-          <h2 className="text-2xl font-semibold text-center mb-8">
-            Try a topic
-          </h2>
-          <div className="flex flex-wrap justify-center gap-3">
+        <section className="py-12 md:py-16 border-t border-border/60">
+          <div className="flex flex-wrap justify-center gap-2">
             {EXAMPLE_TOPICS.map((topic) => (
               <Link
                 key={topic}
                 href={`/create-deck?topic=${encodeURIComponent(topic)}`}
-                className="px-4 py-2 rounded-xl border border-border bg-background text-sm font-medium hover:bg-muted transition-colors"
+                className="px-3.5 py-2 rounded-lg border border-border text-sm hover:bg-muted transition-colors"
               >
                 {topic}
               </Link>
@@ -129,33 +51,26 @@ export default function LandingPage() {
           </div>
         </section>
 
-        {/* 6. Value Proposition */}
-        <section className="py-20 md:py-28 border-t border-border">
-          <div className="grid md:grid-cols-3 gap-12 md:gap-8">
-            <div className="space-y-3">
-              <h3 className="font-semibold text-lg">Learn faster</h3>
-              <p className="text-muted-foreground text-sm leading-relaxed">
-                Turn articles and notes into flashcards automatically.
-              </p>
+        <section className="py-16 md:py-20 border-t border-border/60 text-center">
+          <h2 className="text-xl font-semibold mb-10">How it works</h2>
+          <div className="grid md:grid-cols-3 gap-8 text-sm">
+            <div className="space-y-2">
+              <p className="font-medium text-foreground">1. Add content</p>
+              <p className="text-muted-foreground">Paste text or enter a topic.</p>
             </div>
-            <div className="space-y-3">
-              <h3 className="font-semibold text-lg">Understand deeply</h3>
-              <p className="text-muted-foreground text-sm leading-relaxed">
-                Active recall helps you retain knowledge.
-              </p>
+            <div className="space-y-2">
+              <p className="font-medium text-foreground">2. Generate cards</p>
+              <p className="text-muted-foreground">AI creates question-answer pairs.</p>
             </div>
-            <div className="space-y-3">
-              <h3 className="font-semibold text-lg">Study anywhere</h3>
-              <p className="text-muted-foreground text-sm leading-relaxed">
-                Access your decks anytime.
-              </p>
+            <div className="space-y-2">
+              <p className="font-medium text-foreground">3. Review & learn</p>
+              <p className="text-muted-foreground">Study with spaced repetition.</p>
             </div>
           </div>
         </section>
 
-        {/* 7. CTA */}
-        <section className="py-20 md:py-28 border-t border-border text-center">
-          <h2 className="text-3xl font-semibold mb-6">
+        <section className="py-16 md:py-20 border-t border-border/60 text-center">
+          <h2 className="text-2xl font-semibold mb-5">
             Start learning smarter.
           </h2>
           <Link href="/create-deck">
@@ -165,32 +80,16 @@ export default function LandingPage() {
           </Link>
         </section>
 
-        {/* 8. Footer */}
-        <footer className="py-12 border-t border-border">
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-6">
+        <footer className="py-10 border-t border-border/60">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-muted-foreground">
             <Link href="/" className="flex items-center gap-2">
               <Logo size="sm" />
-              <span className="font-medium text-sm">MemoNext — Learn anything instantly.</span>
+              <span className="font-medium">MemoNext</span>
             </Link>
-            <div className="flex items-center gap-8">
-              <Link
-                href="/about"
-                className="text-sm text-muted-foreground hover:text-foreground transition-colors"
-              >
-                About
-              </Link>
-              <Link
-                href="/privacy"
-                className="text-sm text-muted-foreground hover:text-foreground transition-colors"
-              >
-                Privacy
-              </Link>
-              <Link
-                href="/terms"
-                className="text-sm text-muted-foreground hover:text-foreground transition-colors"
-              >
-                Terms
-              </Link>
+            <div className="flex items-center gap-6">
+              <Link href="/about" className="hover:text-foreground transition-colors">About</Link>
+              <Link href="/privacy" className="hover:text-foreground transition-colors">Privacy</Link>
+              <Link href="/terms" className="hover:text-foreground transition-colors">Terms</Link>
             </div>
           </div>
         </footer>

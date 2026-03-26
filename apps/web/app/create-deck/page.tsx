@@ -4,13 +4,6 @@ import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { getUsers, createDeck, generateFlashcards } from "@/lib/api";
 import { getStoredUserId } from "@/components/user-selector";
@@ -167,71 +160,46 @@ function CreateDeckForm() {
           ← Back
         </Link>
       </div>
-      <Card>
-        <CardHeader>
-          <CardTitle>Create Deck</CardTitle>
-          <CardDescription>
-            Create a deck and optionally generate cards from a topic or text.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="pb-6">
-          <form onSubmit={handleSubmit} className="space-y-0">
-            <section className="space-y-3 pb-8">
-              <h2 className="text-sm font-semibold tracking-tight text-foreground">
-                Deck details
-              </h2>
-              <div className="space-y-2">
-                <label htmlFor="name" className="text-sm font-medium">
-                  Deck Name
-                </label>
-                <Input
-                  id="name"
-                  placeholder="e.g. Spanish Vocabulary"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  autoComplete="off"
-                />
-                <p className="text-xs text-muted-foreground leading-relaxed">
-                  {emptyDeckMode
-                    ? "Required for an empty deck."
-                    : "If left blank and a topic is provided, the topic becomes the deck name."}
-                </p>
-              </div>
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">Create Deck</h1>
+        <p className="text-sm text-muted-foreground mt-1">
+          Create a deck and optionally generate cards with AI.
+        </p>
+      </div>
 
-              <label className="flex cursor-pointer items-start gap-3 rounded-md border border-dashed border-border/80 bg-muted/20 px-3 py-3 text-sm">
-                <input
-                  type="checkbox"
-                  checked={emptyDeckMode}
-                  onChange={(e) => {
-                    setEmptyDeckMode(e.target.checked);
-                  }}
-                  className="mt-0.5 rounded border-input"
-                />
-                <span>
-                  <span className="font-medium text-foreground">
-                    Create empty deck (no cards)
-                  </span>
-                  <span className="block text-muted-foreground text-xs mt-1 leading-relaxed">
-                    Skip adding cards now. You can add them later.
-                  </span>
-                </span>
-              </label>
-            </section>
+      <form onSubmit={handleSubmit} className="space-y-6">
+        <div className="space-y-2">
+          <label htmlFor="name" className="text-sm font-medium">
+            Deck Name
+          </label>
+          <Input
+            id="name"
+            placeholder="e.g. Spanish Vocabulary"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            autoComplete="off"
+          />
+        </div>
 
-            {!emptyDeckMode && (
-              <>
-                <div className="border-t border-border/40" aria-hidden />
+        <label className="flex cursor-pointer items-center gap-2.5 text-sm">
+          <input
+            type="checkbox"
+            checked={emptyDeckMode}
+            onChange={(e) => {
+              setEmptyDeckMode(e.target.checked);
+            }}
+            className="rounded border-input"
+          />
+          <span className="text-muted-foreground">
+            Create empty deck (add cards later)
+          </span>
+        </label>
 
-                <section className="space-y-4 pt-8">
-                  <div className="space-y-1">
-                    <h2 className="text-sm font-semibold tracking-tight text-foreground">
-                      Add cards
-                    </h2>
-                    <p className="text-xs text-muted-foreground leading-relaxed">
-                      Optional. Fill in a topic or text to generate cards automatically.
-                      Leave empty to create the deck without cards.
-                    </p>
-                  </div>
+        {!emptyDeckMode && (
+          <section className="space-y-4 pt-2 border-t border-border/40">
+            <h2 className="text-sm font-semibold tracking-tight text-foreground pt-4">
+              Generate cards
+            </h2>
 
                   <div
                     className="inline-flex rounded-lg border border-border/50 bg-muted/30 p-0.5"
@@ -275,7 +243,7 @@ function CreateDeckForm() {
                           className="min-w-0"
                         />
                         <p className="text-xs text-muted-foreground">
-                          Optional. Leave empty to create a deck without generating cards.
+                          Leave empty to skip generation.
                         </p>
                       </div>
                       {!topicTrimmed && (
@@ -361,18 +329,15 @@ function CreateDeckForm() {
                       </div>
                     </div>
                   )}
-                </section>
-              </>
-            )}
+          </section>
+        )}
 
-            <div className="mt-8 border-t border-border/40 pt-5">
-              <Button type="submit" disabled={loading} className="w-full sm:w-auto">
-                {submitLabel}
-              </Button>
-            </div>
-          </form>
-        </CardContent>
-      </Card>
+        <div className="pt-4 border-t border-border/40">
+          <Button type="submit" disabled={loading} className="w-full sm:w-auto">
+            {submitLabel}
+          </Button>
+        </div>
+      </form>
     </PageContainer>
   );
 }

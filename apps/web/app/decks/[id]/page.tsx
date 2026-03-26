@@ -510,7 +510,7 @@ export default function DeckPage({ params }: DeckPageProps) {
                   className="text-sm text-neutral-500 mb-3 cursor-pointer dark:text-neutral-400"
                   onClick={() => setEditingDescription(true)}
                 >
-                  {description || "Click to add description"}
+                  {description || "Add description…"}
                 </p>
               )}
             </div>
@@ -591,27 +591,27 @@ export default function DeckPage({ params }: DeckPageProps) {
             )}
             <div className="flex flex-wrap gap-2">
               <Link
-                href={`/study/${deck.id}?mode=explore`}
-                className="inline-flex h-10 items-center justify-center rounded-lg border border-neutral-300 bg-white hover:bg-neutral-50 dark:border-neutral-600 dark:bg-neutral-900 dark:hover:bg-neutral-800 px-4 text-sm font-medium w-full sm:w-auto max-mobile:min-h-[44px] max-mobile:rounded-[10px] max-mobile:text-[15px]"
-              >
-                Explore
-              </Link>
-              <Link
                 href={`/study/${deck.id}`}
-                className="inline-flex h-10 items-center justify-center rounded-lg bg-neutral-900 text-white hover:bg-neutral-800 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200 px-4 text-sm font-medium w-full sm:w-auto max-mobile:min-h-[44px] max-mobile:rounded-[10px] max-mobile:font-semibold max-mobile:text-[15px]"
+                className="inline-flex h-10 items-center justify-center rounded-lg bg-neutral-900 text-white hover:bg-neutral-800 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200 px-4 text-sm font-medium max-mobile:min-h-[44px]"
               >
                 Review
               </Link>
               <Link
+                href={`/study/${deck.id}?mode=explore`}
+                className="inline-flex h-10 items-center justify-center rounded-lg border border-border hover:bg-muted px-4 text-sm font-medium max-mobile:min-h-[44px]"
+              >
+                Explore
+              </Link>
+              <Link
                 href={`/decks/${deck.id}/add-card`}
-                className="inline-flex h-10 items-center justify-center rounded-lg border border-neutral-300 bg-white hover:bg-neutral-50 dark:border-neutral-600 dark:bg-neutral-900 dark:hover:bg-neutral-800 px-4 text-sm font-medium w-full sm:w-auto max-mobile:min-h-[44px] max-mobile:rounded-[10px] max-mobile:text-[15px]"
+                className="inline-flex h-10 items-center justify-center rounded-lg border border-border hover:bg-muted px-4 text-sm font-medium max-mobile:min-h-[44px]"
               >
                 Add Card
               </Link>
               <Button
-                variant="outline"
-                size="default"
-                className="inline-flex h-10 gap-2"
+                variant="ghost"
+                size="icon"
+                className="h-10 w-10 text-muted-foreground hover:text-foreground"
                 disabled={flashcards.length === 0}
                 onClick={() => {
                   const catName = deck.category_id
@@ -619,9 +619,9 @@ export default function DeckPage({ params }: DeckPageProps) {
                     : "Uncategorized";
                   exportDeckAsTxt(title || deck.name, catName, flashcards);
                 }}
+                aria-label="Export as .txt"
               >
                 <Download className="size-4" />
-                Export .txt
               </Button>
             </div>
             {hasFlashcards && !genPanelExpanded ? (
@@ -643,15 +643,10 @@ export default function DeckPage({ params }: DeckPageProps) {
                     : "max-mobile:p-3.5"
                 }`}
               >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="space-y-0.5">
-                    <p className={`font-semibold tracking-tight ${hasFlashcards ? "text-xs text-muted-foreground" : "text-sm"}`}>
-                      {hasFlashcards ? "Add more cards" : "Generate flashcards"}
-                    </p>
-                    <p className="text-xs text-muted-foreground leading-relaxed">
-                      Choose Topic or Text, then generate cards.
-                    </p>
-                  </div>
+                  <div className="flex items-start justify-between gap-2">
+                  <p className={`font-semibold tracking-tight ${hasFlashcards ? "text-xs text-muted-foreground" : "text-sm"}`}>
+                    {hasFlashcards ? "Add more cards" : "Generate flashcards"}
+                  </p>
                   {hasFlashcards && (
                     <button
                       type="button"
@@ -708,7 +703,7 @@ export default function DeckPage({ params }: DeckPageProps) {
                         className="min-w-0"
                       />
                       <p className="text-xs text-muted-foreground">
-                        Optional. Leave empty to skip generation.
+                        Leave empty to skip generation.
                       </p>
                     </div>
                     {!genTopic.trim() && (

@@ -2,9 +2,8 @@
 
 import { useEffect, useState, useRef, useCallback } from "react";
 import Link from "next/link";
-import { ChevronLeft, ChevronRight, X, CheckCircle2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Flashcard } from "@/components/study/Flashcard";
 import FormattedText from "@/components/FormattedText";
 import {
@@ -308,63 +307,40 @@ export default function CategoryStudyPage({ params }: CategoryStudyPageProps) {
       <main className="h-full min-h-[50vh] flex flex-col pt-4 sm:pt-6 pb-8" data-study>
         <div className="max-w-4xl mx-auto w-full px-4 sm:px-6 md:px-8 flex flex-col flex-1">
           <CategoryHeader backHref={backHref} categoryName={categoryName} />
-          <div className="flex flex-1 w-full justify-center items-center mt-4 sm:mt-6">
-            <Card className="max-w-xl w-full mx-2 sm:mx-0">
-              <CardHeader>
-                <div className="flex items-center gap-3">
-                  <CheckCircle2 className="size-7 text-green-500 shrink-0" />
-                  <div>
-                    <CardTitle className="text-2xl">Category complete!</CardTitle>
-                    {categoryName && (
-                      <p className="text-sm text-muted-foreground mt-1">{categoryName}</p>
-                    )}
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <p className="text-muted-foreground">
-                  You&apos;ve reviewed all {decks.length} deck{decks.length !== 1 ? "s" : ""} in this
-                  category.
-                  {totalCardsStudied > 0 && (
-                    <> {totalCardsStudied} card{totalCardsStudied !== 1 ? "s" : ""} reviewed total.</>
-                  )}
-                </p>
-                <div className="flex flex-col gap-3 items-center w-full">
-                  {nextCategory && (
-                    <div className="w-full flex flex-col items-center gap-1">
-                      <Link
-                        href={`/study/category/${nextCategory.id}`}
-                        className="inline-flex h-11 items-center justify-center rounded-lg bg-neutral-900 text-white hover:bg-neutral-800 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200 px-6 text-sm font-medium active:opacity-80 w-full sm:w-auto"
-                      >
-                        Review next category
-                      </Link>
-                      <span className="text-xs text-muted-foreground">
-                        Next: {nextCategory.name}
-                      </span>
-                    </div>
-                  )}
-                  <div className="flex flex-col sm:flex-row gap-3 justify-center w-full sm:w-auto">
-                    <Button
-                      variant="outline"
-                      className="h-11 w-full sm:w-auto active:opacity-80"
-                      onClick={() => {
-                        setCategoryComplete(false);
-                        setCurrentDeckIndex(0);
-                        setTotalCardsStudied(0);
-                      }}
-                    >
-                      Review category again
-                    </Button>
-                    <Link
-                      href="/decks"
-                      className="inline-flex h-11 items-center justify-center rounded-md border border-neutral-300 bg-white px-4 text-sm font-medium hover:bg-neutral-50 active:opacity-80 dark:border-neutral-600 dark:bg-neutral-900 dark:hover:bg-neutral-800 w-full sm:w-auto"
-                    >
-                      Back to decks
-                    </Link>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+          <div className="flex flex-1 w-full justify-center items-center mt-12">
+            <div className="max-w-md w-full text-center space-y-6">
+              <h2 className="text-2xl font-semibold">Category complete</h2>
+              <p className="text-muted-foreground">
+                {decks.length} deck{decks.length !== 1 ? "s" : ""} reviewed
+                {totalCardsStudied > 0 && <>, {totalCardsStudied} cards total</>}.
+              </p>
+              <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                {nextCategory && (
+                  <Link
+                    href={`/study/category/${nextCategory.id}`}
+                    className="inline-flex h-10 items-center justify-center rounded-lg bg-neutral-900 text-white hover:bg-neutral-800 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200 px-5 text-sm font-medium"
+                  >
+                    Next: {nextCategory.name}
+                  </Link>
+                )}
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setCategoryComplete(false);
+                    setCurrentDeckIndex(0);
+                    setTotalCardsStudied(0);
+                  }}
+                >
+                  Review again
+                </Button>
+                <Link
+                  href="/decks"
+                  className="inline-flex h-10 items-center justify-center rounded-lg border border-border px-4 text-sm font-medium hover:bg-muted"
+                >
+                  Back to decks
+                </Link>
+              </div>
+            </div>
           </div>
         </div>
       </main>
@@ -424,21 +400,17 @@ export default function CategoryStudyPage({ params }: CategoryStudyPageProps) {
             deckName={currentDeck?.name}
           />
           <div className="flex flex-1 w-full justify-center items-center">
-            <Card className="max-w-md w-full mx-2 sm:mx-0">
-              <CardContent className="pt-6 space-y-4">
-                <p className="text-center font-medium">
-                  Finished <span className="text-foreground">{currentDeck?.name}</span>
-                </p>
-                <p className="text-sm text-muted-foreground text-center">
-                  {flashcards.length} card{flashcards.length !== 1 ? "s" : ""} reviewed
-                </p>
-                <div className="flex justify-center">
-                  <Button className="h-11 active:opacity-80" onClick={advanceToNextDeck}>
-                    {currentDeckIndex < decks.length - 1 ? "Next deck" : "Finish category"}
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
+            <div className="max-w-md w-full text-center space-y-4">
+              <p className="font-medium">
+                Finished {currentDeck?.name}
+              </p>
+              <p className="text-sm text-muted-foreground">
+                {flashcards.length} card{flashcards.length !== 1 ? "s" : ""} reviewed
+              </p>
+              <Button onClick={advanceToNextDeck}>
+                {currentDeckIndex < decks.length - 1 ? "Next deck" : "Finish category"}
+              </Button>
+            </div>
           </div>
         </div>
       </main>

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { BookOpen, Eye } from "lucide-react";
+import { Eye } from "lucide-react";
 import { getCategoryDecks, getCategories } from "@/lib/api";
 import { getStoredUserId } from "@/components/user-selector";
 import PageContainer from "@/components/layout/page-container";
@@ -90,19 +90,18 @@ export default function CategoryPage({ params }: CategoryPageProps) {
             </p>
           </div>
           {decks.length > 0 && (
-            <div className="flex flex-col sm:flex-row gap-2 shrink-0 w-full sm:w-auto">
+            <div className="flex gap-2 shrink-0">
               <Link
                 href={`/explore/category/${params.categoryId}`}
-                className="inline-flex h-11 items-center gap-2 justify-center rounded-lg border border-neutral-300 bg-white hover:bg-neutral-50 active:opacity-80 dark:border-neutral-600 dark:bg-neutral-900 dark:hover:bg-neutral-800 px-5 text-sm font-medium w-full sm:w-auto"
+                className="inline-flex h-10 items-center gap-2 justify-center rounded-lg border border-border hover:bg-muted active:opacity-80 px-4 text-sm font-medium"
               >
                 <Eye className="size-4" />
                 Explore
               </Link>
               <Link
                 href={`/study/category/${params.categoryId}`}
-                className="inline-flex h-11 items-center gap-2 justify-center rounded-lg bg-neutral-900 text-white hover:bg-neutral-800 active:opacity-80 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200 px-5 text-sm font-medium w-full sm:w-auto"
+                className="inline-flex h-10 items-center gap-2 justify-center rounded-lg bg-neutral-900 text-white hover:bg-neutral-800 active:opacity-80 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200 px-4 text-sm font-medium"
               >
-                <BookOpen className="size-4" />
                 Review
               </Link>
             </div>

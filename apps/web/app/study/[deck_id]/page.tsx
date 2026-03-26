@@ -5,7 +5,6 @@ import Link from "next/link";
 import { ChevronLeft, ChevronRight, X, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Flashcard } from "@/components/study/Flashcard";
 import FormattedText from "@/components/FormattedText";
 import { getFlashcards, getUserSettings, updateUserSettings, submitReview, deleteDeckReviews, type UserSettings } from "@/lib/api";
@@ -235,7 +234,7 @@ export default function StudyPage({ params }: StudyPageProps) {
           <div className="flex flex-col sm:flex-row gap-3 justify-center">
             <Link
               href="/decks"
-              className="inline-flex h-10 items-center justify-center rounded-lg bg-neutral-900 text-white hover:bg-neutral-800 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200 px-6 text-sm font-medium w-fit max-mobile:min-h-[44px] max-mobile:rounded-[10px] max-mobile:font-semibold max-mobile:text-[15px]"
+              className="inline-flex h-10 items-center justify-center rounded-lg bg-neutral-900 text-white hover:bg-neutral-800 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200 px-5 text-sm font-medium w-fit"
             >
               Choose user
             </Link>
@@ -282,7 +281,7 @@ export default function StudyPage({ params }: StudyPageProps) {
               </p>
               <Link
                 href={`/decks/${params.deck_id}/add-card`}
-                className="inline-flex h-10 items-center justify-center rounded-lg bg-neutral-900 text-white hover:bg-neutral-800 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200 px-6 text-sm font-medium w-fit max-mobile:min-h-[44px] max-mobile:rounded-[10px] max-mobile:font-semibold max-mobile:text-[15px]"
+                className="inline-flex h-10 items-center justify-center rounded-lg bg-neutral-900 text-white hover:bg-neutral-800 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200 px-5 text-sm font-medium w-fit"
               >
                 Add Cards
               </Link>
@@ -307,34 +306,30 @@ export default function StudyPage({ params }: StudyPageProps) {
           >
             ← Back
           </Link>
-          <div className="flex flex-1 w-full justify-center items-center mt-6">
-            <Card className="max-w-xl w-full">
-              <CardHeader>
-                <CardTitle className="text-2xl">Session complete!</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <p className="text-muted-foreground">
-                  You&apos;ve gone through all {flashcards.length} cards. Great work!
-                </p>
-                <div className="flex flex-col sm:flex-row gap-3 justify-center">
-                  <Button
-                    onClick={() => {
-                      setSessionComplete(false);
-                      setCurrentCardIndex(0);
-                      setShowAnswer(false);
-                    }}
-                  >
-                    Review again
-                  </Button>
-                  <Link
-                    href={`/decks/${params.deck_id}`}
-                    className="inline-flex h-10 items-center justify-center rounded-md border border-neutral-300 bg-white px-4 text-sm font-medium hover:bg-neutral-50 dark:border-neutral-600 dark:bg-neutral-900 dark:hover:bg-neutral-800"
-                  >
-                    Back to deck
-                  </Link>
-                </div>
-              </CardContent>
-            </Card>
+          <div className="flex flex-1 w-full justify-center items-center mt-12">
+            <div className="max-w-md w-full text-center space-y-6">
+              <h2 className="text-2xl font-semibold">Session complete</h2>
+              <p className="text-muted-foreground">
+                All {flashcards.length} cards reviewed.
+              </p>
+              <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                <Button
+                  onClick={() => {
+                    setSessionComplete(false);
+                    setCurrentCardIndex(0);
+                    setShowAnswer(false);
+                  }}
+                >
+                  Review again
+                </Button>
+                <Link
+                  href={`/decks/${params.deck_id}`}
+                  className="inline-flex h-10 items-center justify-center rounded-lg border border-border px-4 text-sm font-medium hover:bg-muted"
+                >
+                  Back to deck
+                </Link>
+              </div>
+            </div>
           </div>
         </div>
       </main>
@@ -463,56 +458,49 @@ export default function StudyPage({ params }: StudyPageProps) {
               )}
             </div>
           </div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <div className="flex items-center gap-1 rounded-lg border border-black/20 dark:border-white/10 p-0.5 bg-muted/30">
-              <button
-                type="button"
-                onClick={() => setMode("study")}
-                className={`px-3 py-1.5 min-h-[36px] rounded-md text-sm font-medium transition-colors ${
-                  mode === "study"
-                    ? "bg-mondrian-blue/15 dark:bg-mondrian-blue/20 text-foreground shadow-sm ring-1 ring-mondrian-blue/30 dark:ring-mondrian-blue/40"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                Review
-              </button>
+          <div className="flex items-center gap-3 flex-wrap">
+            {mode === "explore" ? (
+              <>
+                <div className="flex items-center gap-0.5 rounded-lg border border-border/60 p-0.5 bg-muted/20">
+                  <button
+                    type="button"
+                    onClick={() => setExploreView("read")}
+                    className={`px-3 py-1 min-h-[32px] rounded-md text-sm font-medium transition-colors ${
+                      exploreView === "read"
+                        ? "bg-background text-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    Read
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setExploreView("cards")}
+                    className={`px-3 py-1 min-h-[32px] rounded-md text-sm font-medium transition-colors ${
+                      exploreView === "cards"
+                        ? "bg-background text-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    Cards
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setMode("study")}
+                  className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  Switch to Review
+                </button>
+              </>
+            ) : (
               <button
                 type="button"
                 onClick={() => setMode("explore")}
-                className={`px-3 py-1.5 min-h-[36px] rounded-md text-sm font-medium transition-colors ${
-                  mode === "explore"
-                    ? "bg-mondrian-blue/15 dark:bg-mondrian-blue/20 text-foreground shadow-sm ring-1 ring-mondrian-blue/30 dark:ring-mondrian-blue/40"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
+                className="text-xs text-muted-foreground hover:text-foreground transition-colors"
               >
-                Explore
+                Switch to Explore
               </button>
-            </div>
-            {mode === "explore" && (
-              <div className="flex items-center gap-1 rounded-lg border border-black/20 dark:border-white/10 p-0.5 bg-muted/30">
-                <button
-                  type="button"
-                  onClick={() => setExploreView("read")}
-                  className={`px-3 py-1.5 min-h-[36px] rounded-md text-sm font-medium transition-colors ${
-                    exploreView === "read"
-                      ? "bg-mondrian-blue/15 dark:bg-mondrian-blue/20 text-foreground shadow-sm ring-1 ring-mondrian-blue/30 dark:ring-mondrian-blue/40"
-                      : "text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  Read
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setExploreView("cards")}
-                  className={`px-3 py-1.5 min-h-[36px] rounded-md text-sm font-medium transition-colors ${
-                    exploreView === "cards"
-                      ? "bg-mondrian-blue/15 dark:bg-mondrian-blue/20 text-foreground shadow-sm ring-1 ring-mondrian-blue/30 dark:ring-mondrian-blue/40"
-                      : "text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  Cards
-                </button>
-              </div>
             )}
           </div>
         </div>

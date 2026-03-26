@@ -32,9 +32,13 @@ function renderMixed(text: string) {
         <span key={i} className="katex-block overflow-visible my-2">
           <BlockMath
             math={math}
+            errorColor="#888"
+            strict={false}
             renderError={() => (
               <InlineMath
                 math={math}
+                errorColor="#888"
+                strict={false}
                 renderError={(err) => (
                   <span className="text-destructive text-sm" title={err.message}>
                     {part}

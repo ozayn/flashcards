@@ -27,13 +27,6 @@ import {
   Pencil,
   Trash2,
 } from "lucide-react";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -41,7 +34,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { getUsers, getDecks, getCategories, updateDeck, createCategory, updateCategory, deleteCategory, deleteDeck, moveDeckToCategory, apiUrl } from "@/lib/api";
+import { getUsers, getDecks, getCategories, updateDeck, createCategory, updateCategory, deleteCategory, deleteDeck, moveDeckToCategory } from "@/lib/api";
 import { getStoredUserId } from "@/components/user-selector";
 import PageContainer from "@/components/layout/page-container";
 
@@ -96,7 +89,7 @@ function DeckListSkeleton({ rows = 4 }: { rows?: number }) {
       {Array.from({ length: rows }).map((_, i) => (
         <div
           key={i}
-          className="rounded-xl border border-neutral-200 dark:border-neutral-700 px-5 py-5 max-mobile:px-4 max-mobile:py-3.5 bg-muted/40 animate-pulse"
+          className="rounded-lg border border-border px-4 py-3.5 bg-muted/40 animate-pulse"
         >
           <div className="h-5 bg-muted-foreground/15 rounded w-[min(100%,14rem)] mb-2" />
           <div className="h-4 bg-muted-foreground/10 rounded w-24" />
@@ -560,22 +553,21 @@ export default function DecksPage() {
 
   return (
     <PageContainer>
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center justify-between">
           <h1 className="text-2xl font-semibold tracking-tight">Decks</h1>
           <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
+            <button
+              type="button"
               onClick={() => { setCategoryModalOpen(true); setCategoryCreateError(null); }}
-              className="h-10"
+              className="text-sm text-muted-foreground hover:text-foreground transition-colors"
             >
-              New Category
-            </Button>
+              + Category
+            </button>
             <Link
               href="/create-deck"
-              className="inline-flex h-10 items-center justify-center rounded-lg bg-neutral-900 text-white hover:bg-neutral-800 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200 px-4 text-sm font-medium max-mobile:min-h-[44px] max-mobile:rounded-[10px] max-mobile:font-semibold max-mobile:text-[15px]"
+              className="inline-flex h-9 items-center justify-center rounded-lg bg-neutral-900 text-white hover:bg-neutral-800 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200 px-4 text-sm font-medium"
             >
-              Create Deck
+              New Deck
             </Link>
           </div>
         </div>
@@ -827,57 +819,42 @@ export default function DecksPage() {
           </div>
         )}
 
-        {!showDeckListSkeleton && (
-          <p className="text-muted-foreground text-sm">
-            Your flashcard decks will appear here.
-          </p>
-        )}
-
-        <label className="flex items-center gap-2 text-sm cursor-pointer">
+        <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer">
           <input
             type="checkbox"
             checked={showArchived}
             onChange={(e) => setShowArchived(e.target.checked)}
             className="rounded border-input"
           />
-          Show archived decks
+          Show archived
         </label>
 
         <div className="space-y-3">
           {showDeckListSkeleton ? (
             <DeckListSkeleton rows={5} />
           ) : decksError ? (
-            <Card>
-              <CardHeader>
-                <CardTitle>Unable to load decks</CardTitle>
-                <CardDescription>
-                  The API may be unavailable. Ensure the backend is running and refresh the page. Configured API: {apiUrl}
-                </CardDescription>
-              </CardHeader>
-            </Card>
+            <div className="text-center py-12">
+              <p className="font-medium mb-1">Unable to load decks</p>
+              <p className="text-sm text-muted-foreground">
+                The API may be unavailable. Please refresh the page.
+              </p>
+            </div>
           ) : decks.length === 0 ? (
-            <Card>
-              <CardHeader>
-                <CardTitle>
-                  {showArchived ? "No archived decks" : "Getting Started"}
-                </CardTitle>
-                <CardDescription>
-                  {showArchived
-                    ? "Archived decks will appear here."
-                    : "Create your first deck to get started"}
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                {!showArchived && (
-                  <Link
-                    href="/create-deck"
-                    className="inline-flex h-8 items-center justify-center rounded-lg border border-border bg-background px-2.5 text-sm font-medium hover:bg-muted"
-                  >
-                    Create Deck
-                  </Link>
-                )}
-              </CardContent>
-            </Card>
+            <div className="text-center py-12">
+              <p className="text-muted-foreground mb-4">
+                {showArchived
+                  ? "No archived decks."
+                  : "No decks yet."}
+              </p>
+              {!showArchived && (
+                <Link
+                  href="/create-deck"
+                  className="inline-flex h-9 items-center justify-center rounded-lg bg-neutral-900 text-white hover:bg-neutral-800 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200 px-4 text-sm font-medium"
+                >
+                  Create your first deck
+                </Link>
+              )}
+            </div>
           ) : (
             <DndContext
               sensors={sensors}
@@ -901,9 +878,9 @@ export default function DecksPage() {
                   isOver={isDropTarget}
                 >
                   <div
-                    className={`group ${idx === 0 ? "mt-0" : "mt-8"}`}
+                    className={`group ${idx === 0 ? "mt-0" : "mt-6"}`}
                   >
-                    <div className="flex items-center gap-2 min-h-[44px] mb-1">
+                    <div className="flex items-center gap-1.5 min-h-[40px] mb-0.5">
                       <button
                         type="button"
                         onClick={() => toggleCollapsed(group.categoryId)}
@@ -983,25 +960,23 @@ export default function DecksPage() {
                       )}
                     </div>
                     {group.categoryId !== UNCATEGORIZED && (
-                      <div className="flex sm:hidden items-center gap-2 mb-2 pl-7">
+                      <div className="flex sm:hidden items-center gap-1.5 mb-2 pl-6">
                         {group.decks.length > 0 && (
                           <>
                             <Link
                               href={`/explore/category/${group.categoryId}`}
                               onClick={(e) => e.stopPropagation()}
-                              className="inline-flex h-7 items-center gap-1.5 rounded-md border border-neutral-300 dark:border-neutral-600 px-2.5 text-xs font-medium text-muted-foreground hover:text-foreground active:opacity-80"
+                              className="inline-flex h-8 items-center rounded-md px-2.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted active:opacity-80"
                               aria-label="Explore this category"
                             >
-                              <Eye className="w-3.5 h-3.5" />
                               Explore
                             </Link>
                             <Link
                               href={`/study/category/${group.categoryId}`}
                               onClick={(e) => e.stopPropagation()}
-                              className="inline-flex h-7 items-center gap-1.5 rounded-md bg-neutral-900 text-white dark:bg-neutral-100 dark:text-neutral-900 px-2.5 text-xs font-medium active:opacity-80"
+                              className="inline-flex h-8 items-center rounded-md px-2.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted active:opacity-80"
                               aria-label="Review this category"
                             >
-                              <BookOpen className="w-3.5 h-3.5" />
                               Review
                             </Link>
                           </>
@@ -1012,7 +987,7 @@ export default function DecksPage() {
                             e.stopPropagation();
                             openRenameModal(group.categoryId, group.categoryName);
                           }}
-                          className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-neutral-300 dark:border-neutral-600 active:opacity-80"
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-md hover:bg-muted active:opacity-80"
                           aria-label="Rename category"
                         >
                           <Pencil className="w-3.5 h-3.5 text-muted-foreground" />
@@ -1023,7 +998,7 @@ export default function DecksPage() {
                             e.stopPropagation();
                             setDeleteConfirmId(group.categoryId);
                           }}
-                          className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-neutral-300 dark:border-neutral-600 active:opacity-80"
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-md hover:bg-muted active:opacity-80"
                           aria-label="Delete category"
                         >
                           <Trash2 className="w-3.5 h-3.5 text-muted-foreground" />
@@ -1031,7 +1006,7 @@ export default function DecksPage() {
                       </div>
                     )}
                   </div>
-                  {!collapsedCategories.has(group.categoryId) && <div className="space-y-3 max-mobile:space-y-2.5 pl-6">
+                  {!collapsedCategories.has(group.categoryId) && <div className="space-y-1.5 pl-6">
                     {group.decks.map((deck) => (
                       <DraggableDeckRow
                         key={deck.id}
@@ -1048,7 +1023,7 @@ export default function DecksPage() {
                               router.push(`/decks/${deck.id}`);
                             }
                           }}
-                          className="deck-card group rounded-xl border border-neutral-200 px-5 py-5 flex items-center justify-between gap-3 bg-white hover:bg-muted/40 hover:shadow-sm transition-colors dark:bg-neutral-900 dark:border-neutral-700 cursor-pointer max-mobile:px-4 max-mobile:py-3.5 max-mobile:rounded-[12px]"
+                          className="deck-card group rounded-lg border border-border px-4 py-3.5 flex items-center justify-between gap-3 hover:bg-muted/40 transition-colors cursor-pointer max-mobile:px-3.5 max-mobile:py-3"
                         >
                           <div className="flex items-center gap-3 flex-1 min-w-0">
                             {(() => {
@@ -1068,11 +1043,11 @@ export default function DecksPage() {
                                 </Tooltip>
                               ) : null;
                             })()}
-                            <div className="flex flex-col gap-1 min-w-0">
-                              <span className="font-medium text-base leading-snug max-mobile:text-[16px] max-mobile:font-semibold">
+                            <div className="flex flex-col gap-0.5 min-w-0">
+                              <span className="font-medium text-sm leading-snug truncate">
                                 {deck.name}
                               </span>
-                              <span className="text-sm text-muted-foreground max-mobile:text-[13px] max-mobile:text-[#777] dark:max-mobile:text-neutral-400">
+                              <span className="text-xs text-muted-foreground">
                                 {deck.card_count ?? 0} {deck.card_count === 1 ? "card" : "cards"}
                               </span>
                             </div>
