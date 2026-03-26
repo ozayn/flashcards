@@ -26,7 +26,7 @@ function isNavActive(link: NavLink, pathname: string): boolean {
 
 const landingNavLinks: NavLink[] = [
   { href: "/about", label: "About" },
-  { href: "/decks", label: "Sign In" },
+  { href: "/signin", label: "Sign In" },
   { href: "/create-deck", label: "Get Started", primary: true },
 ];
 
