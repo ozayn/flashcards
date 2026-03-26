@@ -517,9 +517,9 @@ export default function StudyPage({ params }: StudyPageProps) {
       </div>
 
       {mode === "explore" && exploreView === "read" ? (
-        <div className="flex-1 min-h-0 w-full overflow-y-auto">
+        <div className="flex-1 min-h-0 w-full overflow-y-auto touch-pan-y" onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
           <div className="max-w-2xl sm:max-w-3xl mx-auto w-full px-5 sm:px-6 md:px-8 py-6 sm:py-10 landscape-mobile:py-3">
-            <article dir="auto" className="space-y-5 sm:space-y-8 landscape-mobile:space-y-3" onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
+            <article dir="auto" className="space-y-5 sm:space-y-8 landscape-mobile:space-y-3">
               <FormattedText
                 text={card.question}
                 className="text-2xl sm:text-3xl lg:text-4xl font-medium leading-snug sm:leading-relaxed"
