@@ -33,6 +33,8 @@ interface ExploreFlashcard {
   answer_detailed?: string | null;
 }
 
+type ExploreView = "read" | "cards";
+
 export default function CategoryExplorePage({ params }: CategoryExplorePageProps) {
   const [categoryName, setCategoryName] = useState<string | null>(null);
   const [decks, setDecks] = useState<ExploreDeck[]>([]);
@@ -40,6 +42,7 @@ export default function CategoryExplorePage({ params }: CategoryExplorePageProps
   const [flashcards, setFlashcards] = useState<ExploreFlashcard[]>([]);
   const [currentCardIndex, setCurrentCardIndex] = useState(0);
   const [showAnswer, setShowAnswer] = useState(false);
+  const [exploreView, setExploreView] = useState<ExploreView>("read");
   const [deckComplete, setDeckComplete] = useState(false);
   const [categoryComplete, setCategoryComplete] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -144,7 +147,11 @@ export default function CategoryExplorePage({ params }: CategoryExplorePageProps
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.code === "Space") {
         e.preventDefault();
-        setShowAnswer((prev) => !prev);
+        if (exploreView === "read") {
+          handleNext();
+        } else {
+          setShowAnswer((prev) => !prev);
+        }
       }
       if (e.code === "ArrowRight") {
         e.preventDefault();
@@ -157,7 +164,7 @@ export default function CategoryExplorePage({ params }: CategoryExplorePageProps
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [cardsLoading, flashcards.length, handleNext, handlePrev]);
+  }, [cardsLoading, flashcards.length, handleNext, handlePrev, exploreView]);
 
   function advanceToNextDeck() {
     const next = currentDeckIndex + 1;
@@ -260,7 +267,7 @@ export default function CategoryExplorePage({ params }: CategoryExplorePageProps
                     href={`/study/category/${params.categoryId}`}
                     className="inline-flex h-11 items-center justify-center rounded-lg bg-neutral-900 text-white hover:bg-neutral-800 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200 px-6 text-sm font-medium active:opacity-80 w-full sm:w-auto"
                   >
-                    Study this category
+                    Review this category
                   </Link>
                   <div className="flex flex-col sm:flex-row gap-3 justify-center w-full sm:w-auto">
                     <Button
@@ -391,11 +398,37 @@ export default function CategoryExplorePage({ params }: CategoryExplorePageProps
             ← Back
           </Link>
           <div className="mt-1.5 space-y-1">
-            <div className="flex items-center gap-2">
-              <p className="text-sm font-medium text-muted-foreground truncate">
-                {categoryName ?? "Category"}
-              </p>
-              <span className="text-xs text-muted-foreground/60 font-medium">Explore</span>
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div className="flex items-center gap-2">
+                <p className="text-sm font-medium text-muted-foreground truncate">
+                  {categoryName ?? "Category"}
+                </p>
+                <span className="text-xs text-muted-foreground/60 font-medium">Explore</span>
+              </div>
+              <div className="flex items-center gap-1 rounded-lg border border-black/20 dark:border-white/10 p-0.5 bg-muted/30">
+                <button
+                  type="button"
+                  onClick={() => setExploreView("read")}
+                  className={`px-3 py-1.5 min-h-[36px] rounded-md text-xs sm:text-sm font-medium transition-colors ${
+                    exploreView === "read"
+                      ? "bg-mondrian-blue/15 dark:bg-mondrian-blue/20 text-foreground shadow-sm ring-1 ring-mondrian-blue/30 dark:ring-mondrian-blue/40"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  Read
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setExploreView("cards")}
+                  className={`px-3 py-1.5 min-h-[36px] rounded-md text-xs sm:text-sm font-medium transition-colors ${
+                    exploreView === "cards"
+                      ? "bg-mondrian-blue/15 dark:bg-mondrian-blue/20 text-foreground shadow-sm ring-1 ring-mondrian-blue/30 dark:ring-mondrian-blue/40"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  Cards
+                </button>
+              </div>
             </div>
             <div className="flex items-center gap-1.5 flex-wrap">
               <span className="text-xs text-muted-foreground whitespace-nowrap">
@@ -411,6 +444,53 @@ export default function CategoryExplorePage({ params }: CategoryExplorePageProps
         </div>
       </div>
 
+      {exploreView === "read" ? (
+        <div className="flex-1 min-h-0 w-full overflow-y-auto">
+          <div className="max-w-2xl sm:max-w-3xl mx-auto w-full px-5 sm:px-6 md:px-8 py-6 sm:py-10">
+            <div className="flex items-center justify-between mb-5 sm:mb-8">
+              <span className="text-sm text-muted-foreground tabular-nums">
+                {currentCardIndex + 1} / {flashcards.length}
+              </span>
+              <div className="hidden sm:flex gap-2">
+                <Button variant="outline" size="icon" onClick={handlePrev} disabled={isFirst} className="h-9 w-9" aria-label="Previous card">
+                  <ChevronLeft className="size-4" />
+                </Button>
+                <Button variant="outline" size="icon" onClick={handleNext} disabled={isLast && deckComplete} className="h-9 w-9" aria-label="Next card">
+                  <ChevronRight className="size-4" />
+                </Button>
+              </div>
+            </div>
+            <article dir="auto" className="space-y-5 sm:space-y-8" onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
+              <FormattedText
+                text={card.question}
+                className="text-2xl sm:text-3xl lg:text-4xl font-medium leading-snug sm:leading-relaxed"
+              />
+              <hr className="border-border" />
+              <FormattedText
+                text={card.answer_short}
+                className="whitespace-pre-line text-lg sm:text-2xl lg:text-[1.75rem] leading-relaxed"
+              />
+              {card.answer_detailed &&
+                card.answer_detailed.trim() !== card.answer_short.trim() && (
+                  <div className="border-l-2 border-border pl-4 sm:pl-5">
+                    <FormattedText
+                      text={card.answer_detailed}
+                      className="whitespace-pre-line text-base sm:text-lg lg:text-xl text-muted-foreground leading-relaxed"
+                    />
+                  </div>
+                )}
+            </article>
+            <div className="flex justify-center gap-4 mt-8 sm:mt-10 pb-4">
+              <Button variant="outline" size="icon" onClick={handlePrev} disabled={isFirst} className="h-11 w-11 sm:h-10 sm:w-10 lg:h-12 lg:w-12" aria-label="Previous card">
+                <ChevronLeft className="size-5 lg:size-6" />
+              </Button>
+              <Button variant="outline" size="icon" onClick={handleNext} disabled={isLast && deckComplete} className="h-11 w-11 sm:h-10 sm:w-10 lg:h-12 lg:w-12" aria-label="Next card">
+                <ChevronRight className="size-5 lg:size-6" />
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : (
       <div className="flex flex-col items-center justify-center flex-1 min-h-0 w-full mt-2 sm:mt-0">
         <div className="flex-1 min-h-0 min-h-[200px] flex flex-col landscape:flex-row landscape:items-stretch landscape:min-h-0 justify-center items-center gap-2 w-full max-w-4xl mx-auto relative overflow-hidden [perspective:1000px]">
           <Button
@@ -500,6 +580,7 @@ export default function CategoryExplorePage({ params }: CategoryExplorePageProps
           </Button>
         </div>
       </div>
+      )}
     </main>
   );
 }

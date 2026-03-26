@@ -68,7 +68,7 @@ export function UserSettings() {
         size="icon"
         onClick={() => setOpen(!open)}
         className="size-8 text-muted-foreground hover:text-foreground"
-        aria-label="Study settings"
+        aria-label="Settings"
         aria-expanded={open}
       >
         <Settings className="size-4" />

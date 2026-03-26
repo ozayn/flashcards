@@ -23,6 +23,7 @@ interface StudyFlashcard {
 }
 
 type StudyMode = "study" | "explore";
+type ExploreView = "read" | "cards";
 
 export default function StudyPage({ params }: StudyPageProps) {
   const [mode, setMode] = useState<StudyMode>(() => {
@@ -32,6 +33,7 @@ export default function StudyPage({ params }: StudyPageProps) {
     }
     return "study";
   });
+  const [exploreView, setExploreView] = useState<ExploreView>("read");
   const [flashcards, setFlashcards] = useState<StudyFlashcard[]>([]);
   const [loading, setLoading] = useState(true);
   const [noUserForStudy, setNoUserForStudy] = useState(false);
@@ -182,7 +184,11 @@ export default function StudyPage({ params }: StudyPageProps) {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.code === "Space") {
         e.preventDefault();
-        if (canFlip) setShowAnswer((prev) => !prev);
+        if (mode === "explore" && exploreView === "read") {
+          handleNext();
+        } else if (canFlip) {
+          setShowAnswer((prev) => !prev);
+        }
       }
       if (e.code === "ArrowRight") {
         e.preventDefault();
@@ -195,7 +201,7 @@ export default function StudyPage({ params }: StudyPageProps) {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [loading, flashcards.length, canFlip, handleNext, handlePrev]);
+  }, [loading, flashcards.length, canFlip, handleNext, handlePrev, mode, exploreView]);
 
   if (loading) {
     return (
@@ -318,7 +324,7 @@ export default function StudyPage({ params }: StudyPageProps) {
                       setShowAnswer(false);
                     }}
                   >
-                    Study again
+                    Review again
                   </Button>
                   <Link
                     href={`/decks/${params.deck_id}`}
@@ -396,33 +402,84 @@ export default function StudyPage({ params }: StudyPageProps) {
         className="fixed bottom-8 right-[max(0.5rem,calc(50vw-min(50vw,18rem)))] z-50 inline-flex items-center gap-2 rounded-full bg-background/95 backdrop-blur border border-border shadow-lg px-4 py-2 text-sm font-medium hover:bg-muted transition-colors"
       >
         <X className="size-4" />
-        Exit Study
+        Exit
       </Link>
-      <div className="pt-6 shrink-0 w-full">
-        <div className="max-w-4xl mx-auto w-full px-6 md:px-8 flex items-center justify-between">
-          <Link
-            href={`/decks/${params.deck_id}`}
-            className="inline-flex h-7 items-center justify-center rounded-lg px-2.5 text-sm font-medium hover:bg-muted"
-          >
-            ← Back
-          </Link>
-          <div className="flex items-center gap-2">
+      <div className="pt-4 sm:pt-6 shrink-0 w-full">
+        <div className="max-w-4xl mx-auto w-full px-4 sm:px-6 md:px-8 space-y-2">
+          <div className="flex items-center justify-between">
+            <Link
+              href={`/decks/${params.deck_id}`}
+              className="inline-flex h-7 items-center justify-center rounded-lg px-2.5 text-sm font-medium hover:bg-muted"
+            >
+              ← Back
+            </Link>
+            <div className="flex items-center gap-2">
+              <div className="hidden landscape-mobile:flex items-center gap-2">
+                <ThemeToggle className="size-8 text-muted-foreground hover:text-foreground" />
+                <div ref={settingsRef} className="relative">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setShowSettings((s) => !s)}
+                    className="size-8 text-muted-foreground hover:text-foreground"
+                    aria-label="Flashcard style"
+                  >
+                    <Settings className="size-4" />
+                  </Button>
+                  {showSettings && (
+                    <div className="absolute right-0 top-full z-50 mt-1 w-44 rounded-lg border border-border bg-popover p-2 shadow-lg">
+                      <p className="text-xs font-medium text-muted-foreground mb-1.5">Style</p>
+                      <div className="grid grid-cols-2 gap-1">
+                        {(["paper", "minimal", "modern", "anki"] as const).map((style) => (
+                          <button
+                            key={style}
+                            type="button"
+                            onClick={async () => {
+                              const userId = getStoredUserId();
+                              if (userId) {
+                                const updated = await updateUserSettings(userId, { card_style: style });
+                                setUserSettings(updated);
+                                setShowSettings(false);
+                              }
+                            }}
+                            className={`px-2 py-1 rounded text-xs font-medium capitalize ${userSettings.card_style === style ? "bg-accent" : "hover:bg-muted"}`}
+                          >
+                            {style}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+              {isDev && (
+                <button
+                  type="button"
+                  onClick={() => setResetConfirmOpen(true)}
+                  className="text-xs px-2 py-1 rounded border border-red-400 text-red-500 hover:bg-red-50 dark:border-red-600 dark:text-red-400 dark:hover:bg-red-950/50 transition-colors"
+                >
+                  Reset
+                </button>
+              )}
+            </div>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
             <div className="flex items-center gap-1 rounded-lg border border-black/20 dark:border-white/10 p-0.5 bg-muted/30">
               <button
                 type="button"
                 onClick={() => setMode("study")}
-                className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                className={`px-3 py-1.5 min-h-[36px] rounded-md text-sm font-medium transition-colors ${
                   mode === "study"
                     ? "bg-mondrian-blue/15 dark:bg-mondrian-blue/20 text-foreground shadow-sm ring-1 ring-mondrian-blue/30 dark:ring-mondrian-blue/40"
                     : "text-muted-foreground hover:text-foreground"
                 }`}
               >
-                Study
+                Review
               </button>
               <button
                 type="button"
                 onClick={() => setMode("explore")}
-                className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                className={`px-3 py-1.5 min-h-[36px] rounded-md text-sm font-medium transition-colors ${
                   mode === "explore"
                     ? "bg-mondrian-blue/15 dark:bg-mondrian-blue/20 text-foreground shadow-sm ring-1 ring-mondrian-blue/30 dark:ring-mondrian-blue/40"
                     : "text-muted-foreground hover:text-foreground"
@@ -431,59 +488,83 @@ export default function StudyPage({ params }: StudyPageProps) {
                 Explore
               </button>
             </div>
-            {isDev && (
-              <button
-                type="button"
-                onClick={() => setResetConfirmOpen(true)}
-                className="text-xs px-2 py-1 rounded border border-red-400 text-red-500 hover:bg-red-50 dark:border-red-600 dark:text-red-400 dark:hover:bg-red-950/50 transition-colors"
-              >
-                Reset Deck Progress
-              </button>
-            )}
-          </div>
-        <div className="flex items-center gap-2">
-          <div className="hidden landscape-mobile:flex items-center gap-2">
-            <ThemeToggle className="size-8 text-muted-foreground hover:text-foreground" />
-            <div ref={settingsRef} className="relative">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setShowSettings((s) => !s)}
-              className="size-8 text-muted-foreground hover:text-foreground"
-              aria-label="Flashcard style"
-            >
-              <Settings className="size-4" />
-            </Button>
-            {showSettings && (
-              <div className="absolute right-0 top-full z-50 mt-1 w-44 rounded-lg border border-border bg-popover p-2 shadow-lg">
-                <p className="text-xs font-medium text-muted-foreground mb-1.5">Style</p>
-                <div className="grid grid-cols-2 gap-1">
-                  {(["paper", "minimal", "modern", "anki"] as const).map((style) => (
-                    <button
-                      key={style}
-                      type="button"
-                      onClick={async () => {
-                        const userId = getStoredUserId();
-                        if (userId) {
-                          const updated = await updateUserSettings(userId, { card_style: style });
-                          setUserSettings(updated);
-                          setShowSettings(false);
-                        }
-                      }}
-                      className={`px-2 py-1 rounded text-xs font-medium capitalize ${userSettings.card_style === style ? "bg-accent" : "hover:bg-muted"}`}
-                    >
-                      {style}
-                    </button>
-                  ))}
-                </div>
+            {mode === "explore" && (
+              <div className="flex items-center gap-1 rounded-lg border border-black/20 dark:border-white/10 p-0.5 bg-muted/30">
+                <button
+                  type="button"
+                  onClick={() => setExploreView("read")}
+                  className={`px-3 py-1.5 min-h-[36px] rounded-md text-sm font-medium transition-colors ${
+                    exploreView === "read"
+                      ? "bg-mondrian-blue/15 dark:bg-mondrian-blue/20 text-foreground shadow-sm ring-1 ring-mondrian-blue/30 dark:ring-mondrian-blue/40"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  Read
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setExploreView("cards")}
+                  className={`px-3 py-1.5 min-h-[36px] rounded-md text-sm font-medium transition-colors ${
+                    exploreView === "cards"
+                      ? "bg-mondrian-blue/15 dark:bg-mondrian-blue/20 text-foreground shadow-sm ring-1 ring-mondrian-blue/30 dark:ring-mondrian-blue/40"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  Cards
+                </button>
               </div>
             )}
-            </div>
           </div>
-        </div>
         </div>
       </div>
 
+      {mode === "explore" && exploreView === "read" ? (
+        <div className="flex-1 min-h-0 w-full overflow-y-auto">
+          <div className="max-w-2xl sm:max-w-3xl mx-auto w-full px-5 sm:px-6 md:px-8 py-6 sm:py-10">
+            <div className="flex items-center justify-between mb-5 sm:mb-8">
+              <span className="text-sm text-muted-foreground tabular-nums">
+                {currentCardIndex + 1} / {flashcards.length}
+              </span>
+              <div className="hidden sm:flex gap-2">
+                <Button variant="outline" size="icon" onClick={handlePrev} disabled={isFirst} className="h-9 w-9" aria-label="Previous card">
+                  <ChevronLeft className="size-4" />
+                </Button>
+                <Button variant="outline" size="icon" onClick={handleNext} disabled={isLast} className="h-9 w-9" aria-label="Next card">
+                  <ChevronRight className="size-4" />
+                </Button>
+              </div>
+            </div>
+            <article dir="auto" className="space-y-5 sm:space-y-8" onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
+              <FormattedText
+                text={card.question}
+                className="text-2xl sm:text-3xl lg:text-4xl font-medium leading-snug sm:leading-relaxed"
+              />
+              <hr className="border-border" />
+              <FormattedText
+                text={card.answer_short}
+                className="whitespace-pre-line text-lg sm:text-2xl lg:text-[1.75rem] leading-relaxed"
+              />
+              {card.answer_detailed &&
+                card.answer_detailed.trim() !== card.answer_short.trim() && (
+                  <div className="border-l-2 border-border pl-4 sm:pl-5">
+                    <FormattedText
+                      text={card.answer_detailed}
+                      className="whitespace-pre-line text-base sm:text-lg lg:text-xl text-muted-foreground leading-relaxed"
+                    />
+                  </div>
+                )}
+            </article>
+            <div className="flex justify-center gap-4 mt-8 sm:mt-10 pb-4">
+              <Button variant="outline" size="icon" onClick={handlePrev} disabled={isFirst} className="h-11 w-11 sm:h-10 sm:w-10 lg:h-12 lg:w-12" aria-label="Previous card">
+                <ChevronLeft className="size-5 lg:size-6" />
+              </Button>
+              <Button variant="outline" size="icon" onClick={handleNext} disabled={isLast} className="h-11 w-11 sm:h-10 sm:w-10 lg:h-12 lg:w-12" aria-label="Next card">
+                <ChevronRight className="size-5 lg:size-6" />
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : (
       <div className="flex flex-col items-center justify-center min-h-[75vh] flex-1 min-h-0 w-full">
         <div className="flex-1 min-h-0 min-h-[200px] flex flex-col landscape:flex-row landscape:items-stretch landscape:min-h-0 justify-center items-center gap-2 w-full max-w-4xl mx-auto relative overflow-hidden [perspective:1000px]">
           <Button
@@ -609,6 +690,7 @@ export default function StudyPage({ params }: StudyPageProps) {
         </Button>
       </div>
       </div>
+      )}
     </main>
   );
 }

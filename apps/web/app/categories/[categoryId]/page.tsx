@@ -103,7 +103,7 @@ export default function CategoryPage({ params }: CategoryPageProps) {
                 className="inline-flex h-11 items-center gap-2 justify-center rounded-lg bg-neutral-900 text-white hover:bg-neutral-800 active:opacity-80 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200 px-5 text-sm font-medium w-full sm:w-auto"
               >
                 <BookOpen className="size-4" />
-                Study
+                Review
               </Link>
             </div>
           )}

@@ -600,7 +600,7 @@ export default function DeckPage({ params }: DeckPageProps) {
                 href={`/study/${deck.id}`}
                 className="inline-flex h-10 items-center justify-center rounded-lg bg-neutral-900 text-white hover:bg-neutral-800 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200 px-4 text-sm font-medium w-full sm:w-auto max-mobile:min-h-[44px] max-mobile:rounded-[10px] max-mobile:font-semibold max-mobile:text-[15px]"
               >
-                Study
+                Review
               </Link>
               <Link
                 href={`/decks/${deck.id}/add-card`}

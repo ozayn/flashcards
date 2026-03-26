@@ -323,7 +323,7 @@ export default function CategoryStudyPage({ params }: CategoryStudyPageProps) {
               </CardHeader>
               <CardContent className="space-y-6">
                 <p className="text-muted-foreground">
-                  You&apos;ve studied all {decks.length} deck{decks.length !== 1 ? "s" : ""} in this
+                  You&apos;ve reviewed all {decks.length} deck{decks.length !== 1 ? "s" : ""} in this
                   category.
                   {totalCardsStudied > 0 && (
                     <> {totalCardsStudied} card{totalCardsStudied !== 1 ? "s" : ""} reviewed total.</>
@@ -336,7 +336,7 @@ export default function CategoryStudyPage({ params }: CategoryStudyPageProps) {
                         href={`/study/category/${nextCategory.id}`}
                         className="inline-flex h-11 items-center justify-center rounded-lg bg-neutral-900 text-white hover:bg-neutral-800 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200 px-6 text-sm font-medium active:opacity-80 w-full sm:w-auto"
                       >
-                        Study next category
+                        Review next category
                       </Link>
                       <span className="text-xs text-muted-foreground">
                         Next: {nextCategory.name}
@@ -353,7 +353,7 @@ export default function CategoryStudyPage({ params }: CategoryStudyPageProps) {
                         setTotalCardsStudied(0);
                       }}
                     >
-                      Study category again
+                      Review category again
                     </Button>
                     <Link
                       href="/decks"
@@ -459,7 +459,7 @@ export default function CategoryStudyPage({ params }: CategoryStudyPageProps) {
         className="fixed bottom-4 right-4 sm:bottom-8 sm:right-[max(0.5rem,calc(50vw-min(50vw,18rem)))] z-50 inline-flex items-center gap-1.5 rounded-full bg-background/95 backdrop-blur border border-border shadow-lg px-3 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm font-medium hover:bg-muted active:opacity-80 transition-colors"
       >
         <X className="size-3.5 sm:size-4" />
-        <span className="hidden sm:inline">Exit Category Study</span>
+        <span className="hidden sm:inline">Exit Category Review</span>
         <span className="sm:hidden">Exit</span>
       </Link>
 
@@ -473,7 +473,7 @@ export default function CategoryStudyPage({ params }: CategoryStudyPageProps) {
           </Link>
           <div className="mt-1.5 space-y-1">
             <p className="text-sm font-medium text-muted-foreground truncate">
-              {categoryName ?? "Category study"}
+              {categoryName ?? "Category review"}
             </p>
             <div className="flex items-center gap-1.5 flex-wrap">
               <span className="text-xs text-muted-foreground whitespace-nowrap">
@@ -644,7 +644,7 @@ function CategoryHeader({
       </Link>
       <div className="space-y-1">
         <p className="text-sm font-medium text-muted-foreground truncate">
-          {categoryName ?? "Category study"}
+          {categoryName ?? "Category review"}
         </p>
         {showDeckInfo && (
           <>
