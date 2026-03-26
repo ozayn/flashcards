@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef, useCallback } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { ChevronLeft, ChevronRight, X, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -25,13 +26,13 @@ type StudyMode = "study" | "explore";
 type ExploreView = "read" | "cards";
 
 export default function StudyPage({ params }: StudyPageProps) {
-  const [mode, setMode] = useState<StudyMode>(() => {
-    if (typeof window !== "undefined") {
-      const p = new URLSearchParams(window.location.search);
-      if (p.get("mode") === "explore") return "explore";
-    }
-    return "study";
-  });
+  const searchParams = useSearchParams();
+  const urlMode = searchParams.get("mode");
+  const [mode, setMode] = useState<StudyMode>(urlMode === "explore" ? "explore" : "study");
+
+  useEffect(() => {
+    setMode(urlMode === "explore" ? "explore" : "study");
+  }, [urlMode]);
   const [exploreView, setExploreView] = useState<ExploreView>("read");
   const [flashcards, setFlashcards] = useState<StudyFlashcard[]>([]);
   const [loading, setLoading] = useState(true);

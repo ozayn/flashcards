@@ -24,11 +24,11 @@ export function Logo({ size = "md", className = "" }: LogoProps) {
 
   return (
     <Image
-      src="/logo/brain_stack.svg"
+      src="/logo/brain_stack_512.png"
       alt="MemoNext"
       width={height}
       height={height}
-      className={`dark:brightness-110 ${className}`}
+      className={`dark:invert ${className}`}
       style={{ height: `${height}px`, width: "auto" }}
       priority
     />

@@ -69,7 +69,7 @@ export default function RootLayout({
         <DevErrorHandler />
         <div className="flex flex-col min-h-screen min-h-[100dvh]">
           <ConditionalNav />
-          <div className="flex-1 min-h-0 min-h-[calc(100dvh-3.5rem)] overflow-y-auto max-w-4xl mx-auto w-full px-4 sm:px-6 md:px-8 pt-6 pb-8 [&:has([data-study])]:max-w-none [&:has([data-study])]:px-0 [&:has([data-study])]:pt-0 [&:has([data-study])]:pb-0 [&:has([data-study])]:min-h-[100dvh] [&:has([data-landing])]:max-w-none [&:has([data-landing])]:px-0 [&:has([data-landing])]:pt-0 [&:has([data-landing])]:pb-0 [&:has([data-landing])]:min-h-[100dvh]">
+          <div className="flex-1 min-h-0 min-h-[calc(100dvh-3.5rem)] max-w-4xl mx-auto w-full px-4 sm:px-6 md:px-8 pt-6 pb-8 [&:has([data-study])]:max-w-none [&:has([data-study])]:px-0 [&:has([data-study])]:pt-0 [&:has([data-study])]:pb-0 [&:has([data-study])]:min-h-[100dvh] [&:has([data-landing])]:max-w-none [&:has([data-landing])]:px-0 [&:has([data-landing])]:pt-0 [&:has([data-landing])]:pb-0 [&:has([data-landing])]:min-h-[100dvh]">
             <TooltipProvider>
               <ErrorBoundary>{children}</ErrorBoundary>
             </TooltipProvider>

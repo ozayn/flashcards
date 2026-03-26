@@ -41,7 +41,7 @@ export function Nav() {
     <nav
       className={`sticky top-0 z-50 border-b border-border/80 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 ${isStudyOrExplore ? "landscape-mobile:hidden" : ""} h-14`}
     >
-      <div className="max-w-4xl mx-auto h-full flex items-center justify-between px-4 sm:px-6 md:px-8">
+      <div className="max-w-4xl mx-auto w-full h-full flex items-center justify-between px-4 sm:px-6 md:px-8">
         <Link
           href="/"
           className="flex items-center gap-2 shrink-0 min-w-0"
