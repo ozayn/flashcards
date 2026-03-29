@@ -21,7 +21,7 @@ from fastapi import Depends, Form, Request, FastAPI
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import generation, health, decks, users, flashcards, reviews, categories
+from app.api import generation, health, decks, users, flashcards, reviews, categories, youtube
 from app.core.database import engine, Base
 from app.core.init_db import init_db
 from app.core.auth import require_admin_key
@@ -104,6 +104,7 @@ app.include_router(users.router)
 app.include_router(flashcards.router)
 app.include_router(generation.router)
 app.include_router(reviews.router)
+app.include_router(youtube.router)
 
 
 @app.get("/")

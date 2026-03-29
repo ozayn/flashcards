@@ -135,7 +135,9 @@ export async function createDeck(data: {
   name: string;
   description?: string;
   source_type?: string;
+  source_url?: string | null;
   source_topic?: string | null;
+  source_text?: string | null;
 }) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 15000);
@@ -144,9 +146,9 @@ export async function createDeck(data: {
       ...data,
       source_type: data.source_type ?? "topic",
     };
-    if (data.source_topic === undefined) {
-      delete body.source_topic;
-    }
+    if (data.source_topic === undefined) delete body.source_topic;
+    if (data.source_url === undefined) delete body.source_url;
+    if (data.source_text === undefined) delete body.source_text;
     const res = await fetch(`${API_BASE}/decks`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -163,6 +165,25 @@ export async function createDeck(data: {
     }
     throw e;
   }
+}
+
+export async function fetchYouTubeTranscript(url: string): Promise<{
+  video_id: string;
+  title: string | null;
+  transcript: string;
+  language: string | null;
+  char_count: number;
+}> {
+  const res = await fetch(`${API_BASE}/youtube/transcript`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(body?.detail ?? "Failed to fetch transcript");
+  }
+  return res.json();
 }
 
 export async function moveDeckToCategory(deckId: string, categoryId: string | null) {

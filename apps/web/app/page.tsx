@@ -10,14 +10,14 @@ export default function LandingPage() {
       <main className="max-w-3xl mx-auto px-6 md:px-8">
         <section className="pt-24 pb-12 md:pt-32 md:pb-16 text-center">
           <h1 className="text-4xl md:text-5xl font-semibold tracking-tight leading-tight">
-            Turn any topic into flashcards.
+            Turn anything into flashcards.
           </h1>
           <p className="mt-4 text-lg text-muted-foreground max-w-md mx-auto">
-            Enter a topic, get a study deck instantly.
+            Enter a topic or paste a YouTube link.
           </p>
           <div className="mt-10">
             <GenerateInput
-              placeholder="e.g. Quantum mechanics, Spanish verbs, The French Revolution…"
+              placeholder="Topic, YouTube link, or keyword…"
               suggestions={[
                 "Roman gods",
                 "Quantum mechanics",

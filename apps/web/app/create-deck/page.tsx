@@ -5,23 +5,26 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { getUsers, createDeck, generateFlashcards } from "@/lib/api";
+import { getUsers, createDeck, generateFlashcards, fetchYouTubeTranscript } from "@/lib/api";
 import { getStoredUserId } from "@/components/user-selector";
 import PageContainer from "@/components/layout/page-container";
 
 const CARD_COUNT_OPTIONS = [5, 10, 20, 30, 40, 50] as const;
 
-type GenerationMode = "topic" | "text";
+type GenerationMode = "topic" | "text" | "youtube";
 
 function CreateDeckForm() {
   const [name, setName] = useState("");
   const [topic, setTopic] = useState("");
   const [text, setText] = useState("");
+  const [youtubeUrl, setYoutubeUrl] = useState("");
   const [generationMode, setGenerationMode] = useState<GenerationMode>("topic");
   const [emptyDeckMode, setEmptyDeckMode] = useState(false);
   const [useNameAsTopic, setUseNameAsTopic] = useState(false);
   const [cardCount, setCardCount] = useState(10);
   const [loading, setLoading] = useState(false);
+  const [loadingMessage, setLoadingMessage] = useState("");
+  const [formError, setFormError] = useState<string | null>(null);
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -31,11 +34,17 @@ function CreateDeckForm() {
       setTopic(topicParam);
       setGenerationMode("topic");
     }
+    const ytParam = searchParams.get("youtube");
+    if (ytParam) {
+      setYoutubeUrl(ytParam);
+      setGenerationMode("youtube");
+    }
   }, [searchParams]);
 
   const nameTrimmed = name.trim();
   const topicTrimmed = topic.trim();
   const textTrimmed = text.trim();
+  const youtubeUrlTrimmed = youtubeUrl.trim();
 
   const topicForGeneration =
     topicTrimmed || (useNameAsTopic && !topicTrimmed ? nameTrimmed : "");
@@ -44,36 +53,46 @@ function CreateDeckForm() {
     !emptyDeckMode &&
     (generationMode === "topic"
       ? Boolean(topicForGeneration)
-      : Boolean(textTrimmed));
+      : generationMode === "text"
+        ? Boolean(textTrimmed)
+        : Boolean(youtubeUrlTrimmed));
 
   const submitLabel = loading
-    ? "Creating..."
+    ? loadingMessage || "Creating..."
     : emptyDeckMode
       ? "Create Empty Deck"
-      : willGenerate
-        ? "Create Deck and Generate Cards"
-        : "Create Deck";
+      : generationMode === "youtube" && youtubeUrlTrimmed
+        ? "Create Deck from Video"
+        : willGenerate
+          ? "Create Deck and Generate Cards"
+          : "Create Deck";
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setFormError(null);
 
     if (emptyDeckMode) {
       if (!nameTrimmed) {
-        alert("Enter a deck name for your empty deck.");
+        setFormError("Enter a deck name for your empty deck.");
+        return;
+      }
+    } else if (generationMode === "youtube") {
+      if (!youtubeUrlTrimmed) {
+        setFormError("Paste a YouTube link to continue.");
         return;
       }
     } else if (generationMode === "topic") {
       if (!nameTrimmed && !topicTrimmed) {
-        alert("Enter a deck name or a topic to continue.");
+        setFormError("Enter a deck name or a topic to continue.");
         return;
       }
     } else {
       if (!nameTrimmed && !textTrimmed) {
-        alert("Enter a deck name or paste notes to continue.");
+        setFormError("Enter a deck name or paste notes to continue.");
         return;
       }
       if (textTrimmed && !nameTrimmed) {
-        alert("Please enter a deck name when generating from pasted text.");
+        setFormError("Please enter a deck name when generating from pasted text.");
         return;
       }
     }
@@ -84,16 +103,11 @@ function CreateDeckForm() {
       if (Array.isArray(users) && users.length > 0) {
         userId = users[0].id;
       } else {
-        alert("No user found. Please refresh the page.");
+        setFormError("No user found. Please refresh the page.");
         return;
       }
     }
     if (!userId) return;
-
-    const effectiveDeckName =
-      emptyDeckMode || generationMode === "text"
-        ? nameTrimmed
-        : nameTrimmed || topicTrimmed;
 
     setLoading(true);
 
@@ -101,7 +115,7 @@ function CreateDeckForm() {
       if (emptyDeckMode) {
         const deck = await createDeck({
           user_id: userId,
-          name: effectiveDeckName,
+          name: nameTrimmed,
           source_type: "manual",
         });
         const deckId = (deck as { id: string }).id;
@@ -109,9 +123,51 @@ function CreateDeckForm() {
         return;
       }
 
+      if (generationMode === "youtube") {
+        setLoadingMessage("Fetching transcript…");
+        let transcript: Awaited<ReturnType<typeof fetchYouTubeTranscript>>;
+        try {
+          transcript = await fetchYouTubeTranscript(youtubeUrlTrimmed);
+        } catch (err) {
+          setFormError(err instanceof Error ? err.message : "Failed to fetch transcript.");
+          setLoading(false);
+          setLoadingMessage("");
+          return;
+        }
+
+        const deckName = nameTrimmed || transcript.title || "YouTube Deck";
+        setLoadingMessage("Creating deck…");
+
+        const deck = await createDeck({
+          user_id: userId,
+          name: deckName,
+          source_type: "youtube",
+          source_url: youtubeUrlTrimmed,
+          source_text: transcript.transcript.slice(0, 10000),
+        });
+        const deckId = (deck as { id: string }).id;
+
+        setLoadingMessage("Generating flashcards…");
+        await generateFlashcards({
+          deck_id: deckId,
+          text: transcript.transcript.slice(0, 10000),
+          num_cards: cardCount,
+          language: transcript.language || "en",
+        });
+
+        router.push(`/decks/${deckId}`);
+        return;
+      }
+
+      const effectiveDeckName =
+        generationMode === "text"
+          ? nameTrimmed
+          : nameTrimmed || topicTrimmed;
+
       const effectiveTopic =
         generationMode === "topic" ? topicForGeneration : "";
 
+      setLoadingMessage("Creating deck…");
       const deck = await createDeck({
         user_id: userId,
         name: effectiveDeckName,
@@ -127,6 +183,7 @@ function CreateDeckForm() {
       const deckId = (deck as { id: string }).id;
 
       if (generationMode === "text" && textTrimmed) {
+        setLoadingMessage("Generating flashcards…");
         await generateFlashcards({
           deck_id: deckId,
           text: textTrimmed,
@@ -134,6 +191,7 @@ function CreateDeckForm() {
           language: "en",
         });
       } else if (generationMode === "topic" && effectiveTopic) {
+        setLoadingMessage("Generating flashcards…");
         await generateFlashcards({
           deck_id: deckId,
           topic: effectiveTopic,
@@ -144,9 +202,10 @@ function CreateDeckForm() {
 
       router.push(`/decks/${deckId}`);
     } catch {
-      alert("Failed to create deck");
+      setFormError("Failed to create deck. Please try again.");
     } finally {
       setLoading(false);
+      setLoadingMessage("");
     }
   };
 
@@ -174,10 +233,11 @@ function CreateDeckForm() {
           </label>
           <Input
             id="name"
-            placeholder="e.g. Spanish Vocabulary"
+            placeholder={generationMode === "youtube" ? "Auto-filled from video title if empty" : "e.g. Spanish Vocabulary"}
             value={name}
             onChange={(e) => setName(e.target.value)}
             autoComplete="off"
+            disabled={loading}
           />
         </div>
 
@@ -189,6 +249,7 @@ function CreateDeckForm() {
               setEmptyDeckMode(e.target.checked);
             }}
             className="rounded border-input"
+            disabled={loading}
           />
           <span className="text-muted-foreground">
             Create empty deck (add cards later)
@@ -210,6 +271,7 @@ function CreateDeckForm() {
                       [
                         { value: "topic" as const, label: "Topic" },
                         { value: "text" as const, label: "Text" },
+                        { value: "youtube" as const, label: "YouTube" },
                       ] as const
                     ).map(({ value, label }) => (
                       <button
@@ -217,8 +279,9 @@ function CreateDeckForm() {
                         type="button"
                         role="radio"
                         aria-checked={generationMode === value}
-                        onClick={() => setGenerationMode(value)}
-                        className={`min-w-[5.5rem] rounded-md px-4 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
+                        onClick={() => { setGenerationMode(value); setFormError(null); }}
+                        disabled={loading}
+                        className={`min-w-[5rem] rounded-md px-3.5 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
                           generationMode === value
                             ? "bg-background text-foreground shadow-sm ring-1 ring-border/60"
                             : "text-muted-foreground hover:text-foreground"
@@ -241,6 +304,7 @@ function CreateDeckForm() {
                           value={topic}
                           onChange={(e) => setTopic(e.target.value)}
                           className="min-w-0"
+                          disabled={loading}
                         />
                         <p className="text-xs text-muted-foreground">
                           Leave empty to skip generation.
@@ -253,6 +317,7 @@ function CreateDeckForm() {
                             checked={useNameAsTopic}
                             onChange={(e) => setUseNameAsTopic(e.target.checked)}
                             className="rounded border-input"
+                            disabled={loading}
                           />
                           <span className="text-muted-foreground">
                             Use deck name as topic for generation
@@ -270,6 +335,7 @@ function CreateDeckForm() {
                           id="cardCount-topic"
                           value={cardCount}
                           onChange={(e) => setCardCount(Number(e.target.value))}
+                          disabled={loading}
                           className="h-9 min-w-[4.5rem] rounded-md border border-input bg-background px-2.5 py-1 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                         >
                           {CARD_COUNT_OPTIONS.map((n) => (
@@ -294,6 +360,7 @@ function CreateDeckForm() {
                           value={text}
                           onChange={(e) => setText(e.target.value)}
                           maxLength={10000}
+                          disabled={loading}
                           className="w-full min-h-[160px] max-mobile:min-h-[120px] rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                         />
                         <div className="flex justify-between items-center">
@@ -318,6 +385,50 @@ function CreateDeckForm() {
                           id="cardCount-text"
                           value={cardCount}
                           onChange={(e) => setCardCount(Number(e.target.value))}
+                          disabled={loading}
+                          className="h-9 min-w-[4.5rem] rounded-md border border-input bg-background px-2.5 py-1 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                        >
+                          {CARD_COUNT_OPTIONS.map((n) => (
+                            <option key={n} value={n}>
+                              {n}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  )}
+
+                  {generationMode === "youtube" && (
+                    <div className="space-y-3 pt-1">
+                      <div className="space-y-2">
+                        <label htmlFor="youtube-url" className="text-sm font-medium">
+                          YouTube link
+                        </label>
+                        <Input
+                          id="youtube-url"
+                          type="url"
+                          placeholder="https://www.youtube.com/watch?v=..."
+                          value={youtubeUrl}
+                          onChange={(e) => { setYoutubeUrl(e.target.value); setFormError(null); }}
+                          disabled={loading}
+                          className="min-w-0"
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          We&apos;ll pull the transcript and generate flashcards from it.
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                        <label
+                          htmlFor="cardCount-yt"
+                          className="text-sm font-medium shrink-0"
+                        >
+                          Number of cards
+                        </label>
+                        <select
+                          id="cardCount-yt"
+                          value={cardCount}
+                          onChange={(e) => setCardCount(Number(e.target.value))}
+                          disabled={loading}
                           className="h-9 min-w-[4.5rem] rounded-md border border-input bg-background px-2.5 py-1 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                         >
                           {CARD_COUNT_OPTIONS.map((n) => (
@@ -330,6 +441,10 @@ function CreateDeckForm() {
                     </div>
                   )}
           </section>
+        )}
+
+        {formError && (
+          <p className="text-sm text-destructive">{formError}</p>
         )}
 
         <div className="pt-4 border-t border-border/40">
