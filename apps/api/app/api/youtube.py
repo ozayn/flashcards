@@ -26,8 +26,8 @@ MAX_TRANSCRIPT_CHARS = 60_000
 
 def _build_proxy_config():
     """Build proxy config from environment variables, if set."""
-    ws_user = os.environ.get("WEBSHARE_PROXY_USERNAME", "").strip()
-    ws_pass = os.environ.get("WEBSHARE_PROXY_PASSWORD", "").strip()
+    ws_user = os.environ.get("WEBSHARE_PROXY_USER", "").strip()
+    ws_pass = os.environ.get("WEBSHARE_PROXY_PW", "").strip()
     if ws_user and ws_pass:
         logger.info("YouTube transcript: using Webshare proxy")
         return WebshareProxyConfig(
