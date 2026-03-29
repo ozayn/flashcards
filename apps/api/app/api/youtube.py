@@ -29,7 +29,7 @@ def _build_proxy_config():
     ws_user = os.environ.get("WEBSHARE_PROXY_USER", "").strip()
     ws_pass = os.environ.get("WEBSHARE_PROXY_PW", "").strip()
     if ws_user and ws_pass:
-        logger.info("YouTube transcript: using Webshare proxy")
+        print("[youtube] Proxy config: Webshare rotating residential (p.webshare.io)")
         return WebshareProxyConfig(
             proxy_username=ws_user,
             proxy_password=ws_pass,
@@ -37,9 +37,11 @@ def _build_proxy_config():
 
     proxy_url = os.environ.get("YOUTUBE_PROXY_URL", "").strip()
     if proxy_url:
-        logger.info("YouTube transcript: using generic proxy")
+        safe_url = proxy_url.split("@")[-1] if "@" in proxy_url else proxy_url[:30]
+        print(f"[youtube] Proxy config: generic proxy → {safe_url}")
         return GenericProxyConfig(https_url=proxy_url)
 
+    print("[youtube] Proxy config: NONE — requests will use server IP directly")
     return None
 
 
@@ -106,15 +108,18 @@ async def get_transcript(payload: TranscriptRequest):
         raise HTTPException(status_code=400, detail="Invalid YouTube URL. Please paste a valid video link.")
 
     title = fetch_video_title(video_id)
-    logger.info("Title fetch for %s: %s", video_id, "ok" if title else "failed")
+    print(f"[youtube] Title fetch for {video_id}: {'ok → ' + repr(title) if title else 'failed'}")
 
+    proxy_label = "with proxy" if _proxy_config else "NO PROXY"
+    print(f"[youtube] Transcript fetch for {video_id}: starting ({proxy_label})")
     try:
         ytt_api = YouTubeTranscriptApi(proxy_config=_proxy_config)
         transcript_list = ytt_api.fetch(video_id)
-        logger.info("Transcript fetch for %s: ok", video_id)
+        print(f"[youtube] Transcript fetch for {video_id}: ok")
     except HTTPException:
         raise
     except Exception as exc:
+        print(f"[youtube] Transcript fetch for {video_id}: FAILED — {exc}")
         logger.warning("Transcript fetch for %s: failed — %s", video_id, exc)
         if _is_ip_block_error(exc):
             raise HTTPException(
