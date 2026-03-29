@@ -115,14 +115,11 @@ async def get_transcript(payload: TranscriptRequest):
         if _is_ip_block_error(exc):
             raise HTTPException(
                 status_code=503,
-                detail=(
-                    "YouTube is blocking transcript requests from this server. "
-                    "You can try again later, or paste the transcript text manually using the Text mode on the Create Deck page."
-                ),
+                detail="We couldn\u2019t fetch the transcript from YouTube right now.",
             )
         raise HTTPException(
             status_code=422,
-            detail="No transcript available for this video. The video may not have captions enabled.",
+            detail="No transcript available for this video. It may not have captions enabled.",
         )
 
     try:

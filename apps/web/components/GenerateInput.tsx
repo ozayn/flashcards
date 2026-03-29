@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -30,6 +31,7 @@ export function GenerateInput({
   const [loading, setLoading] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [ytFallback, setYtFallback] = useState<{ url: string; title?: string } | null>(null);
 
   const trimmed = value.trim();
   const isYT = isYouTubeUrl(trimmed);
@@ -38,6 +40,7 @@ export function GenerateInput({
     e.preventDefault();
     if (!trimmed || loading) return;
     setError(null);
+    setYtFallback(null);
     setLoading(true);
 
     try {
@@ -59,8 +62,8 @@ export function GenerateInput({
         let transcript: Awaited<ReturnType<typeof fetchYouTubeTranscript>>;
         try {
           transcript = await fetchYouTubeTranscript(trimmed);
-        } catch (err) {
-          setError(err instanceof Error ? err.message : "Failed to fetch transcript.");
+        } catch {
+          setYtFallback({ url: trimmed });
           setLoading(false);
           setLoadingMessage("");
           return;
@@ -130,18 +133,22 @@ export function GenerateInput({
     }
   };
 
+  const fallbackUrl = ytFallback
+    ? `/create-deck?mode=text&youtube=${encodeURIComponent(ytFallback.url)}${ytFallback.title ? `&title=${encodeURIComponent(ytFallback.title)}` : ""}`
+    : null;
+
   return (
     <form onSubmit={handleSubmit} className="w-full max-w-xl mx-auto space-y-4">
       <input
         type="text"
         value={value}
-        onChange={(e) => { setValue(e.target.value); setError(null); }}
+        onChange={(e) => { setValue(e.target.value); setError(null); setYtFallback(null); }}
         placeholder={placeholder}
         autoComplete="off"
         disabled={loading}
         className="w-full rounded-xl border border-border bg-background px-4 py-3.5 text-base placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:opacity-60"
       />
-      {suggestions.length > 0 && !loading && !isYT && (
+      {suggestions.length > 0 && !loading && !isYT && !ytFallback && (
         <div className="flex flex-wrap gap-2 justify-center">
           {suggestions.map((s) => (
             <button
@@ -155,28 +162,46 @@ export function GenerateInput({
           ))}
         </div>
       )}
-      {error && (
+      {error && !ytFallback && (
         <p className="text-sm text-destructive text-center">{error}</p>
       )}
-      <div className="flex flex-col items-center gap-2">
-        <Button
-          type="submit"
-          size="lg"
-          disabled={!trimmed || loading}
-          className="rounded-xl px-8 font-medium"
-        >
-          {loading
-            ? loadingMessage || "Creating…"
-            : isYT
-              ? "Create Deck from Video"
-              : "Create Deck"}
-        </Button>
-        <p className="text-xs text-muted-foreground">
-          {isYT
-            ? "We\u2019ll pull the transcript and create a deck from it."
-            : "We\u2019ll generate flashcards and open your new deck."}
-        </p>
-      </div>
+      {ytFallback && (
+        <div className="rounded-xl border border-border bg-muted/30 px-4 py-4 space-y-3 text-center">
+          <p className="text-sm text-foreground">
+            We couldn&apos;t fetch the transcript from YouTube right now.
+          </p>
+          <p className="text-sm text-muted-foreground">
+            You can still create the deck by pasting the transcript yourself.
+          </p>
+          <Link
+            href={fallbackUrl!}
+            className="inline-flex h-10 items-center justify-center rounded-lg bg-neutral-900 text-white hover:bg-neutral-800 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200 px-5 text-sm font-medium"
+          >
+            Paste transcript instead
+          </Link>
+        </div>
+      )}
+      {!ytFallback && (
+        <div className="flex flex-col items-center gap-2">
+          <Button
+            type="submit"
+            size="lg"
+            disabled={!trimmed || loading}
+            className="rounded-xl px-8 font-medium"
+          >
+            {loading
+              ? loadingMessage || "Creating…"
+              : isYT
+                ? "Create Deck from Video"
+                : "Create Deck"}
+          </Button>
+          <p className="text-xs text-muted-foreground">
+            {isYT
+              ? "We\u2019ll pull the transcript and create a deck from it."
+              : "We\u2019ll generate flashcards and open your new deck."}
+          </p>
+        </div>
+      )}
     </form>
   );
 }

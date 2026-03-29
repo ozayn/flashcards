@@ -28,14 +28,22 @@ function CreateDeckForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
+  const [ytFallbackUrl, setYtFallbackUrl] = useState<string | null>(null);
+
   useEffect(() => {
+    const modeParam = searchParams.get("mode");
     const topicParam = searchParams.get("topic");
-    if (topicParam) {
+    const ytParam = searchParams.get("youtube");
+    const titleParam = searchParams.get("title");
+
+    if (modeParam === "text" && ytParam) {
+      setGenerationMode("text");
+      setYtFallbackUrl(ytParam);
+      if (titleParam) setName(titleParam);
+    } else if (topicParam) {
       setTopic(topicParam);
       setGenerationMode("topic");
-    }
-    const ytParam = searchParams.get("youtube");
-    if (ytParam) {
+    } else if (ytParam) {
       setYoutubeUrl(ytParam);
       setGenerationMode("youtube");
     }
@@ -128,8 +136,10 @@ function CreateDeckForm() {
         let transcript: Awaited<ReturnType<typeof fetchYouTubeTranscript>>;
         try {
           transcript = await fetchYouTubeTranscript(youtubeUrlTrimmed);
-        } catch (err) {
-          setFormError(err instanceof Error ? err.message : "Failed to fetch transcript.");
+        } catch {
+          setYtFallbackUrl(youtubeUrlTrimmed);
+          setGenerationMode("text");
+          setFormError("We couldn\u2019t fetch the transcript. You can paste it manually below.");
           setLoading(false);
           setLoadingMessage("");
           return;
@@ -367,13 +377,35 @@ function CreateDeckForm() {
 
                   {generationMode === "text" && (
                     <div className="space-y-3 pt-1">
+                      {ytFallbackUrl && (
+                        <div className="rounded-lg border border-border/60 bg-muted/20 px-3.5 py-3 space-y-1.5">
+                          <p className="text-sm font-medium text-foreground">
+                            How to copy the transcript from YouTube
+                          </p>
+                          <ol className="text-xs text-muted-foreground space-y-0.5 list-decimal list-inside">
+                            <li>
+                              Open the video on{" "}
+                              <a
+                                href={ytFallbackUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="underline underline-offset-2 hover:text-foreground"
+                              >
+                                YouTube
+                              </a>
+                            </li>
+                            <li>Click <strong>⋯</strong> (more) below the video → <strong>Show transcript</strong></li>
+                            <li>Select all the transcript text, copy, and paste below</li>
+                          </ol>
+                        </div>
+                      )}
                       <div className="space-y-2">
                         <label htmlFor="text" className="text-sm font-medium">
                           Paste notes or transcript
                         </label>
                         <textarea
                           id="text"
-                          placeholder="Paste notes or text to generate flashcards..."
+                          placeholder={ytFallbackUrl ? "Paste the YouTube transcript here…" : "Paste notes or text to generate flashcards..."}
                           value={text}
                           onChange={(e) => setText(e.target.value)}
                           maxLength={50000}
