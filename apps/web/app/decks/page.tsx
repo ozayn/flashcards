@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -25,6 +25,7 @@ import {
   Loader2,
   MoreVertical,
   Pencil,
+  Search,
   Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -225,6 +226,9 @@ export default function DecksPage() {
   const [deleteDeckConfirmId, setDeleteDeckConfirmId] = useState<string | null>(null);
   const [deleteDeckError, setDeleteDeckError] = useState<string | null>(null);
   const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());
+  const [searchQuery, setSearchQuery] = useState("");
+  const [viewMode, setViewMode] = useState<"grouped" | "all">("grouped");
+  const [sortMode, setSortMode] = useState<"newest" | "oldest" | "az">("newest");
 
   useEffect(() => {
     try {
@@ -548,8 +552,148 @@ export default function DecksPage() {
     }
   }, [openDeckMenuId]);
 
+  const categoryNameMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const cat of categories) map.set(cat.id, cat.name);
+    return map;
+  }, [categories]);
+
+  const filteredDecks = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return decks;
+    return decks.filter((d) => {
+      if (d.name.toLowerCase().includes(q)) return true;
+      const catName = d.category_id ? categoryNameMap.get(d.category_id) : null;
+      if (catName && catName.toLowerCase().includes(q)) return true;
+      return false;
+    });
+  }, [decks, searchQuery, categoryNameMap]);
+
+  const sortedFlatDecks = useMemo(() => {
+    const sorted = [...filteredDecks];
+    if (sortMode === "newest") sorted.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    else if (sortMode === "oldest") sorted.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+    else sorted.sort((a, b) => a.name.localeCompare(b.name));
+    return sorted;
+  }, [filteredDecks, sortMode]);
+
   const showDeckListSkeleton =
     !userResolved || (Boolean(userId) && decksLoading);
+
+  function renderDeckRow(deck: Deck) {
+    return (
+      <div
+        role="link"
+        tabIndex={0}
+        onClick={() => router.push(`/decks/${deck.id}`)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            router.push(`/decks/${deck.id}`);
+          }
+        }}
+        className="deck-card group rounded-lg border border-border px-4 py-3.5 flex items-center justify-between gap-3 hover:bg-muted/40 transition-colors cursor-pointer max-mobile:px-3.5 max-mobile:py-3"
+      >
+        <div className="flex items-center gap-3 flex-1 min-w-0">
+          {(() => {
+            const statusIcon = getGenerationStatusIcon(deck);
+            const StatusIcon = statusIcon?.icon;
+            return statusIcon && StatusIcon ? (
+              <Tooltip>
+                <TooltipTrigger
+                  className="inline-flex shrink-0"
+                  aria-label={statusIcon.tooltip}
+                >
+                  <StatusIcon
+                    className={`w-4 h-4 text-muted-foreground ${statusIcon.spin ? "animate-spin" : ""}`}
+                  />
+                </TooltipTrigger>
+                <TooltipContent>{statusIcon.tooltip}</TooltipContent>
+              </Tooltip>
+            ) : null;
+          })()}
+          <div className="flex flex-col gap-0.5 min-w-0">
+            <span className="font-medium text-sm leading-snug truncate">
+              {deck.name}
+            </span>
+            <span className="text-xs text-muted-foreground">
+              {deck.card_count ?? 0} {deck.card_count === 1 ? "card" : "cards"}
+              {viewMode === "all" && deck.category_id && categoryNameMap.has(deck.category_id) && (
+                <> · {categoryNameMap.get(deck.category_id)}</>
+              )}
+            </span>
+          </div>
+        </div>
+        <div className="shrink-0 flex items-center gap-0.5 max-mobile:opacity-60">
+          <div className={`relative deck-menu-button opacity-0 transition-opacity duration-150 group-hover:opacity-100 max-mobile:opacity-100 ${openDeckMenuId === deck.id ? "!opacity-100" : ""}`}>
+            <Button
+              variant="ghost"
+              size="icon"
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                setOpenDeckMenuId((prev) => (prev === deck.id ? null : deck.id));
+              }}
+              className="text-muted-foreground hover:text-foreground"
+              aria-label="Deck actions"
+              aria-expanded={openDeckMenuId === deck.id}
+            >
+              <MoreVertical className="size-4" />
+            </Button>
+            {openDeckMenuId === deck.id && (
+              <div
+                className="absolute right-0 top-full mt-1 z-50 min-w-[180px] rounded-lg border border-border bg-background py-1 shadow-lg"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm hover:bg-muted max-mobile:min-h-[44px] max-mobile:py-3"
+                  onClick={() => openMoveModal(deck.id)}
+                >
+                  <FolderInput className="size-4 shrink-0" />
+                  Move to category
+                </button>
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm hover:bg-muted max-mobile:min-h-[44px] max-mobile:py-3"
+                  onClick={() => openRenameDeckModal(deck.id)}
+                >
+                  <Pencil className="size-4 shrink-0" />
+                  Rename deck
+                </button>
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-destructive hover:bg-destructive/10 max-mobile:min-h-[44px] max-mobile:py-3"
+                  onClick={() => openDeleteDeckConfirm(deck.id)}
+                >
+                  <Trash2 className="size-4 shrink-0" />
+                  Delete deck
+                </button>
+              </div>
+            )}
+          </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              handleArchiveDeck(deck.id, !showArchived, e);
+            }}
+            className="text-muted-foreground hover:text-foreground"
+            aria-label={showArchived ? "Unarchive deck" : "Archive deck"}
+          >
+            {showArchived ? (
+              <ArchiveRestore className="size-4" />
+            ) : (
+              <Archive className="size-4" />
+            )}
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <PageContainer>
@@ -819,15 +963,64 @@ export default function DecksPage() {
           </div>
         )}
 
-        <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer">
-          <input
-            type="checkbox"
-            checked={showArchived}
-            onChange={(e) => setShowArchived(e.target.checked)}
-            className="rounded border-input"
-          />
-          Show archived
-        </label>
+        <div className="space-y-3">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search decks…"
+              autoComplete="off"
+              className="w-full rounded-lg border border-border bg-background pl-9 pr-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+            />
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <div className="inline-flex rounded-lg border border-border/50 bg-muted/30 p-0.5">
+              {(
+                [
+                  { value: "grouped" as const, label: "Grouped" },
+                  { value: "all" as const, label: "All" },
+                ] as const
+              ).map(({ value, label }) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setViewMode(value)}
+                  className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
+                    viewMode === value
+                      ? "bg-background text-foreground shadow-sm ring-1 ring-border/60"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div className="flex items-center gap-3">
+              {viewMode === "all" && (
+                <select
+                  value={sortMode}
+                  onChange={(e) => setSortMode(e.target.value as "newest" | "oldest" | "az")}
+                  className="h-7 rounded-md border border-border/50 bg-background px-2 text-xs text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                >
+                  <option value="newest">Newest</option>
+                  <option value="oldest">Oldest</option>
+                  <option value="az">A–Z</option>
+                </select>
+              )}
+              <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer whitespace-nowrap">
+                <input
+                  type="checkbox"
+                  checked={showArchived}
+                  onChange={(e) => setShowArchived(e.target.checked)}
+                  className="rounded border-input"
+                />
+                Archived
+              </label>
+            </div>
+          </div>
+        </div>
 
         <div className="space-y-3">
           {showDeckListSkeleton ? (
@@ -855,6 +1048,16 @@ export default function DecksPage() {
                 </Link>
               )}
             </div>
+          ) : filteredDecks.length === 0 ? (
+            <div className="text-center py-12">
+              <p className="text-muted-foreground">No decks match &ldquo;{searchQuery.trim()}&rdquo;</p>
+            </div>
+          ) : viewMode === "all" ? (
+            <div className="space-y-1.5">
+              {sortedFlatDecks.map((deck) => (
+                <div key={deck.id}>{renderDeckRow(deck)}</div>
+              ))}
+            </div>
           ) : (
             <DndContext
               sensors={sensors}
@@ -862,7 +1065,9 @@ export default function DecksPage() {
               onDragOver={handleDragOver}
               onDragEnd={handleDragEnd}
             >
-              {groupDecksByCategory(decks, categories).map((group, idx) => {
+              {groupDecksByCategory(filteredDecks, categories)
+                .filter((group) => group.decks.length > 0 || !searchQuery.trim())
+                .map((group, idx) => {
                 const sourceCategoryId = activeDragId
                   ? (decks.find((d) => d.id === activeDragId)?.category_id ?? UNCATEGORIZED)
                   : null;
@@ -1013,113 +1218,7 @@ export default function DecksPage() {
                         deck={deck}
                         isDragging={activeDragId === deck.id}
                       >
-                        <div
-                          role="link"
-                          tabIndex={0}
-                          onClick={() => router.push(`/decks/${deck.id}`)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter" || e.key === " ") {
-                              e.preventDefault();
-                              router.push(`/decks/${deck.id}`);
-                            }
-                          }}
-                          className="deck-card group rounded-lg border border-border px-4 py-3.5 flex items-center justify-between gap-3 hover:bg-muted/40 transition-colors cursor-pointer max-mobile:px-3.5 max-mobile:py-3"
-                        >
-                          <div className="flex items-center gap-3 flex-1 min-w-0">
-                            {(() => {
-                              const statusIcon = getGenerationStatusIcon(deck);
-                              const StatusIcon = statusIcon?.icon;
-                              return statusIcon && StatusIcon ? (
-                                <Tooltip>
-                                  <TooltipTrigger
-                                    className="inline-flex shrink-0"
-                                    aria-label={statusIcon.tooltip}
-                                  >
-                                    <StatusIcon
-                                      className={`w-4 h-4 text-muted-foreground ${statusIcon.spin ? "animate-spin" : ""}`}
-                                    />
-                                  </TooltipTrigger>
-                                  <TooltipContent>{statusIcon.tooltip}</TooltipContent>
-                                </Tooltip>
-                              ) : null;
-                            })()}
-                            <div className="flex flex-col gap-0.5 min-w-0">
-                              <span className="font-medium text-sm leading-snug truncate">
-                                {deck.name}
-                              </span>
-                              <span className="text-xs text-muted-foreground">
-                                {deck.card_count ?? 0} {deck.card_count === 1 ? "card" : "cards"}
-                              </span>
-                            </div>
-                          </div>
-                          <div className="shrink-0 flex items-center gap-0.5 max-mobile:opacity-60">
-                            <div className={`relative deck-menu-button opacity-0 transition-opacity duration-150 group-hover:opacity-100 max-mobile:opacity-100 ${openDeckMenuId === deck.id ? "!opacity-100" : ""}`}>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                onPointerDown={(e) => e.stopPropagation()}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  e.preventDefault();
-                                  setOpenDeckMenuId((prev) => (prev === deck.id ? null : deck.id));
-                                }}
-                                className="text-muted-foreground hover:text-foreground"
-                                aria-label="Deck actions"
-                                aria-expanded={openDeckMenuId === deck.id}
-                              >
-                                <MoreVertical className="size-4" />
-                              </Button>
-                              {openDeckMenuId === deck.id && (
-                                <div
-                                  className="absolute right-0 top-full mt-1 z-50 min-w-[180px] rounded-lg border border-border bg-background py-1 shadow-lg"
-                                  onClick={(e) => e.stopPropagation()}
-                                >
-                                  <button
-                                    type="button"
-                                    className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm hover:bg-muted max-mobile:min-h-[44px] max-mobile:py-3"
-                                    onClick={() => openMoveModal(deck.id)}
-                                  >
-                                    <FolderInput className="size-4 shrink-0" />
-                                    Move to category
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm hover:bg-muted max-mobile:min-h-[44px] max-mobile:py-3"
-                                    onClick={() => openRenameDeckModal(deck.id)}
-                                  >
-                                    <Pencil className="size-4 shrink-0" />
-                                    Rename deck
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-destructive hover:bg-destructive/10 max-mobile:min-h-[44px] max-mobile:py-3"
-                                    onClick={() => openDeleteDeckConfirm(deck.id)}
-                                  >
-                                    <Trash2 className="size-4 shrink-0" />
-                                    Delete deck
-                                  </button>
-                                </div>
-                              )}
-                            </div>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onPointerDown={(e) => e.stopPropagation()}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleArchiveDeck(deck.id, !showArchived, e);
-                              }}
-                              className="text-muted-foreground hover:text-foreground"
-                              aria-label={showArchived ? "Unarchive deck" : "Archive deck"}
-                            >
-                              {showArchived ? (
-                                <ArchiveRestore className="size-4" />
-                              ) : (
-                                <Archive className="size-4" />
-                              )}
-                            </Button>
-                          </div>
-                        </div>
+                        {renderDeckRow(deck)}
                       </DraggableDeckRow>
                     ))}
                   </div>}
