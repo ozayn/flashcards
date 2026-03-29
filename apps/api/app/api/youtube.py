@@ -105,21 +105,31 @@ async def get_transcript(payload: TranscriptRequest):
     if not video_id:
         raise HTTPException(status_code=400, detail="Invalid YouTube URL. Please paste a valid video link.")
 
+    title = fetch_video_title(video_id)
+    logger.info("Title fetch for %s: %s", video_id, "ok" if title else "failed")
+
     try:
         ytt_api = YouTubeTranscriptApi(proxy_config=_proxy_config)
         transcript_list = ytt_api.fetch(video_id)
+        logger.info("Transcript fetch for %s: ok", video_id)
     except HTTPException:
         raise
     except Exception as exc:
-        logger.warning("Transcript fetch failed for %s: %s", video_id, exc)
+        logger.warning("Transcript fetch for %s: failed — %s", video_id, exc)
         if _is_ip_block_error(exc):
             raise HTTPException(
                 status_code=503,
-                detail="We couldn\u2019t fetch the transcript from YouTube right now.",
+                detail={
+                    "message": "We couldn\u2019t fetch the transcript from YouTube right now.",
+                    "title": title,
+                },
             )
         raise HTTPException(
             status_code=422,
-            detail="No transcript available for this video. It may not have captions enabled.",
+            detail={
+                "message": "No transcript available for this video. It may not have captions enabled.",
+                "title": title,
+            },
         )
 
     try:
@@ -140,8 +150,6 @@ async def get_transcript(payload: TranscriptRequest):
 
     if len(text) > MAX_TRANSCRIPT_CHARS:
         text = text[:MAX_TRANSCRIPT_CHARS]
-
-    title = fetch_video_title(video_id)
 
     return TranscriptResponse(
         video_id=video_id,

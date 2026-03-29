@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { getUsers, createDeck, generateFlashcards, fetchYouTubeTranscript } from "@/lib/api";
+import { getUsers, createDeck, generateFlashcards, fetchYouTubeTranscript, TranscriptFetchError } from "@/lib/api";
 import { getStoredUserId } from "@/components/user-selector";
 import PageContainer from "@/components/layout/page-container";
 
@@ -136,9 +136,12 @@ function CreateDeckForm() {
         let transcript: Awaited<ReturnType<typeof fetchYouTubeTranscript>>;
         try {
           transcript = await fetchYouTubeTranscript(youtubeUrlTrimmed);
-        } catch {
+        } catch (err) {
           setYtFallbackUrl(youtubeUrlTrimmed);
           setGenerationMode("text");
+          if (err instanceof TranscriptFetchError && err.title) {
+            if (!nameTrimmed) setName(err.title);
+          }
           setFormError("We couldn\u2019t fetch the transcript. You can paste it manually below.");
           setLoading(false);
           setLoadingMessage("");

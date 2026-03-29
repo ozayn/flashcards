@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.llm.router import generate_completion, _get_default_max_tokens
+from app.llm.router import generate_completion, _get_default_max_tokens, RateLimitError
 from app.models import Deck, Flashcard
 from app.models.enums import GenerationStatus, SourceType
 from app.schemas.flashcard import DIFFICULTY_TO_INT
@@ -3508,6 +3508,23 @@ async def generate_flashcards(
     except HTTPException:
         deck.generation_status = GenerationStatus.failed.value
         await db.flush()
+        raise
+    except RateLimitError as e:
+        logger.warning("Generation rate-limited: %s", e)
+        deck.generation_status = GenerationStatus.failed.value
+        await db.flush()
+        raise HTTPException(
+            status_code=429,
+            detail="The AI provider is temporarily rate-limited. Please wait a few seconds and try again.",
+        )
+    except RuntimeError as e:
+        deck.generation_status = GenerationStatus.failed.value
+        await db.flush()
+        if "all llm providers failed" in str(e).lower():
+            raise HTTPException(
+                status_code=503,
+                detail="The AI provider is temporarily unavailable. Please try again in a moment.",
+            )
         raise
     except Exception:
         deck.generation_status = GenerationStatus.failed.value

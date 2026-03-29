@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { createDeck, generateFlashcards, fetchYouTubeTranscript, getUsers } from "@/lib/api";
+import { createDeck, generateFlashcards, fetchYouTubeTranscript, TranscriptFetchError, getUsers } from "@/lib/api";
 import { getStoredUserId } from "@/components/user-selector";
 
 const YT_REGEX = /(?:youtube\.com\/watch\?.*v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/shorts\/)/i;
@@ -62,8 +62,9 @@ export function GenerateInput({
         let transcript: Awaited<ReturnType<typeof fetchYouTubeTranscript>>;
         try {
           transcript = await fetchYouTubeTranscript(trimmed);
-        } catch {
-          setYtFallback({ url: trimmed });
+        } catch (err) {
+          const title = err instanceof TranscriptFetchError ? err.title : undefined;
+          setYtFallback({ url: trimmed, title: title || undefined });
           setLoading(false);
           setLoadingMessage("");
           return;
@@ -168,7 +169,13 @@ export function GenerateInput({
       {ytFallback && (
         <div className="rounded-xl border border-border bg-muted/30 px-4 py-4 space-y-3 text-center">
           <p className="text-sm text-foreground">
-            We couldn&apos;t fetch the transcript from YouTube right now.
+            We couldn&apos;t fetch the transcript
+            {ytFallback.title ? (
+              <> for <span className="font-medium">{ytFallback.title}</span></>
+            ) : (
+              <> from YouTube right now</>
+            )}
+            .
           </p>
           <p className="text-sm text-muted-foreground">
             You can still create the deck by pasting the transcript yourself.

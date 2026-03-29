@@ -167,6 +167,14 @@ export async function createDeck(data: {
   }
 }
 
+export class TranscriptFetchError extends Error {
+  title: string | null;
+  constructor(message: string, title: string | null = null) {
+    super(message);
+    this.title = title;
+  }
+}
+
 export async function fetchYouTubeTranscript(url: string): Promise<{
   video_id: string;
   title: string | null;
@@ -181,7 +189,16 @@ export async function fetchYouTubeTranscript(url: string): Promise<{
   });
   if (!res.ok) {
     const body = await res.json().catch(() => null);
-    throw new Error(body?.detail ?? "Failed to fetch transcript");
+    const detail = body?.detail;
+    if (detail && typeof detail === "object") {
+      throw new TranscriptFetchError(
+        detail.message || "Failed to fetch transcript",
+        detail.title || null,
+      );
+    }
+    throw new TranscriptFetchError(
+      typeof detail === "string" ? detail : "Failed to fetch transcript",
+    );
   }
   return res.json();
 }

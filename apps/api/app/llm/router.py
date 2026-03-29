@@ -8,6 +8,7 @@ import json
 import logging
 import os
 import re
+import time
 
 import requests
 
@@ -15,6 +16,10 @@ from app.llm.cache import get_cached_response, save_cached_response
 from app.llm.cost_tracker import log_llm_usage, log_usage_unavailable
 
 logger = logging.getLogger(__name__)
+
+MAX_RATE_LIMIT_RETRIES = 2
+DEFAULT_RETRY_WAIT = 5.0
+MAX_RETRY_WAIT = 30.0
 
 PROVIDER_ORDER = ["groq", "gemini", "openrouter", "openai"]
 
@@ -237,6 +242,42 @@ _PROVIDER_FNS = {
 }
 
 
+class RateLimitError(Exception):
+    """Raised when a provider returns a rate-limit (429) error."""
+
+    def __init__(self, provider: str, retry_after: float | None = None, original: Exception | None = None):
+        self.provider = provider
+        self.retry_after = retry_after
+        self.original = original
+        super().__init__(f"Rate limit exceeded for {provider}")
+
+
+def _is_rate_limit_error(exc: Exception) -> bool:
+    msg = str(exc).lower()
+    return "429" in msg or "rate_limit" in msg or "rate limit" in msg or "tokens per minute" in msg
+
+
+def _extract_retry_after(exc: Exception) -> float | None:
+    """Try to extract a retry-after duration from error headers or message."""
+    msg = str(exc)
+    match = re.search(r"(?:retry.after|try again in)[:\s]*(\d+(?:\.\d+)?)\s*s", msg, re.IGNORECASE)
+    if match:
+        return min(float(match.group(1)), MAX_RETRY_WAIT)
+    match = re.search(r"Please retry after (\d+(?:\.\d+)?)", msg)
+    if match:
+        return min(float(match.group(1)), MAX_RETRY_WAIT)
+    if hasattr(exc, "response"):
+        resp = getattr(exc, "response", None)
+        if resp is not None and hasattr(resp, "headers"):
+            ra = resp.headers.get("retry-after")
+            if ra:
+                try:
+                    return min(float(ra), MAX_RETRY_WAIT)
+                except ValueError:
+                    pass
+    return None
+
+
 def _get_model(provider: str) -> str:
     env_vars = {
         "groq": "GROQ_MODEL",
@@ -311,27 +352,45 @@ def generate_completion(
         if not fn:
             continue
         model = _get_model(provider)
-        logger.info("Using LLM provider: %s", provider)
-        logger.info("Model: %s", model)
-        try:
-            response_text = fn(prompt, temp, max_tok)
-            if _is_valid_json_for_cache(response_text):
-                try:
-                    save_cached_response(prompt, response_text)
-                except Exception as e:
-                    logger.warning("LLM cache save failed: %s", e)
-            else:
-                logger.info("Skipping cache: response did not parse as valid JSON")
-            logger.info("LLM provider used: %s", provider)
-            return response_text
-        except Exception as e:
-            last_error = e
-            logger.warning("LLM provider failed: %s", provider)
-            logger.warning("Error: %s", e)
-            if provider != order[-1]:
-                logger.info("Falling back to next provider...")
+        logger.info("Using LLM provider: %s (%s)", provider, model)
 
-    raise RuntimeError("All LLM providers failed") from last_error
+        retries_left = MAX_RATE_LIMIT_RETRIES
+        while True:
+            try:
+                response_text = fn(prompt, temp, max_tok)
+                if _is_valid_json_for_cache(response_text):
+                    try:
+                        save_cached_response(prompt, response_text)
+                    except Exception as e:
+                        logger.warning("LLM cache save failed: %s", e)
+                else:
+                    logger.info("Skipping cache: response did not parse as valid JSON")
+                logger.info("LLM provider used: %s", provider)
+                return response_text
+            except Exception as e:
+                if _is_rate_limit_error(e) and retries_left > 0:
+                    wait = _extract_retry_after(e) or DEFAULT_RETRY_WAIT
+                    retries_left -= 1
+                    logger.warning(
+                        "Rate limit hit on %s, waiting %.1fs before retry (%d retries left)",
+                        provider, wait, retries_left,
+                    )
+                    time.sleep(wait)
+                    continue
+
+                last_error = e
+                if _is_rate_limit_error(e):
+                    logger.warning(
+                        "Rate limit on %s after %d retries, falling back",
+                        provider, MAX_RATE_LIMIT_RETRIES,
+                    )
+                else:
+                    logger.warning("LLM provider failed: %s — %s", provider, e)
+                break
+
+    raise RateLimitError("all", original=last_error) if (
+        last_error and _is_rate_limit_error(last_error)
+    ) else RuntimeError("All LLM providers failed") from last_error
 
 
 def generate_flashcards(prompt: str, provider: str | None = None) -> str:
