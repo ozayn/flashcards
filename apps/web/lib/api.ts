@@ -167,6 +167,29 @@ export async function createDeck(data: {
   }
 }
 
+const _YT_ID_PATTERNS = [
+  /(?:youtube\.com\/watch\?.*v=)([a-zA-Z0-9_-]{11})/i,
+  /(?:youtu\.be\/)([a-zA-Z0-9_-]{11})/i,
+  /(?:youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/i,
+  /(?:youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})/i,
+  /(?:youtube\.com\/v\/)([a-zA-Z0-9_-]{11})/i,
+];
+
+export function extractYouTubeVideoId(url: string): string | null {
+  const trimmed = url.trim();
+  for (const pattern of _YT_ID_PATTERNS) {
+    const m = pattern.exec(trimmed);
+    if (m) return m[1];
+  }
+  return null;
+}
+
+export function normalizeYouTubeUrl(url: string): string {
+  const id = extractYouTubeVideoId(url);
+  if (id) return `https://www.youtube.com/watch?v=${id}`;
+  return url.trim();
+}
+
 export class TranscriptFetchError extends Error {
   title: string | null;
   constructor(message: string, title: string | null = null) {

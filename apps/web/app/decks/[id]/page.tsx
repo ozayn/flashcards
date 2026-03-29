@@ -152,17 +152,43 @@ function parseAnswerForExport(answer: string): {
   return { definition: null, example: null, plain: collapseBlankLines(raw) };
 }
 
+const _SOURCE_TYPE_LABELS: Record<string, string> = {
+  youtube: "YouTube",
+  wikipedia: "Wikipedia",
+  url: "URL",
+  webpage: "URL",
+  topic: "Topic",
+  text: "Text",
+  pdf: "PDF",
+  manual: "Manual",
+};
+
 function exportDeckAsTxt(
-  deckName: string,
-  categoryName: string,
+  deck: Deck,
+  categoryName: string | null,
   cards: Flashcard[]
 ): void {
   const lines: string[] = [
-    deckName.trim().toUpperCase(),
-    `Category: ${categoryName}`,
-    `Cards: ${cards.length}`,
-    "",
+    (deck.name || "").trim().toUpperCase(),
   ];
+
+  if (categoryName) {
+    lines.push(`Category: ${categoryName}`);
+  }
+
+  const sourceLabel = deck.source_type ? _SOURCE_TYPE_LABELS[deck.source_type] || deck.source_type : null;
+  if (sourceLabel) {
+    lines.push(`Source: ${sourceLabel}`);
+  }
+  if (deck.source_url) {
+    lines.push(`Source URL: ${deck.source_url}`);
+  }
+  if (deck.source_topic?.trim() && deck.source_topic.trim() !== deck.name?.trim()) {
+    lines.push(`Topic: ${deck.source_topic.trim()}`);
+  }
+
+  lines.push(`Cards: ${cards.length}`);
+  lines.push("");
 
   if (cards.length === 0) {
     lines.push("No cards available.");
@@ -212,7 +238,7 @@ function exportDeckAsTxt(
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `${slugFromTitle(deckName)}.txt`;
+  a.download = `${slugFromTitle(deck.name || "deck")}.txt`;
   a.click();
   URL.revokeObjectURL(url);
 }
@@ -639,9 +665,9 @@ export default function DeckPage({ params }: DeckPageProps) {
                 disabled={flashcards.length === 0}
                 onClick={() => {
                   const catName = deck.category_id
-                    ? categories.find((c) => c.id === deck.category_id)?.name ?? "—"
-                    : "Uncategorized";
-                  exportDeckAsTxt(title || deck.name, catName, flashcards);
+                    ? categories.find((c) => c.id === deck.category_id)?.name ?? null
+                    : null;
+                  exportDeckAsTxt(deck, catName, flashcards);
                 }}
                 aria-label="Export as .txt"
               >

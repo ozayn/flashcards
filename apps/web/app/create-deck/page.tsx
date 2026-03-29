@@ -5,13 +5,23 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { getUsers, createDeck, generateFlashcards, fetchYouTubeTranscript, fetchWebpageContent, TranscriptFetchError } from "@/lib/api";
+import { getUsers, createDeck, generateFlashcards, fetchYouTubeTranscript, fetchWebpageContent, normalizeYouTubeUrl, TranscriptFetchError } from "@/lib/api";
 import { getStoredUserId } from "@/components/user-selector";
 import PageContainer from "@/components/layout/page-container";
 
 const CARD_COUNT_OPTIONS = [5, 10, 20, 30, 40, 50] as const;
 
 type GenerationMode = "topic" | "text" | "youtube" | "url";
+
+const _YT_RE = /(?:youtube\.com\/watch\?.*v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/shorts\/)/i;
+const _WIKI_RE = /^https?:\/\/([a-z]{2,3}\.)?wikipedia\.org\/wiki\//i;
+
+function _detectUrlMode(val: string): "youtube" | "url" | null {
+  const t = val.trim();
+  if (_YT_RE.test(t)) return "youtube";
+  if (_WIKI_RE.test(t)) return "url";
+  return null;
+}
 
 function CreateDeckForm() {
   const [name, setName] = useState("");
@@ -26,6 +36,7 @@ function CreateDeckForm() {
   const [loading, setLoading] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
+  const [autoSwitchHint, setAutoSwitchHint] = useState<string | null>(null);
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -143,12 +154,13 @@ function CreateDeckForm() {
       }
 
       if (generationMode === "youtube") {
+        const cleanYtUrl = normalizeYouTubeUrl(youtubeUrlTrimmed);
         setLoadingMessage("Fetching transcript…");
         let transcript: Awaited<ReturnType<typeof fetchYouTubeTranscript>>;
         try {
-          transcript = await fetchYouTubeTranscript(youtubeUrlTrimmed);
+          transcript = await fetchYouTubeTranscript(cleanYtUrl);
         } catch (err) {
-          setYtFallbackUrl(youtubeUrlTrimmed);
+          setYtFallbackUrl(cleanYtUrl);
           setGenerationMode("text");
           if (err instanceof TranscriptFetchError && err.title) {
             if (!nameTrimmed) setName(err.title);
@@ -167,7 +179,7 @@ function CreateDeckForm() {
           user_id: userId,
           name: deckName,
           source_type: "youtube",
-          source_url: youtubeUrlTrimmed,
+          source_url: cleanYtUrl,
           source_text: transcript.transcript,
           source_topic: videoTitle,
         });
@@ -375,6 +387,11 @@ function CreateDeckForm() {
                       </button>
                     ))}
                   </div>
+                  {autoSwitchHint && (
+                    <p className="text-xs text-muted-foreground animate-in fade-in duration-200">
+                      {autoSwitchHint}
+                    </p>
+                  )}
 
                   {generationMode === "topic" && (
                     <div className="space-y-3 pt-1">
@@ -386,7 +403,27 @@ function CreateDeckForm() {
                           id="topic"
                           placeholder="e.g. Photosynthesis, Spanish verbs"
                           value={topic}
-                          onChange={(e) => setTopic(e.target.value)}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            const detected = _detectUrlMode(v);
+                            if (detected) {
+                              setTopic("");
+                              setFormError(null);
+                              if (detected === "youtube") {
+                                setYoutubeUrl(normalizeYouTubeUrl(v));
+                                setGenerationMode("youtube");
+                                setAutoSwitchHint("Moved to YouTube");
+                              } else {
+                                setArticleUrl(v.trim());
+                                setGenerationMode("url");
+                                setAutoSwitchHint("Moved to URL");
+                              }
+                              setTimeout(() => setAutoSwitchHint(null), 3000);
+                            } else {
+                              setTopic(v);
+                              setAutoSwitchHint(null);
+                            }
+                          }}
                           className="min-w-0"
                           disabled={loading}
                         />

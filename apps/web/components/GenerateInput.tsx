@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { createDeck, generateFlashcards, fetchYouTubeTranscript, fetchWebpageContent, TranscriptFetchError, getUsers } from "@/lib/api";
+import { createDeck, generateFlashcards, fetchYouTubeTranscript, fetchWebpageContent, normalizeYouTubeUrl, TranscriptFetchError, getUsers } from "@/lib/api";
 import { getStoredUserId } from "@/components/user-selector";
 
 const YT_REGEX = /(?:youtube\.com\/watch\?.*v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/shorts\/)/i;
@@ -63,13 +63,14 @@ export function GenerateInput({
       }
 
       if (isYT) {
+        const cleanYtUrl = normalizeYouTubeUrl(trimmed);
         setLoadingMessage("Fetching transcript…");
         let transcript: Awaited<ReturnType<typeof fetchYouTubeTranscript>>;
         try {
-          transcript = await fetchYouTubeTranscript(trimmed);
+          transcript = await fetchYouTubeTranscript(cleanYtUrl);
         } catch (err) {
           const title = err instanceof TranscriptFetchError ? err.title : undefined;
-          setYtFallback({ url: trimmed, title: title || undefined });
+          setYtFallback({ url: cleanYtUrl, title: title || undefined });
           setLoading(false);
           setLoadingMessage("");
           return;
@@ -82,7 +83,7 @@ export function GenerateInput({
           user_id: userId,
           name: deckName,
           source_type: "youtube",
-          source_url: trimmed,
+          source_url: cleanYtUrl,
           source_text: transcript.transcript,
           source_topic: videoTitle,
         });
