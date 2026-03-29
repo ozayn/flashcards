@@ -13,11 +13,11 @@ export default function LandingPage() {
             Turn anything into flashcards.
           </h1>
           <p className="mt-4 text-lg text-muted-foreground max-w-md mx-auto">
-            Enter a topic or paste a YouTube link.
+            Enter a topic, or paste a YouTube or Wikipedia link.
           </p>
           <div className="mt-10">
             <GenerateInput
-              placeholder="Topic, YouTube link, or keyword…"
+              placeholder="Topic, YouTube link, Wikipedia URL…"
               suggestions={[
                 "Roman gods",
                 "Quantum mechanics",

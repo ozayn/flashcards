@@ -5,19 +5,20 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { getUsers, createDeck, generateFlashcards, fetchYouTubeTranscript, TranscriptFetchError } from "@/lib/api";
+import { getUsers, createDeck, generateFlashcards, fetchYouTubeTranscript, fetchWebpageContent, TranscriptFetchError } from "@/lib/api";
 import { getStoredUserId } from "@/components/user-selector";
 import PageContainer from "@/components/layout/page-container";
 
 const CARD_COUNT_OPTIONS = [5, 10, 20, 30, 40, 50] as const;
 
-type GenerationMode = "topic" | "text" | "youtube";
+type GenerationMode = "topic" | "text" | "youtube" | "url";
 
 function CreateDeckForm() {
   const [name, setName] = useState("");
   const [topic, setTopic] = useState("");
   const [text, setText] = useState("");
   const [youtubeUrl, setYoutubeUrl] = useState("");
+  const [articleUrl, setArticleUrl] = useState("");
   const [generationMode, setGenerationMode] = useState<GenerationMode>("topic");
   const [emptyDeckMode, setEmptyDeckMode] = useState(false);
   const [useNameAsTopic, setUseNameAsTopic] = useState(false);
@@ -53,6 +54,7 @@ function CreateDeckForm() {
   const topicTrimmed = topic.trim();
   const textTrimmed = text.trim();
   const youtubeUrlTrimmed = youtubeUrl.trim();
+  const articleUrlTrimmed = articleUrl.trim();
 
   const topicForGeneration =
     topicTrimmed || (useNameAsTopic && !topicTrimmed ? nameTrimmed : "");
@@ -63,7 +65,9 @@ function CreateDeckForm() {
       ? Boolean(topicForGeneration)
       : generationMode === "text"
         ? Boolean(textTrimmed)
-        : Boolean(youtubeUrlTrimmed));
+        : generationMode === "url"
+          ? Boolean(articleUrlTrimmed)
+          : Boolean(youtubeUrlTrimmed));
 
   const submitLabel = loading
     ? loadingMessage || "Creating..."
@@ -71,7 +75,9 @@ function CreateDeckForm() {
       ? "Create Empty Deck"
       : generationMode === "youtube" && youtubeUrlTrimmed
         ? "Create Deck from Video"
-        : willGenerate
+        : generationMode === "url" && articleUrlTrimmed
+          ? "Create Deck from Article"
+          : willGenerate
           ? "Create Deck and Generate Cards"
           : "Create Deck";
 
@@ -82,6 +88,11 @@ function CreateDeckForm() {
     if (emptyDeckMode) {
       if (!nameTrimmed) {
         setFormError("Enter a deck name for your empty deck.");
+        return;
+      }
+    } else if (generationMode === "url") {
+      if (!articleUrlTrimmed) {
+        setFormError("Paste a Wikipedia URL to continue.");
         return;
       }
     } else if (generationMode === "youtube") {
@@ -179,6 +190,48 @@ function CreateDeckForm() {
         return;
       }
 
+      if (generationMode === "url") {
+        setLoadingMessage("Fetching article…");
+        let article: Awaited<ReturnType<typeof fetchWebpageContent>>;
+        try {
+          article = await fetchWebpageContent(articleUrlTrimmed);
+        } catch (err) {
+          setFormError(err instanceof Error ? err.message : "Failed to fetch the article.");
+          setLoading(false);
+          setLoadingMessage("");
+          return;
+        }
+
+        const articleTitle = article.title || null;
+        const deckName = nameTrimmed || articleTitle || "Wikipedia Deck";
+        setLoadingMessage("Creating deck…");
+
+        const deck = await createDeck({
+          user_id: userId,
+          name: deckName,
+          source_type: "wikipedia",
+          source_url: articleUrlTrimmed,
+          source_text: article.text,
+          source_topic: articleTitle,
+        });
+        const deckId = (deck as { id: string }).id;
+
+        setLoadingMessage("Generating flashcards… this may take a minute");
+        try {
+          await generateFlashcards({
+            deck_id: deckId,
+            text: article.text.slice(0, 50000),
+            num_cards: cardCount,
+          });
+        } catch {
+          router.push(`/decks/${deckId}`);
+          return;
+        }
+
+        router.push(`/decks/${deckId}`);
+        return;
+      }
+
       const effectiveDeckName =
         generationMode === "text"
           ? nameTrimmed
@@ -263,7 +316,7 @@ function CreateDeckForm() {
           </label>
           <Input
             id="name"
-            placeholder={generationMode === "youtube" ? "Auto-filled from video title if empty" : "e.g. Spanish Vocabulary"}
+            placeholder={generationMode === "youtube" ? "Auto-filled from video title if empty" : generationMode === "url" ? "Auto-filled from article title if empty" : "e.g. Spanish Vocabulary"}
             value={name}
             onChange={(e) => setName(e.target.value)}
             autoComplete="off"
@@ -302,6 +355,7 @@ function CreateDeckForm() {
                         { value: "topic" as const, label: "Topic" },
                         { value: "text" as const, label: "Text" },
                         { value: "youtube" as const, label: "YouTube" },
+                        { value: "url" as const, label: "URL" },
                       ] as const
                     ).map(({ value, label }) => (
                       <button
@@ -478,6 +532,49 @@ function CreateDeckForm() {
                         </label>
                         <select
                           id="cardCount-yt"
+                          value={cardCount}
+                          onChange={(e) => setCardCount(Number(e.target.value))}
+                          disabled={loading}
+                          className="h-9 min-w-[4.5rem] rounded-md border border-input bg-background px-2.5 py-1 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                        >
+                          {CARD_COUNT_OPTIONS.map((n) => (
+                            <option key={n} value={n}>
+                              {n}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  )}
+
+                  {generationMode === "url" && (
+                    <div className="space-y-3 pt-1">
+                      <div className="space-y-2">
+                        <label htmlFor="article-url" className="text-sm font-medium">
+                          Wikipedia URL
+                        </label>
+                        <Input
+                          id="article-url"
+                          type="url"
+                          placeholder="https://en.wikipedia.org/wiki/..."
+                          value={articleUrl}
+                          onChange={(e) => { setArticleUrl(e.target.value); setFormError(null); }}
+                          disabled={loading}
+                          className="min-w-0"
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          We&apos;ll extract the article text and generate flashcards from it.
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                        <label
+                          htmlFor="cardCount-url"
+                          className="text-sm font-medium shrink-0"
+                        >
+                          Number of cards
+                        </label>
+                        <select
+                          id="cardCount-url"
                           value={cardCount}
                           onChange={(e) => setCardCount(Number(e.target.value))}
                           disabled={loading}

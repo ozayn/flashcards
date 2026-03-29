@@ -4,13 +4,17 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { createDeck, generateFlashcards, fetchYouTubeTranscript, TranscriptFetchError, getUsers } from "@/lib/api";
+import { createDeck, generateFlashcards, fetchYouTubeTranscript, fetchWebpageContent, TranscriptFetchError, getUsers } from "@/lib/api";
 import { getStoredUserId } from "@/components/user-selector";
 
 const YT_REGEX = /(?:youtube\.com\/watch\?.*v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/shorts\/)/i;
 
 function isYouTubeUrl(s: string): boolean {
   return YT_REGEX.test(s.trim());
+}
+
+function isWikipediaUrl(s: string): boolean {
+  return /^https?:\/\/([a-z]{2,3}\.)?wikipedia\.org\/wiki\//i.test(s.trim());
 }
 
 function looksLikeUrl(s: string): boolean {
@@ -35,6 +39,7 @@ export function GenerateInput({
 
   const trimmed = value.trim();
   const isYT = isYouTubeUrl(trimmed);
+  const isWiki = !isYT && isWikipediaUrl(trimmed);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -97,9 +102,47 @@ export function GenerateInput({
         }
 
         router.push(`/decks/${deckId}`);
+      } else if (isWiki) {
+        setLoadingMessage("Fetching article…");
+        let article: Awaited<ReturnType<typeof fetchWebpageContent>>;
+        try {
+          article = await fetchWebpageContent(trimmed);
+        } catch (err) {
+          setError(err instanceof Error ? err.message : "Failed to fetch article.");
+          setLoading(false);
+          setLoadingMessage("");
+          return;
+        }
+
+        const articleTitle = article.title || null;
+        const deckName = articleTitle || "Wikipedia Deck";
+        setLoadingMessage("Creating deck…");
+        const deck = await createDeck({
+          user_id: userId,
+          name: deckName,
+          source_type: "wikipedia",
+          source_url: trimmed,
+          source_text: article.text,
+          source_topic: articleTitle,
+        });
+        const deckId = (deck as { id: string }).id;
+
+        setLoadingMessage("Generating flashcards… this may take a minute");
+        try {
+          await generateFlashcards({
+            deck_id: deckId,
+            text: article.text.slice(0, 50000),
+            num_cards: 10,
+          });
+        } catch {
+          router.push(`/decks/${deckId}`);
+          return;
+        }
+
+        router.push(`/decks/${deckId}`);
       } else {
         if (looksLikeUrl(trimmed)) {
-          setError("That looks like a URL. Only YouTube links are supported for now.");
+          setError("That looks like a URL. Only YouTube and Wikipedia links are supported for now.");
           setLoading(false);
           return;
         }
@@ -149,7 +192,7 @@ export function GenerateInput({
         disabled={loading}
         className="w-full rounded-xl border border-border bg-background px-4 py-3.5 text-base placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:opacity-60"
       />
-      {suggestions.length > 0 && !loading && !isYT && !ytFallback && (
+      {suggestions.length > 0 && !loading && !isYT && !isWiki && !ytFallback && (
         <div className="flex flex-wrap gap-2 justify-center">
           {suggestions.map((s) => (
             <button
@@ -200,12 +243,16 @@ export function GenerateInput({
               ? loadingMessage || "Creating…"
               : isYT
                 ? "Create Deck from Video"
-                : "Create Deck"}
+                : isWiki
+                  ? "Create Deck from Article"
+                  : "Create Deck"}
           </Button>
           <p className="text-xs text-muted-foreground">
             {isYT
               ? "We\u2019ll pull the transcript and create a deck from it."
-              : "We\u2019ll generate flashcards and open your new deck."}
+              : isWiki
+                ? "We\u2019ll extract the article and create a deck from it."
+                : "We\u2019ll generate flashcards and open your new deck."}
           </p>
         </div>
       )}

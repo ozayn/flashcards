@@ -203,6 +203,25 @@ export async function fetchYouTubeTranscript(url: string): Promise<{
   return res.json();
 }
 
+export async function fetchWebpageContent(url: string): Promise<{
+  url: string;
+  title: string | null;
+  text: string;
+  char_count: number;
+  source_type: string;
+}> {
+  const res = await fetch(`${API_BASE}/webpage/extract`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(body?.detail ?? "Failed to extract page content");
+  }
+  return res.json();
+}
+
 export async function moveDeckToCategory(deckId: string, categoryId: string | null) {
   const res = await fetch(`${API_BASE}/decks/${deckId}/move`, {
     method: "PATCH",

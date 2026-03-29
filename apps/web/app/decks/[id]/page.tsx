@@ -558,6 +558,13 @@ export default function DeckPage({ params }: DeckPageProps) {
                   </a>
                 </p>
               </div>
+            ) : deck.source_type === "wikipedia" && deck.source_url ? (
+              <div className="text-sm mb-4 leading-relaxed">
+                <span className="text-muted-foreground">Generated from Wikipedia:</span>{" "}
+                <a href={deck.source_url} target="_blank" rel="noopener noreferrer" className="font-medium text-foreground underline underline-offset-2 hover:text-muted-foreground">
+                  {deck.source_topic?.trim() || deck.source_url}
+                </a>
+              </div>
             ) : deck.source_topic?.trim() ? (
               <p className="text-sm mb-4 leading-relaxed">
                 <span className="text-muted-foreground">Generated from topic:</span>{" "}
