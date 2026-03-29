@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getBackendUrl } from "@/lib/backend-url";
 
-const PROXY_TIMEOUT_MS = 15_000;
+const PROXY_TIMEOUT_MS = 90_000;
 
 // Rate-limit error logging: at most once per 10 seconds
 let lastErrorLogMs = 0;
@@ -83,6 +83,8 @@ async function proxy(
     const responseHeaders = new Headers();
     const contentType = res.headers.get("content-type");
     if (contentType) responseHeaders.set("content-type", contentType);
+    const contentDisposition = res.headers.get("content-disposition");
+    if (contentDisposition) responseHeaders.set("content-disposition", contentDisposition);
     const responseBody = (res.status === 204 || res.status === 304) ? null : resBody;
     return new NextResponse(responseBody, {
       status: res.status,

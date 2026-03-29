@@ -1,8 +1,11 @@
 import os
+import re
+import unicodedata
 from datetime import datetime
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import PlainTextResponse
 from sqlalchemy import and_, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -286,3 +289,44 @@ async def create_deck(
     await db.flush()
     await db.refresh(deck)
     return DeckResponse.model_validate(deck)
+
+
+def _slugify(text: str, max_len: int = 60) -> str:
+    """Convert text to a filesystem-safe slug."""
+    text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii")
+    text = re.sub(r"[^\w\s-]", "", text.lower()).strip()
+    text = re.sub(r"[-\s]+", "-", text)
+    return text[:max_len].rstrip("-") or "transcript"
+
+
+@router.get("/{deck_id}/transcript")
+async def download_transcript(
+    deck_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Download the stored transcript for a YouTube-sourced deck as a .txt file."""
+    result = await db.execute(select(Deck).where(Deck.id == deck_id))
+    deck = result.scalar_one_or_none()
+    if not deck:
+        raise HTTPException(status_code=404, detail="Deck not found")
+    if deck.source_type != "youtube":
+        raise HTTPException(status_code=400, detail="Transcript download is only available for YouTube decks.")
+    if not deck.source_text or not deck.source_text.strip():
+        raise HTTPException(status_code=404, detail="No transcript stored for this deck.")
+
+    title = deck.source_topic or deck.name or "YouTube Video"
+    url = deck.source_url or ""
+
+    body = f"Title: {title}\n"
+    if url:
+        body += f"Source URL: {url}\n"
+    body += "\nTranscript:\n\n"
+    body += deck.source_text
+
+    filename = _slugify(title) + "-transcript.txt"
+
+    return PlainTextResponse(
+        content=body,
+        media_type="text/plain; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

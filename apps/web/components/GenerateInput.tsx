@@ -74,18 +74,23 @@ export function GenerateInput({
           name: deckName,
           source_type: "youtube",
           source_url: trimmed,
-          source_text: transcript.transcript.slice(0, 10000),
+          source_text: transcript.transcript,
           source_topic: videoTitle,
         });
         const deckId = (deck as { id: string }).id;
 
-        setLoadingMessage("Generating flashcards…");
-        await generateFlashcards({
-          deck_id: deckId,
-          text: transcript.transcript.slice(0, 10000),
-          num_cards: 10,
-          language: transcript.language || "en",
-        });
+        setLoadingMessage("Generating flashcards… this may take a minute");
+        try {
+          await generateFlashcards({
+            deck_id: deckId,
+            text: transcript.transcript.slice(0, 50000),
+            num_cards: 10,
+            language: transcript.language || "en",
+          });
+        } catch {
+          router.push(`/decks/${deckId}`);
+          return;
+        }
 
         router.push(`/decks/${deckId}`);
       } else {
@@ -103,18 +108,23 @@ export function GenerateInput({
         });
         const deckId = (deck as { id: string }).id;
 
-        setLoadingMessage("Generating flashcards…");
-        await generateFlashcards({
-          deck_id: deckId,
-          topic: trimmed,
-          num_cards: 10,
-          language: "en",
-        });
+        setLoadingMessage("Generating flashcards… this may take a minute");
+        try {
+          await generateFlashcards({
+            deck_id: deckId,
+            topic: trimmed,
+            num_cards: 10,
+            language: "en",
+          });
+        } catch {
+          router.push(`/decks/${deckId}`);
+          return;
+        }
 
         router.push(`/decks/${deckId}`);
       }
     } catch {
-      setError("Something went wrong. Please try again.");
+      setError("Failed to create deck. Please try again.");
       setLoading(false);
       setLoadingMessage("");
     }

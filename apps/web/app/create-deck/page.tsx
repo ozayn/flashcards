@@ -144,18 +144,23 @@ function CreateDeckForm() {
           name: deckName,
           source_type: "youtube",
           source_url: youtubeUrlTrimmed,
-          source_text: transcript.transcript.slice(0, 10000),
+          source_text: transcript.transcript,
           source_topic: videoTitle,
         });
         const deckId = (deck as { id: string }).id;
 
-        setLoadingMessage("Generating flashcards…");
-        await generateFlashcards({
-          deck_id: deckId,
-          text: transcript.transcript.slice(0, 10000),
-          num_cards: cardCount,
-          language: transcript.language || "en",
-        });
+        setLoadingMessage("Generating flashcards… this may take a minute");
+        try {
+          await generateFlashcards({
+            deck_id: deckId,
+            text: transcript.transcript.slice(0, 50000),
+            num_cards: cardCount,
+            language: transcript.language || "en",
+          });
+        } catch {
+          router.push(`/decks/${deckId}`);
+          return;
+        }
 
         router.push(`/decks/${deckId}`);
         return;
@@ -185,21 +190,31 @@ function CreateDeckForm() {
       const deckId = (deck as { id: string }).id;
 
       if (generationMode === "text" && textTrimmed) {
-        setLoadingMessage("Generating flashcards…");
-        await generateFlashcards({
-          deck_id: deckId,
-          text: textTrimmed,
-          num_cards: cardCount,
-          language: "en",
-        });
+        setLoadingMessage("Generating flashcards… this may take a minute");
+        try {
+          await generateFlashcards({
+            deck_id: deckId,
+            text: textTrimmed,
+            num_cards: cardCount,
+            language: "en",
+          });
+        } catch {
+          router.push(`/decks/${deckId}`);
+          return;
+        }
       } else if (generationMode === "topic" && effectiveTopic) {
-        setLoadingMessage("Generating flashcards…");
-        await generateFlashcards({
-          deck_id: deckId,
-          topic: effectiveTopic,
-          num_cards: cardCount,
-          language: "en",
-        });
+        setLoadingMessage("Generating flashcards… this may take a minute");
+        try {
+          await generateFlashcards({
+            deck_id: deckId,
+            topic: effectiveTopic,
+            num_cards: cardCount,
+            language: "en",
+          });
+        } catch {
+          router.push(`/decks/${deckId}`);
+          return;
+        }
       }
 
       router.push(`/decks/${deckId}`);
@@ -361,15 +376,15 @@ function CreateDeckForm() {
                           placeholder="Paste notes or text to generate flashcards..."
                           value={text}
                           onChange={(e) => setText(e.target.value)}
-                          maxLength={10000}
+                          maxLength={50000}
                           disabled={loading}
                           className="w-full min-h-[160px] max-mobile:min-h-[120px] rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                         />
                         <div className="flex justify-between items-center">
                           <span className="text-xs text-muted-foreground">
-                            {text.length} / 10000 characters
+                            {text.length} / 50000 characters
                           </span>
-                          {text.length >= 10000 && (
+                          {text.length >= 50000 && (
                             <span className="text-xs text-destructive">
                               Text is too long
                             </span>

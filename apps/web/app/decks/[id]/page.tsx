@@ -537,12 +537,23 @@ export default function DeckPage({ params }: DeckPageProps) {
               </Button>
             </div>
             {deck.source_type === "youtube" && deck.source_url ? (
-              <p className="text-sm mb-4 leading-relaxed">
-                <span className="text-muted-foreground">Generated from YouTube:</span>{" "}
-                <a href={deck.source_url} target="_blank" rel="noopener noreferrer" className="font-medium text-foreground underline underline-offset-2 hover:text-muted-foreground">
-                  {deck.source_topic?.trim() || deck.source_url}
-                </a>
-              </p>
+              <div className="text-sm mb-4 leading-relaxed space-y-1">
+                <p>
+                  <span className="text-muted-foreground">Generated from YouTube:</span>{" "}
+                  <a href={deck.source_url} target="_blank" rel="noopener noreferrer" className="font-medium text-foreground underline underline-offset-2 hover:text-muted-foreground">
+                    {deck.source_topic?.trim() || deck.source_url}
+                  </a>
+                </p>
+                <p>
+                  <a
+                    href={`/api/proxy/decks/${deck.id}/transcript`}
+                    download
+                    className="text-muted-foreground hover:text-foreground underline underline-offset-2 transition-colors"
+                  >
+                    Download transcript (.txt)
+                  </a>
+                </p>
+              </div>
             ) : deck.source_topic?.trim() ? (
               <p className="text-sm mb-4 leading-relaxed">
                 <span className="text-muted-foreground">Generated from topic:</span>{" "}

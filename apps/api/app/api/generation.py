@@ -54,7 +54,7 @@ class GenerateFlashcardsResponse(BaseModel):
     created: int
 
 
-TEXT_MAX_LENGTH = 10000
+TEXT_MAX_LENGTH = 50000
 
 # TODO: Add rate limiting for generation endpoints (per user/IP, return 429 if exceeded).
 # Placeholder for future integration with shared FastAPI middleware.
@@ -146,6 +146,46 @@ def _filter_low_value_transcript_cards(cards: list) -> list:
     return kept
 
 
+_GENERIC_QUESTION_PATTERNS = [
+    re.compile(r"^what is [\w\s]{1,25}\?$"),
+    re.compile(r"^what is [\w\s]{1,25} used for\??$"),
+    re.compile(r"^what is the purpose of [\w\s]{1,25}\??$"),
+    re.compile(r"^what are the benefits of [\w\s]{1,25}\??$"),
+    re.compile(r"^what does [\w\s]{1,25} do\??$"),
+    re.compile(r"^define [\w\s]{1,25}\.?$"),
+    re.compile(r"^what is the definition of [\w\s]{1,25}\??$"),
+]
+
+
+def _is_generic_question(q: str) -> bool:
+    """Check if a question matches generic textbook patterns (short, broad, not lecture-specific)."""
+    s = q.strip().lower()
+    return any(p.match(s) for p in _GENERIC_QUESTION_PATTERNS)
+
+
+def _filter_generic_transcript_cards(cards: list, passage: str, max_generic: int = 2) -> list:
+    """Limit the number of generic 'What is X?' style cards in transcript mode.
+    Keeps up to max_generic generic cards (the strongest ones), preserves all specific cards."""
+    if not cards:
+        return []
+    specific = []
+    generic = []
+    for c in cards:
+        q = (c.get("question") or c.get("front") or "").strip()
+        if _is_generic_question(q):
+            generic.append(c)
+        else:
+            specific.append(c)
+    if len(generic) <= max_generic:
+        return cards
+    generic_scored = sorted(generic, key=lambda c: _card_strength(c), reverse=True)
+    kept_generic = generic_scored[:max_generic]
+    dropped = len(generic) - max_generic
+    if dropped > 0:
+        logger.debug("Filtered %d generic transcript cards, kept %d", dropped, max_generic)
+    return specific + kept_generic
+
+
 # Question stems that often produce overlapping cards. (pattern_regex, canonical_stem_key)
 # Same stem_key + shared topic words = overlap.
 _TRANSCRIPT_OVERLAP_STEMS = [
@@ -212,22 +252,34 @@ def _questions_overlap(q1: str, q2: str) -> bool:
 
 
 def _card_strength(card: dict) -> int:
-    """Higher = stronger. Prefer: definition > comparison > process > why/benefit > generic example."""
+    """Higher = stronger. Prefer lecture-specific cards over generic definitions."""
     q = (card.get("question") or card.get("front") or "").lower()
     a = (card.get("answer_short") or card.get("back") or card.get("answer") or "")
     score = 0
-    if "difference between" in q or "compare" in q:
+    # Lecture-specific patterns score highest
+    lecture_signals = ("speaker", "lecture", "author", "passage", "text", "described", "according to")
+    if any(s in q for s in lecture_signals):
+        score += 15
+    if "difference between" in q or "compare" in q or "distinction" in q:
+        score += 50
+    elif "steps" in q or "process" in q or "workflow" in q or "sequence" in q:
+        score += 45
+    elif "warning" in q or "caveat" in q or "limitation" in q:
+        score += 45
+    elif "why " in q or "cause" in q or "leads to" in q:
         score += 40
-    elif "how does" in q or "what are the steps" in q or "what is the process":
+    elif "how does" in q:
         score += 35
-    elif "why " in q or "benefit" in q or "advantage" in q:
-        score += 30
+    elif "example" in q and ("used" in q or "illustrat" in q or "given" in q):
+        score += 35
     elif "what is " in q and "example" not in q:
-        score += 50  # definition preferred
+        score += 20  # generic definition — lower than before
     elif "example" in q:
-        score += 10  # generic example deprioritized
-    score += min(len(a) // 20, 15)  # longer answer = more substance
-    score += min(len(q) // 10, 5)   # slightly prefer more specific question
+        score += 10
+    elif "used for" in q or "purpose of" in q:
+        score += 10  # generic purpose questions score low
+    score += min(len(a) // 20, 15)
+    score += min(len(q) // 10, 5)
     return score
 
 
@@ -1048,6 +1100,30 @@ def extract_anchor_keywords(topic: str) -> list[str]:
     return anchors[:5]
 
 
+def _sample_text_for_prompt(text: str, max_chars: int = 12000) -> str:
+    """Sample text for LLM prompts. For long texts (lectures/transcripts), skip
+    preamble and take sections from across the content for better coverage."""
+    if len(text) <= max_chars:
+        return text.strip()
+    # For long texts, skip ~5% preamble (ads, intro) and sample 3 sections
+    skip = len(text) // 20
+    usable = text[skip:]
+    if len(usable) <= max_chars:
+        return usable.strip()
+    chunk_size = max_chars // 3
+    mid = len(usable) // 2
+    section_a = usable[:chunk_size]
+    section_b = usable[mid - chunk_size // 2 : mid + chunk_size // 2]
+    section_c = usable[-(chunk_size):]
+    return (
+        section_a.strip()
+        + "\n\n[... transcript continues ...]\n\n"
+        + section_b.strip()
+        + "\n\n[... transcript continues ...]\n\n"
+        + section_c.strip()
+    )
+
+
 def _extract_concepts(
     topic: Optional[str] = None,
     text: Optional[str] = None,
@@ -1061,46 +1137,43 @@ def _extract_concepts(
         # When users paste text (e.g., research papers), grounding strictness
         # matches strict_text_only: strict mode requires explicit support;
         # relaxed mode prefers text but allows implied/related concepts.
-        text_preview = text[:6000].strip()
-        if len(text) > 6000:
-            text_preview += "\n\n[... text truncated ...]"
+        text_preview = _sample_text_for_prompt(text, max_chars=12000)
 
         if strict_text_only:
             grounding_rules = """Rules:
-- Only extract items that appear directly in the text.
-- Do NOT introduce new concepts, people, books, or ideas not mentioned in the text.
-- Do NOT expand using external knowledge.
-- Do NOT add generic background terms (e.g. dopamine, ion channels) unless the passage explicitly discusses them.
-- Prefer concrete terms that appear in the paragraph.
-- Each extracted concept must have explicit support in the passage.
-
-For lectures/transcripts: Extract high-value concepts—definitions, comparisons, process steps, frameworks, key examples—not transitions, filler, or video housekeeping."""
+- Only extract points that are directly discussed in the text.
+- Do NOT introduce ideas, terms, or knowledge not in the text.
+- Do NOT add generic background terms unless the passage explicitly defines or discusses them.
+- Each extracted point must have explicit support in the passage.
+- Ignore transitions, filler, and video housekeeping."""
         else:
             grounding_rules = """Rules:
-- Prefer concepts that appear in or are clearly implied by the text.
-- You may include related concepts that the passage suggests or builds on, but avoid pure external knowledge.
-- Do not require every concept to be explicitly stated; reasonable inference from the passage is acceptable.
-- Avoid concepts with no connection to the passage."""
+- Prefer points that appear in or are clearly implied by the text.
+- You may include related ideas that the passage suggests, but avoid pure external knowledge.
+- Avoid points with no connection to the passage."""
 
         prompt = f"""{build_language_rule("", text, language_hint)}
-You are identifying key learning concepts from the following text.
+You are extracting lecture-specific study points from the following text.
 
 {USER_TEXT_SAFETY_INSTRUCTION}
 
 Text:
 {text_preview}
 
-Extract up to {num_cards} specific items from the text. If fewer concepts exist, extract fewer.
+Extract up to {num_cards} SPECIFIC study points from this text. Each point should be a short phrase describing a specific claim, distinction, process, example, or detail from THIS text — not a generic domain noun.
 
-Items may include:
-- key concepts
-- brain regions
-- measurements
-- experimental methods
-- findings
-- devices
-- organisms
-- scientific terms
+PREFER these kinds of points:
+- A specific distinction or comparison made in the text (e.g. "difference between supervised and unsupervised learning as explained here")
+- A specific process, workflow, or sequence of steps described (e.g. "three-step data cleaning workflow: load, inspect, filter")
+- A concrete example or analogy used by the speaker/author (e.g. "restaurant menu analogy for API design")
+- A specific claim, rule, or warning stated in the text (e.g. "speaker warns against using global variables in large projects")
+- A key definition that the text actually spends time explaining (e.g. "definition of overfitting as explained in the lecture")
+- A cause-and-effect relationship discussed (e.g. "why the Shah's modernization policies led to opposition")
+
+AVOID extracting:
+- Broad single-word nouns (e.g. "Python", "machine learning", "democracy")
+- Generic terms that would produce "What is X?" textbook cards
+- Terms only mentioned in passing without explanation
 
 {grounding_rules}
 
@@ -1433,7 +1506,7 @@ def _generate_flashcards_from_text(
     if concepts:
         return _generate_flashcards_from_concepts(
             concepts,
-            text[:8000],
+            _sample_text_for_prompt(text, max_chars=16000),
             language_hint,
             is_vocab=is_vocab,
             is_from_text=True,
@@ -1444,9 +1517,7 @@ def _generate_flashcards_from_text(
             max_tokens_override=max_tokens_override,
         )
     # Fallback: single-stage generation when concept extraction fails
-    text_preview = text[:8000].strip()
-    if len(text) > 8000:
-        text_preview += "\n\n[... text truncated ...]"
+    text_preview = _sample_text_for_prompt(text, max_chars=16000)
 
     wants_examples = _topic_wants_examples(topic or text)
     is_formula = _is_formula_topic(topic or text)
@@ -1562,7 +1633,7 @@ Text:
 
 {TRANSCRIPT_STUDY_RULES}
 
-Extract key facts and create one flashcard per important point. Aim for coverage across definitions, comparisons, process steps, benefits, and examples.
+Create one flashcard per important point from THIS specific text. Focus on what this text actually teaches: specific distinctions, processes described, examples given, claims made, and warnings stated. Do NOT produce generic textbook cards for terms only mentioned in passing.
 
 {_build_transcript_count_instruction(num_cards)}
 
@@ -1875,9 +1946,15 @@ Topical Grounding:
         json_rules = "- Output MUST be valid JSON. No plain text, no Q/A format, no markdown outside the JSON. Use double quotes for keys and values. Escape newlines as \\n in strings. Do NOT include 'Example:' or examples in answer_short."
 
     example_block = f"\n{EXAMPLE_REQUIREMENT_MANDATORY}\n" if wants_examples else ""
+    text_mode_instruction = """
+Each concept/point below comes from a specific lecture or text. Generate cards that are SPECIFIC to what this text says.
+Do NOT produce generic "What is X?" or "What is X used for?" cards unless the text actually defines X at length.
+Prefer: distinctions made, processes described, examples given, warnings stated, cause-effect relationships explained.""" if is_from_text else ""
+
     prompt = f"""{JSON_HEADER}
 {build_language_rule(topic, "", language_hint)}{example_block}
 You are generating flashcards.
+{text_mode_instruction}
 
 Concepts:
 {concept_list}
@@ -1887,7 +1964,7 @@ Concepts:
 {f'Anchor keywords:\n{anchors_str}\n' if anchors else ''}
 
 {_build_transcript_count_instruction(num_cards) if is_from_text else _build_count_instruction(num_cards)}
-If there are more concepts than needed, {'select for coverage (definition, comparison, process, benefit, example)' if is_from_text else 'select the most important'}. If fewer concepts, create multiple cards per concept (e.g. definition, example, application).
+If there are more concepts than needed, {'select for coverage across: distinctions, processes, specific examples, claims, cause-effect' if is_from_text else 'select the most important'}. If fewer concepts, create multiple cards per concept (e.g. definition, example, application).
 
 {style_instruction}
 
@@ -2634,38 +2711,73 @@ def _build_transcript_count_instruction(num_cards: int) -> str:
 - Aim for {num_cards} flashcards (roughly 5–8 for typical lectures)
 - It is acceptable to return between {num_cards - 3} and {num_cards + 3}
 - Do NOT significantly exceed {num_cards}
-- Cover diverse content types: definitions, comparisons, process steps, benefits, examples"""
+- Cover diverse content types: distinctions, processes/workflows, specific examples, claims, cause-effect
+- Prefer lecture-specific content over generic definitions"""
 
 
 STRICT_TEXT_GROUNDING_RULES = """STRICT GROUNDING RULES (text-based generation):
 1. The answer to each card MUST be recoverable from the passage alone—without domain knowledge, textbook knowledge, or any information outside the passage.
 2. KEEP a card only if: the passage explicitly states the answer, or a simple paraphrase of it (same meaning, different words).
 3. Do NOT include a card if: the answer relies on outside knowledge, common sense, inference from general expertise, or information not present in the passage—even if factually correct.
-4. Do NOT create generic background cards (e.g. "What is dopamine?") unless the passage explicitly discusses them.
-5. Prefer concise factual questions about: definitions, findings, methods, comparisons, quantities.
+4. Do NOT create generic background cards (e.g. "What is dopamine?", "What is Python used for?") unless the passage explicitly defines or discusses them at length.
+5. Prefer questions about: specific distinctions, processes/workflows, examples used, warnings/caveats, cause-effect relationships, and specific claims made in the text.
 6. Before including a card, verify the answer is derivable from the passage text itself. If not, discard it.
+7. Do NOT produce "What is X?" cards for terms that are only mentioned in passing. Only create definition cards for terms the passage actually explains.
 
 Example:
 Bad: "What is dopamine?" (generic, not passage-specific)
-Good: "What frequency range defines theta rhythm in the passage?" (grounded in passage)"""
+Bad: "What is Python used for?" (broad, could come from anywhere)
+Good: "What frequency range defines theta rhythm in the passage?" (grounded in passage)
+Good: "What distinction does the author make between X and Y?" (passage-specific)"""
 
 TRANSCRIPT_STUDY_RULES = """LECTURE/TRANSCRIPT QUALITY (course study):
 - Generate several distinct study-worthy flashcards (roughly 5–8). Cover main ideas, comparisons, process steps, and examples.
 - Avoid filler, but do NOT collapse the deck to one card.
-- PREFER strong question types: What is X? (definition), What is the difference between X and Y? (comparison), What are the steps in X? (process), Why is X useful? (benefit/reason).
-- DEPRIORITIZE generic "What is an example of X?"—prefer one concrete process/application card instead of multiple overlapping example cards.
-- For examples: the example must illustrate the definition tightly. E.g. task decomposition → outline→research→draft→revise; research agent → planning, searching, synthesizing, ranking, drafting.
-- Do NOT allow loosely related or generic examples. The example should show the concept in action.
-- Ignore transition sentences, filler narration, and video housekeeping (e.g. "In the next video...", "Welcome back").
-- AVOID low-value cards: purpose of next video, topic of next video, what will be discussed next, see you in next video.
-- Avoid multiple overlapping cards on the same concept (e.g. "What is an example of agentic workflow?" and "What is an example of a research agent?"—keep the stronger, more specific one)."""
+
+CRITICAL — LECTURE-SPECIFIC CARDS ONLY:
+- Every card MUST be anchored in what THIS specific lecture/text actually says.
+- Do NOT produce generic textbook cards that could apply to any introduction on the topic.
+- If a concept is only mentioned in passing (not explained), do NOT expand it into a general definition card.
+
+BAD card examples (too generic):
+- "What is Python used for?" — generic, not lecture-specific
+- "What is the purpose of pandas?" — broad textbook definition
+- "What is machine learning?" — could come from any source
+- "What are the benefits of data analysis?" — vague, not grounded
+
+GOOD card examples (lecture-specific):
+- "What distinction does the speaker make between X and Y?" — grounded comparison
+- "What steps does the speaker describe for the data cleaning workflow?" — specific process
+- "What example does the speaker use to illustrate overfitting?" — concrete lecture example
+- "What warning does the speaker give about using method X?" — specific caveat
+- "According to the lecture, what happens after step X?" — grounded sequence
+- "What role does X play in the workflow described in this lecture?" — specific context
+
+PREFERRED question types for transcript/lecture mode:
+1. Distinctions: "What is the difference between X and Y in this lecture?"
+2. Processes: "What steps does the speaker describe for X?"
+3. Speaker examples: "What example is used to illustrate X?"
+4. Warnings/caveats: "What caveat does the speaker mention about X?"
+5. Cause-effect: "According to the lecture, why does X lead to Y?"
+6. Specific claims: "What does the speaker say about X's role in Y?"
+
+DEPRIORITIZE:
+- Shallow "What is X?" dictionary-style definitions
+- Generic "What is X used for?" cards
+- "What is an example of X?" when no specific example is given in the text
+
+OTHER RULES:
+- Ignore transition sentences, filler narration, and video housekeeping.
+- AVOID low-value cards: purpose of next video, topic of next video, what will be discussed next.
+- Avoid multiple overlapping cards on the same concept."""
 
 RELAXED_TEXT_GROUNDING_RULES = """GROUNDING PREFERENCES (text-based generation):
 - Prefer cards grounded in the provided text.
-- Focus on definitions, findings, methods, comparisons, and quantities from the passage.
+- Focus on specific distinctions, processes, examples, claims, and findings from the passage.
 - You may include relevant background or context when helpful, but the text should remain the primary source.
 - Every card must be clearly related to the passage topic or content—do not include generic textbook cards unrelated to the passage.
-- Do not require every card to be strictly recoverable from the passage alone."""
+- Avoid shallow "What is X?" or "What is X used for?" cards for terms only mentioned in passing.
+- Prefer questions that test understanding of what THIS specific text says, not general domain knowledge."""
 
 
 @router.post("", response_model=GenerateFlashcardsResponse)
@@ -3265,6 +3377,13 @@ async def generate_flashcards(
             cards = _filter_low_value_transcript_cards(cards)
             logger.info("[text-mode] Stage 3 - after low-value filter: %d kept (removed %d)", len(cards), before_lv - len(cards))
 
+        # Generic card filter: limit shallow "What is X?" cards in transcript mode
+        if text_input and cards and not is_persian_mapping_mode:
+            before_gen = len(cards)
+            cards = _filter_generic_transcript_cards(cards, text_input, max_generic=2)
+            if len(cards) < before_gen:
+                logger.info("[text-mode] Stage 3b - after generic filter: %d kept (removed %d)", len(cards), before_gen - len(cards))
+
         # Example requirement: only when USER explicitly requested via topic (not inferred from transcript text)
         wants_examples = _topic_wants_examples(topic_str)
         if wants_examples and cards:
@@ -3280,15 +3399,16 @@ async def generate_flashcards(
             if not text_input:
                 logger.info("After example filter: %d cards with examples", len(cards))
 
-        # Transcript-only: overlap reduction, cap at 8 (skip for Persian mapping mode)
+        # Transcript-only: overlap reduction, cap (skip for Persian mapping mode)
         if text_input and cards and not is_persian_mapping_mode:
             before_overlap = len(cards)
             cards = _reduce_transcript_overlaps(cards)
             logger.info("[text-mode] Stage 4 - after overlap reduction: %d kept (removed %d)", len(cards), before_overlap - len(cards))
+            transcript_cap = max(requested_cards, 10)
             before_cap = len(cards)
-            cards = _select_best_transcript_cards(cards, max_cards=8)
-            if before_cap > 8 and len(cards) == 8:
-                logger.info("[text-mode] Stage 5 - capped at 8 (had %d)", before_cap)
+            cards = _select_best_transcript_cards(cards, max_cards=transcript_cap)
+            if before_cap > transcript_cap:
+                logger.info("[text-mode] Stage 5 - capped at %d (had %d)", transcript_cap, before_cap)
 
         # Preload existing questions for duplicate prevention (one query for entire batch)
         existing_result = await db.execute(
