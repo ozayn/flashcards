@@ -40,6 +40,7 @@ interface Deck {
   description: string | null;
   source_type?: string | null;
   source_topic?: string | null;
+  source_url?: string | null;
   archived?: boolean;
   category_id?: string | null;
   user_id?: string;
@@ -535,12 +536,19 @@ export default function DeckPage({ params }: DeckPageProps) {
                 {deck.category_id ? "Change category" : "Assign category"}
               </Button>
             </div>
-            {deck.source_topic?.trim() && (
+            {deck.source_type === "youtube" && deck.source_url ? (
+              <p className="text-sm mb-4 leading-relaxed">
+                <span className="text-muted-foreground">Generated from YouTube:</span>{" "}
+                <a href={deck.source_url} target="_blank" rel="noopener noreferrer" className="font-medium text-foreground underline underline-offset-2 hover:text-muted-foreground">
+                  {deck.source_topic?.trim() || deck.source_url}
+                </a>
+              </p>
+            ) : deck.source_topic?.trim() ? (
               <p className="text-sm mb-4 leading-relaxed">
                 <span className="text-muted-foreground">Generated from topic:</span>{" "}
                 <span className="font-medium text-foreground">{deck.source_topic.trim()}</span>
               </p>
-            )}
+            ) : null}
             {categoryModalOpen && (
               <div
                 className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"

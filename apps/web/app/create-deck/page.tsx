@@ -135,7 +135,8 @@ function CreateDeckForm() {
           return;
         }
 
-        const deckName = nameTrimmed || transcript.title || "YouTube Deck";
+        const videoTitle = transcript.title || null;
+        const deckName = nameTrimmed || videoTitle || "YouTube Deck";
         setLoadingMessage("Creating deck…");
 
         const deck = await createDeck({
@@ -144,6 +145,7 @@ function CreateDeckForm() {
           source_type: "youtube",
           source_url: youtubeUrlTrimmed,
           source_text: transcript.transcript.slice(0, 10000),
+          source_topic: videoTitle,
         });
         const deckId = (deck as { id: string }).id;
 

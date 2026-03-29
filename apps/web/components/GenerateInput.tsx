@@ -12,6 +12,10 @@ function isYouTubeUrl(s: string): boolean {
   return YT_REGEX.test(s.trim());
 }
 
+function looksLikeUrl(s: string): boolean {
+  return /^https?:\/\//i.test(s.trim()) || /^www\./i.test(s.trim());
+}
+
 interface GenerateInputProps {
   placeholder?: string;
   suggestions?: string[];
@@ -62,7 +66,8 @@ export function GenerateInput({
           return;
         }
 
-        const deckName = transcript.title || "YouTube Deck";
+        const videoTitle = transcript.title || null;
+        const deckName = videoTitle || "YouTube Deck";
         setLoadingMessage("Creating deck…");
         const deck = await createDeck({
           user_id: userId,
@@ -70,6 +75,7 @@ export function GenerateInput({
           source_type: "youtube",
           source_url: trimmed,
           source_text: transcript.transcript.slice(0, 10000),
+          source_topic: videoTitle,
         });
         const deckId = (deck as { id: string }).id;
 
@@ -83,6 +89,11 @@ export function GenerateInput({
 
         router.push(`/decks/${deckId}`);
       } else {
+        if (looksLikeUrl(trimmed)) {
+          setError("That looks like a URL. Only YouTube links are supported for now.");
+          setLoading(false);
+          return;
+        }
         setLoadingMessage("Creating deck…");
         const deck = await createDeck({
           user_id: userId,
