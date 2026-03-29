@@ -93,7 +93,10 @@ class TranscriptResponse(BaseModel):
 
 def _is_ip_block_error(exc: Exception) -> bool:
     msg = str(exc).lower()
-    return any(kw in msg for kw in ("ip", "block", "request", "cloud provider", "too many requests"))
+    return any(kw in msg for kw in (
+        "ip", "block", "cloud provider", "too many requests",
+        "429", "/sorry", "max retries exceeded", "responseerror",
+    ))
 
 
 @router.post("/transcript", response_model=TranscriptResponse)
