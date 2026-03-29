@@ -9,7 +9,10 @@ import {
   ChevronRight,
   ChevronUp,
   Download,
+  LayoutGrid,
+  List,
   Pencil,
+  Plus,
   Trash2,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
@@ -238,6 +241,7 @@ export default function DeckPage({ params }: DeckPageProps) {
   const [genMode, setGenMode] = useState<"topic" | "text">("topic");
   const [useNameAsTopic, setUseNameAsTopic] = useState(false);
   const [cardCount, setCardCount] = useState(10);
+  const [cardView, setCardView] = useState<"list" | "grid">("grid");
   const GEN_TEXT_MAX_LENGTH = 10000;
   const CARD_COUNT_OPTIONS = [5, 10, 20, 30, 40, 50] as const;
 
@@ -613,19 +617,13 @@ export default function DeckPage({ params }: DeckPageProps) {
                 href={`/study/${deck.id}`}
                 className="inline-flex h-10 items-center justify-center rounded-lg bg-neutral-900 text-white hover:bg-neutral-800 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200 px-4 text-sm font-medium max-mobile:min-h-[44px]"
               >
-                Review
-              </Link>
-              <Link
-                href={`/study/${deck.id}?mode=explore`}
-                className="inline-flex h-10 items-center justify-center rounded-lg border border-border hover:bg-muted px-4 text-sm font-medium max-mobile:min-h-[44px]"
-              >
                 Explore
               </Link>
               <Link
-                href={`/decks/${deck.id}/add-card`}
+                href={`/study/${deck.id}?mode=study`}
                 className="inline-flex h-10 items-center justify-center rounded-lg border border-border hover:bg-muted px-4 text-sm font-medium max-mobile:min-h-[44px]"
               >
-                Add Card
+                Review
               </Link>
               <Button
                 variant="ghost"
@@ -798,24 +796,72 @@ export default function DeckPage({ params }: DeckPageProps) {
                   </div>
                 )}
 
-                <Button
-                  type="button"
-                  onClick={handleGenerate}
-                  disabled={generating || genText.length > GEN_TEXT_MAX_LENGTH}
-                  className="w-full sm:w-auto"
-                >
-                  {generating ? "Generating..." : "Generate Cards"}
-                </Button>
+                <div className="flex flex-wrap items-center gap-3">
+                  <Button
+                    type="button"
+                    onClick={handleGenerate}
+                    disabled={generating || genText.length > GEN_TEXT_MAX_LENGTH}
+                    className="w-full sm:w-auto"
+                  >
+                    {generating ? "Generating..." : "Generate Cards"}
+                  </Button>
+                  <Link
+                    href={`/decks/${deck.id}/add-card`}
+                    className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    <Plus className="size-3.5" />
+                    Add manually
+                  </Link>
+                </div>
               </div>
             )}
           </div>
         </Card>
 
         <section className="section space-y-4 mt-10">
-          <h2 className="text-xl font-semibold tracking-tight">Flashcards</h2>
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-xl font-semibold tracking-tight">
+              Flashcards
+              {flashcards.length > 0 && (
+                <span className="ml-2 text-sm font-normal text-muted-foreground">
+                  {flashcards.length}
+                </span>
+              )}
+            </h2>
+            {flashcards.length > 0 && (
+              <div
+                className="inline-flex rounded-lg border border-border/50 bg-muted/30 p-0.5"
+                role="radiogroup"
+                aria-label="Card display view"
+              >
+                {(
+                  [
+                    { value: "list" as const, icon: List, label: "List view" },
+                    { value: "grid" as const, icon: LayoutGrid, label: "Grid view" },
+                  ] as const
+                ).map(({ value, icon: Icon, label }) => (
+                  <button
+                    key={value}
+                    type="button"
+                    role="radio"
+                    aria-checked={cardView === value}
+                    aria-label={label}
+                    onClick={() => setCardView(value)}
+                    className={`rounded-md p-1.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
+                      cardView === value
+                        ? "bg-background text-foreground shadow-sm ring-1 ring-border/60"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    <Icon className="size-4" />
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
           {flashcards.length === 0 ? (
             <p className="text-muted-foreground text-sm">No flashcards yet.</p>
-          ) : (
+          ) : cardView === "list" ? (
             <div className="space-y-3 max-mobile:space-y-2.5">
               {flashcards.map((card, index) => (
                 <div
@@ -863,6 +909,57 @@ export default function DeckPage({ params }: DeckPageProps) {
                       aria-label="Delete card"
                     >
                       <Trash2 className="w-4 h-4 text-muted-foreground" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 max-mobile:gap-2.5">
+              {flashcards.map((card, index) => (
+                <div
+                  key={card.id}
+                  className="group rounded-xl border border-neutral-200 bg-white dark:bg-neutral-900 dark:border-neutral-700 flex flex-col overflow-hidden"
+                >
+                  <button
+                    type="button"
+                    onClick={() => setModalCardIndex(index)}
+                    className="flex-1 text-start cursor-pointer p-4 max-mobile:p-3.5 hover:bg-muted/30 transition-colors"
+                  >
+                    <div dir="auto" className="font-semibold text-base leading-snug line-clamp-3 mb-2">
+                      {card.question}
+                    </div>
+                    <div dir="auto" className="text-sm text-muted-foreground leading-relaxed line-clamp-3">
+                      <FormattedText text={card.answer_short} className="text-inherit" />
+                    </div>
+                  </button>
+                  <div className="flex items-center gap-1 px-3 py-1.5 border-t border-border/50">
+                    <Link
+                      href={`/decks/${params.id}/edit-card/${card.id}`}
+                      className="inline-flex"
+                    >
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                        aria-label="Edit card"
+                      >
+                        <Pencil className="size-3.5" />
+                      </Button>
+                    </Link>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setDeleteConfirmId(card.id);
+                      }}
+                      className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                      aria-label="Delete card"
+                    >
+                      <Trash2 className="size-3.5" />
                     </Button>
                   </div>
                 </div>

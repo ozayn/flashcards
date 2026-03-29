@@ -28,10 +28,10 @@ type ExploreView = "read" | "cards";
 export default function StudyPage({ params }: StudyPageProps) {
   const searchParams = useSearchParams();
   const urlMode = searchParams.get("mode");
-  const [mode, setMode] = useState<StudyMode>(urlMode === "explore" ? "explore" : "study");
+  const [mode, setMode] = useState<StudyMode>(urlMode === "study" ? "study" : "explore");
 
   useEffect(() => {
-    setMode(urlMode === "explore" ? "explore" : "study");
+    setMode(urlMode === "study" ? "study" : "explore");
   }, [urlMode]);
   const [exploreView, setExploreView] = useState<ExploreView>("read");
   const [flashcards, setFlashcards] = useState<StudyFlashcard[]>([]);
