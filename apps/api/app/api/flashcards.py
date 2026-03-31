@@ -1,4 +1,7 @@
+from typing import List
+
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -98,3 +101,55 @@ async def create_flashcard(
         difficulty=INT_TO_DIFFICULTY.get(flashcard.difficulty, "medium"),
         created_at=flashcard.created_at,
     )
+
+
+class _ImportCard(BaseModel):
+    question: str = Field(..., min_length=1)
+    answer_short: str = Field(..., min_length=1)
+    answer_detailed: str | None = None
+
+
+class _ImportRequest(BaseModel):
+    deck_id: str
+    cards: List[_ImportCard] = Field(..., min_length=1, max_length=500)
+
+
+class _ImportResponse(BaseModel):
+    created: int
+    skipped: int = 0
+
+
+@router.post("/import", response_model=_ImportResponse, status_code=201)
+async def import_flashcards(
+    payload: _ImportRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Batch-create flashcards from structured Q/A import (no LLM).
+    Skips exact duplicates (same question text) already in the deck.
+    """
+    result = await db.execute(select(Deck).where(Deck.id == payload.deck_id))
+    deck = result.scalar_one_or_none()
+    if not deck:
+        raise HTTPException(status_code=404, detail="Deck not found")
+
+    existing = await db.execute(
+        select(Flashcard.question).where(Flashcard.deck_id == payload.deck_id)
+    )
+    existing_questions = {row[0].strip().lower() for row in existing.all()}
+
+    created = 0
+    for card in payload.cards:
+        if card.question.strip().lower() in existing_questions:
+            continue
+        db.add(Flashcard(
+            deck_id=payload.deck_id,
+            question=card.question,
+            answer_short=card.answer_short,
+            answer_detailed=card.answer_detailed,
+            difficulty=1,
+        ))
+        existing_questions.add(card.question.strip().lower())
+        created += 1
+
+    await db.flush()
+    return _ImportResponse(created=created, skipped=len(payload.cards) - created)

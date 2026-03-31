@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -13,7 +13,9 @@ import {
   List,
   Pencil,
   Plus,
+  Search,
   Trash2,
+  Upload,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -24,6 +26,8 @@ import {
   getRelatedDecks,
   getCategories,
   generateFlashcards,
+  importFlashcards,
+  parseQAPairs,
   updateDeck,
   deleteDeck,
   deleteFlashcard,
@@ -264,12 +268,51 @@ export default function DeckPage({ params }: DeckPageProps) {
   const [modalCardIndex, setModalCardIndex] = useState<number | null>(null);
   const [genTopic, setGenTopic] = useState("");
   const [genText, setGenText] = useState("");
-  const [genMode, setGenMode] = useState<"topic" | "text">("topic");
+  const [genMode, setGenMode] = useState<"topic" | "text" | "import">("topic");
+  const [importText, setImportText] = useState("");
+  const [importResult, setImportResult] = useState<{ created: number; skipped: number } | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [useNameAsTopic, setUseNameAsTopic] = useState(false);
   const [cardCount, setCardCount] = useState(10);
   const [cardView, setCardView] = useState<"list" | "grid">("grid");
+  const [cardsExpanded, setCardsExpanded] = useState(false);
+  const [cardSearch, setCardSearch] = useState("");
+  const [cardSort, setCardSort] = useState<"newest" | "oldest" | "az">("newest");
   const GEN_TEXT_MAX_LENGTH = 10000;
   const CARD_COUNT_OPTIONS = [5, 10, 20, 30, 40, 50] as const;
+
+  type SortOption = typeof cardSort;
+  const SORT_OPTIONS: { value: SortOption; label: string }[] = [
+    { value: "newest", label: "Newest" },
+    { value: "oldest", label: "Oldest" },
+    { value: "az", label: "A–Z" },
+  ];
+
+  const processedCards = useMemo(() => {
+    let cards = [...flashcards];
+    const q = cardSearch.trim().toLowerCase();
+    if (q) {
+      cards = cards.filter(
+        (c) =>
+          c.question.toLowerCase().includes(q) ||
+          c.answer_short.toLowerCase().includes(q)
+      );
+    }
+    if (cardSort === "oldest") {
+      cards.reverse();
+    } else if (cardSort === "az") {
+      cards.sort((a, b) => a.question.localeCompare(b.question));
+    }
+    return cards;
+  }, [flashcards, cardSearch, cardSort]);
+
+  const PREVIEW_LIMIT_LIST = 12;
+  const PREVIEW_LIMIT_GRID = 9;
+  const previewLimit = cardView === "list" ? PREVIEW_LIMIT_LIST : PREVIEW_LIMIT_GRID;
+  const isSearching = cardSearch.trim().length > 0;
+  const hasOverflow = !isSearching && processedCards.length > previewLimit;
+  const visibleCards = cardsExpanded || !hasOverflow ? processedCards : processedCards.slice(0, previewLimit);
 
   const hasFlashcards = flashcards.length > 0;
   const [genPanelExpanded, setGenPanelExpanded] = useState(true);
@@ -334,6 +377,8 @@ export default function DeckPage({ params }: DeckPageProps) {
     }
   }, [deck]);
 
+  const importQAPairs = genMode === "import" ? parseQAPairs(importText.trim()) : null;
+
   async function handleGenerate() {
     if (!deck || generating) return;
     const topicTrimmed = genTopic.trim();
@@ -343,21 +388,12 @@ export default function DeckPage({ params }: DeckPageProps) {
     if (genMode === "topic" && !effectiveTopic) return;
     if (genMode === "text" && !textTrimmed) return;
     setGenerating(true);
+    setImportResult(null);
     try {
       if (genMode === "text") {
-        await generateFlashcards({
-          deck_id: deck.id,
-          text: textTrimmed,
-          num_cards: cardCount,
-          language: "en",
-        });
+        await generateFlashcards({ deck_id: deck.id, text: textTrimmed, num_cards: cardCount, language: "en" });
       } else {
-        await generateFlashcards({
-          deck_id: deck.id,
-          topic: effectiveTopic,
-          num_cards: cardCount,
-          language: "en",
-        });
+        await generateFlashcards({ deck_id: deck.id, topic: effectiveTopic, num_cards: cardCount, language: "en" });
       }
       setGenTopic("");
       setGenText("");
@@ -368,6 +404,50 @@ export default function DeckPage({ params }: DeckPageProps) {
     } finally {
       setGenerating(false);
     }
+  }
+
+  async function handleImport() {
+    if (!deck || generating || !importQAPairs || importQAPairs.length === 0) return;
+    setGenerating(true);
+    setImportResult(null);
+    setImportError(null);
+    try {
+      const result = await importFlashcards({ deck_id: deck.id, cards: importQAPairs });
+      setImportResult(result);
+      setImportText("");
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      const data = await getFlashcards(params.id);
+      setFlashcards(Array.isArray(data) ? data : []);
+    } catch {
+      setImportError("Failed to import cards. Please try again.");
+    } finally {
+      setGenerating(false);
+    }
+  }
+
+  function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImportResult(null);
+    setImportError(null);
+    if (!file.name.endsWith(".txt") && file.type !== "text/plain") {
+      setImportError("Only .txt files are supported.");
+      return;
+    }
+    if (file.size > 500_000) {
+      setImportError("File is too large (max 500 KB).");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const text = reader.result as string;
+      setImportText(text);
+      const pairs = parseQAPairs(text.trim());
+      if (!pairs) {
+        setImportError("No valid Q:/A: pairs found in the file. Each card needs a Q: and A: line.");
+      }
+    };
+    reader.readAsText(file);
   }
 
   async function handleDeleteCard(cardId: string) {
@@ -718,6 +798,7 @@ export default function DeckPage({ params }: DeckPageProps) {
                     [
                       { value: "topic" as const, label: "Topic" },
                       { value: "text" as const, label: "Text" },
+                      { value: "import" as const, label: "Import" },
                     ] as const
                   ).map(({ value, label }) => (
                     <button
@@ -796,7 +877,7 @@ export default function DeckPage({ params }: DeckPageProps) {
                       <textarea
                         id="gen-text"
                         name="genText"
-                        placeholder="Paste notes or text to generate flashcards..."
+                        placeholder="Paste notes, lecture content, or any text to generate flashcards from…"
                         value={genText}
                         onChange={(e) => setGenText(e.target.value)}
                         maxLength={GEN_TEXT_MAX_LENGTH}
@@ -829,15 +910,83 @@ export default function DeckPage({ params }: DeckPageProps) {
                   </div>
                 )}
 
+                {genMode === "import" && (
+                  <div className="space-y-3 pt-1">
+                    <div className="space-y-2">
+                      <label htmlFor="import-text" className="text-sm font-medium">
+                        Paste Q/A text or upload a .txt file
+                      </label>
+                      <textarea
+                        id="import-text"
+                        placeholder={"Q: What is photosynthesis?\nA: The process by which plants convert light energy into chemical energy.\n\nQ: What is mitosis?\nA: A type of cell division that results in two identical daughter cells."}
+                        value={importText}
+                        onChange={(e) => { setImportText(e.target.value); setImportResult(null); setImportError(null); }}
+                        className="w-full min-h-[140px] rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 font-mono"
+                      />
+                      <div className="flex items-center gap-3">
+                        <label
+                          htmlFor="import-file"
+                          className="inline-flex items-center gap-1.5 cursor-pointer text-sm text-muted-foreground hover:text-foreground transition-colors"
+                        >
+                          <Upload className="size-3.5" />
+                          Upload .txt file
+                        </label>
+                        <input
+                          ref={fileInputRef}
+                          id="import-file"
+                          type="file"
+                          accept=".txt,text/plain"
+                          onChange={handleFileUpload}
+                          className="sr-only"
+                        />
+                      </div>
+                    </div>
+                    {importQAPairs && importQAPairs.length > 0 && (
+                      <p className="text-xs text-emerald-600 dark:text-emerald-400">
+                        {importQAPairs.length} Q/A pair{importQAPairs.length === 1 ? "" : "s"} detected — will be imported directly, no AI.
+                      </p>
+                    )}
+                    {importText.trim() && !importQAPairs && (
+                      <p className="text-xs text-amber-600 dark:text-amber-400">
+                        No valid Q:/A: pairs found. Each card needs a Q: and A: line.
+                      </p>
+                    )}
+                    {importError && (
+                      <p className="text-xs text-destructive">{importError}</p>
+                    )}
+                    {importResult && (
+                      <p className="text-xs text-muted-foreground">
+                        Imported {importResult.created} card{importResult.created === 1 ? "" : "s"}
+                        {importResult.skipped > 0 ? `, ${importResult.skipped} duplicate${importResult.skipped === 1 ? "" : "s"} skipped` : ""}.
+                      </p>
+                    )}
+                  </div>
+                )}
+
                 <div className="flex flex-wrap items-center gap-3">
-                  <Button
-                    type="button"
-                    onClick={handleGenerate}
-                    disabled={generating || genText.length > GEN_TEXT_MAX_LENGTH}
-                    className="w-full sm:w-auto"
-                  >
-                    {generating ? "Generating..." : "Generate Cards"}
-                  </Button>
+                  {genMode === "import" ? (
+                    <Button
+                      type="button"
+                      onClick={handleImport}
+                      disabled={generating || !importQAPairs || importQAPairs.length === 0}
+                      className="w-full sm:w-auto"
+                    >
+                      {generating
+                        ? "Importing..."
+                        : importQAPairs && importQAPairs.length > 0
+                          ? `Import ${importQAPairs.length} Card${importQAPairs.length === 1 ? "" : "s"}`
+                          : "Import Cards"}
+                    </Button>
+                  ) : (
+                    <Button
+                      type="button"
+                      onClick={handleGenerate}
+                      disabled={generating || (genMode === "text" && genText.length > GEN_TEXT_MAX_LENGTH)}
+                      className="w-full sm:w-auto"
+                    >
+                      {generating ? "Generating..." : "Generate Cards"}
+                    </Button>
+                  )}
                   <Link
                     href={`/decks/${deck.id}/add-card`}
                     className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
@@ -862,41 +1011,74 @@ export default function DeckPage({ params }: DeckPageProps) {
               )}
             </h2>
             {flashcards.length > 0 && (
-              <div
-                className="inline-flex rounded-lg border border-border/50 bg-muted/30 p-0.5"
-                role="radiogroup"
-                aria-label="Card display view"
-              >
-                {(
-                  [
-                    { value: "list" as const, icon: List, label: "List view" },
-                    { value: "grid" as const, icon: LayoutGrid, label: "Grid view" },
-                  ] as const
-                ).map(({ value, icon: Icon, label }) => (
-                  <button
-                    key={value}
-                    type="button"
-                    role="radio"
-                    aria-checked={cardView === value}
-                    aria-label={label}
-                    onClick={() => setCardView(value)}
-                    className={`rounded-md p-1.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
-                      cardView === value
-                        ? "bg-background text-foreground shadow-sm ring-1 ring-border/60"
-                        : "text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    <Icon className="size-4" />
-                  </button>
-                ))}
+              <div className="flex items-center gap-2">
+                <div
+                  className="inline-flex rounded-lg border border-border/50 bg-muted/30 p-0.5"
+                  role="radiogroup"
+                  aria-label="Card display view"
+                >
+                  {(
+                    [
+                      { value: "list" as const, icon: List, label: "List view" },
+                      { value: "grid" as const, icon: LayoutGrid, label: "Grid view" },
+                    ] as const
+                  ).map(({ value, icon: Icon, label }) => (
+                    <button
+                      key={value}
+                      type="button"
+                      role="radio"
+                      aria-checked={cardView === value}
+                      aria-label={label}
+                      onClick={() => setCardView(value)}
+                      className={`rounded-md p-1.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
+                        cardView === value
+                          ? "bg-background text-foreground shadow-sm ring-1 ring-border/60"
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      <Icon className="size-4" />
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
           </div>
+          {flashcards.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="relative flex-1 min-w-[180px] max-w-sm">
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                <input
+                  type="text"
+                  placeholder="Search this deck…"
+                  value={cardSearch}
+                  onChange={(e) => { setCardSearch(e.target.value); setCardsExpanded(false); }}
+                  className="h-8 w-full rounded-md border border-input bg-background pl-8 pr-3 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                />
+              </div>
+              <select
+                value={cardSort}
+                onChange={(e) => setCardSort(e.target.value as SortOption)}
+                aria-label="Sort cards"
+                className="h-8 rounded-md border border-input bg-background px-2.5 text-sm text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              >
+                {SORT_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+              {isSearching && (
+                <span className="text-xs text-muted-foreground">
+                  {processedCards.length} result{processedCards.length === 1 ? "" : "s"}
+                </span>
+              )}
+            </div>
+          )}
           {flashcards.length === 0 ? (
             <p className="text-muted-foreground text-sm">No flashcards yet.</p>
+          ) : processedCards.length === 0 ? (
+            <p className="text-muted-foreground text-sm">No cards match your search.</p>
           ) : cardView === "list" ? (
             <div className="space-y-3 max-mobile:space-y-2.5">
-              {flashcards.map((card, index) => (
+              {visibleCards.map((card, index) => (
                 <div
                   key={card.id}
                   className="flashcard-item rounded-xl border border-neutral-200 px-4 py-3 flex items-start justify-between gap-3 bg-white dark:bg-neutral-900 dark:border-neutral-700 max-mobile:p-3.5 max-mobile:rounded-[12px]"
@@ -949,7 +1131,7 @@ export default function DeckPage({ params }: DeckPageProps) {
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 max-mobile:gap-2.5">
-              {flashcards.map((card, index) => (
+              {visibleCards.map((card, index) => (
                 <div
                   key={card.id}
                   className="group rounded-xl border border-neutral-200 bg-white dark:bg-neutral-900 dark:border-neutral-700 flex flex-col overflow-hidden"
@@ -999,6 +1181,17 @@ export default function DeckPage({ params }: DeckPageProps) {
               ))}
             </div>
           )}
+          {hasOverflow && (
+            <button
+              type="button"
+              onClick={() => setCardsExpanded((v) => !v)}
+              className="mt-3 w-full rounded-lg border border-dashed border-border/80 bg-muted/20 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
+            >
+              {cardsExpanded
+                ? "Show less"
+                : `Show all ${processedCards.length} cards`}
+            </button>
+          )}
         </section>
 
         {relatedDecks.length > 0 && (
@@ -1039,7 +1232,7 @@ export default function DeckPage({ params }: DeckPageProps) {
         </section>
 
         <FlashcardModal
-          cards={flashcards}
+          cards={processedCards}
           initialIndex={modalCardIndex ?? 0}
           isOpen={modalCardIndex !== null}
           onClose={() => setModalCardIndex(null)}

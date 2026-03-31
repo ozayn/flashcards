@@ -1,17 +1,18 @@
 "use client";
 
-import { useState, useEffect, Suspense } from "react";
+import { useState, useEffect, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { getUsers, createDeck, generateFlashcards, fetchYouTubeTranscript, fetchWebpageContent, normalizeYouTubeUrl, TranscriptFetchError } from "@/lib/api";
+import { getUsers, createDeck, generateFlashcards, importFlashcards, parseQAPairs, fetchYouTubeTranscript, fetchWebpageContent, normalizeYouTubeUrl, TranscriptFetchError } from "@/lib/api";
 import { getStoredUserId } from "@/components/user-selector";
+import { Upload } from "lucide-react";
 import PageContainer from "@/components/layout/page-container";
 
 const CARD_COUNT_OPTIONS = [5, 10, 20, 30, 40, 50] as const;
 
-type GenerationMode = "topic" | "text" | "youtube" | "url";
+type GenerationMode = "topic" | "text" | "youtube" | "url" | "import";
 
 const _YT_RE = /(?:youtube\.com\/watch\?.*v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/shorts\/)/i;
 const _WIKI_RE = /^https?:\/\/([a-z]{2,3}\.)?wikipedia\.org\/wiki\//i;
@@ -41,6 +42,9 @@ function CreateDeckForm() {
   const searchParams = useSearchParams();
 
   const [ytFallbackUrl, setYtFallbackUrl] = useState<string | null>(null);
+  const [importText, setImportText] = useState("");
+  const [importError, setImportError] = useState<string | null>(null);
+  const importFileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const modeParam = searchParams.get("mode");
@@ -67,6 +71,9 @@ function CreateDeckForm() {
   const youtubeUrlTrimmed = youtubeUrl.trim();
   const articleUrlTrimmed = articleUrl.trim();
 
+  const importTextTrimmed = importText.trim();
+  const importQAPairs = generationMode === "import" ? parseQAPairs(importTextTrimmed) : null;
+
   const topicForGeneration =
     topicTrimmed || (useNameAsTopic && !topicTrimmed ? nameTrimmed : "");
 
@@ -78,19 +85,48 @@ function CreateDeckForm() {
         ? Boolean(textTrimmed)
         : generationMode === "url"
           ? Boolean(articleUrlTrimmed)
-          : Boolean(youtubeUrlTrimmed));
+          : generationMode === "import"
+            ? Boolean(importQAPairs && importQAPairs.length > 0)
+            : Boolean(youtubeUrlTrimmed));
 
   const submitLabel = loading
     ? loadingMessage || "Creating..."
     : emptyDeckMode
       ? "Create Empty Deck"
-      : generationMode === "youtube" && youtubeUrlTrimmed
-        ? "Create Deck from Video"
-        : generationMode === "url" && articleUrlTrimmed
-          ? "Create Deck from Article"
-          : willGenerate
-          ? "Create Deck and Generate Cards"
-          : "Create Deck";
+      : generationMode === "import" && importQAPairs && importQAPairs.length > 0
+        ? `Create Deck and Import ${importQAPairs.length} Cards`
+        : generationMode === "youtube" && youtubeUrlTrimmed
+          ? "Create Deck from Video"
+          : generationMode === "url" && articleUrlTrimmed
+            ? "Create Deck from Article"
+            : willGenerate
+              ? "Create Deck and Generate Cards"
+              : "Create Deck";
+
+  function handleImportFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImportError(null);
+    if (!file.name.endsWith(".txt") && file.type !== "text/plain") {
+      setImportError("Only .txt files are supported.");
+      return;
+    }
+    if (file.size > 500_000) {
+      setImportError("File is too large (max 500 KB).");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const text = reader.result as string;
+      setImportText(text);
+      if (importFileRef.current) importFileRef.current.value = "";
+      const pairs = parseQAPairs(text.trim());
+      if (!pairs) {
+        setImportError("No valid Q:/A: pairs found in the file. Each card needs a Q: and A: line.");
+      }
+    };
+    reader.readAsText(file);
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -99,6 +135,15 @@ function CreateDeckForm() {
     if (emptyDeckMode) {
       if (!nameTrimmed) {
         setFormError("Enter a deck name for your empty deck.");
+        return;
+      }
+    } else if (generationMode === "import") {
+      if (!nameTrimmed) {
+        setFormError("Please enter a deck name for the imported cards.");
+        return;
+      }
+      if (!importQAPairs || importQAPairs.length === 0) {
+        setFormError("No valid Q:/A: pairs found. Paste or upload Q/A content first.");
         return;
       }
     } else if (generationMode === "url") {
@@ -149,6 +194,25 @@ function CreateDeckForm() {
           source_type: "manual",
         });
         const deckId = (deck as { id: string }).id;
+        router.push(`/decks/${deckId}`);
+        return;
+      }
+
+      if (generationMode === "import" && importQAPairs) {
+        setLoadingMessage("Creating deck…");
+        const deck = await createDeck({
+          user_id: userId,
+          name: nameTrimmed,
+          source_type: "text",
+        });
+        const deckId = (deck as { id: string }).id;
+        setLoadingMessage(`Importing ${importQAPairs.length} cards…`);
+        try {
+          await importFlashcards({ deck_id: deckId, cards: importQAPairs });
+        } catch {
+          router.push(`/decks/${deckId}`);
+          return;
+        }
         router.push(`/decks/${deckId}`);
         return;
       }
@@ -328,7 +392,7 @@ function CreateDeckForm() {
           </label>
           <Input
             id="name"
-            placeholder={generationMode === "youtube" ? "Auto-filled from video title if empty" : generationMode === "url" ? "Auto-filled from article title if empty" : "e.g. Spanish Vocabulary"}
+            placeholder={generationMode === "youtube" ? "Auto-filled from video title if empty" : generationMode === "url" ? "Auto-filled from article title if empty" : generationMode === "import" ? "e.g. Biology Final Exam" : "e.g. Spanish Vocabulary"}
             value={name}
             onChange={(e) => setName(e.target.value)}
             autoComplete="off"
@@ -368,6 +432,7 @@ function CreateDeckForm() {
                         { value: "text" as const, label: "Text" },
                         { value: "youtube" as const, label: "YouTube" },
                         { value: "url" as const, label: "URL" },
+                        { value: "import" as const, label: "Import" },
                       ] as const
                     ).map(({ value, label }) => (
                       <button
@@ -499,7 +564,7 @@ function CreateDeckForm() {
                         </label>
                         <textarea
                           id="text"
-                          placeholder={ytFallbackUrl ? "Paste the YouTube transcript here…" : "Paste notes or text to generate flashcards..."}
+                          placeholder={ytFallbackUrl ? "Paste the YouTube transcript here…" : "Paste notes, lecture content, or any text to generate flashcards from…"}
                           value={text}
                           onChange={(e) => setText(e.target.value)}
                           maxLength={50000}
@@ -624,6 +689,58 @@ function CreateDeckForm() {
                           ))}
                         </select>
                       </div>
+                    </div>
+                  )}
+
+                  {generationMode === "import" && (
+                    <div className="space-y-3 pt-1">
+                      <div className="space-y-2">
+                        <label htmlFor="import-text" className="text-sm font-medium">
+                          Paste Q/A text or upload a .txt file
+                        </label>
+                        <textarea
+                          id="import-text"
+                          placeholder={"Q: What is photosynthesis?\nA: The process by which plants convert light energy into chemical energy.\n\nQ: What is mitosis?\nA: A type of cell division that results in two identical daughter cells."}
+                          value={importText}
+                          onChange={(e) => { setImportText(e.target.value); setImportError(null); }}
+                          disabled={loading}
+                          className="w-full min-h-[160px] max-mobile:min-h-[120px] rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 font-mono"
+                        />
+                        <div className="flex items-center gap-3">
+                          <label
+                            htmlFor="import-file-upload"
+                            className="inline-flex items-center gap-1.5 cursor-pointer text-sm text-muted-foreground hover:text-foreground transition-colors"
+                          >
+                            <Upload className="size-3.5" />
+                            Upload .txt file
+                          </label>
+                          <input
+                            ref={importFileRef}
+                            id="import-file-upload"
+                            type="file"
+                            accept=".txt,text/plain"
+                            onChange={handleImportFileUpload}
+                            disabled={loading}
+                            className="sr-only"
+                          />
+                        </div>
+                      </div>
+                      {importQAPairs && importQAPairs.length > 0 && (
+                        <p className="text-xs text-emerald-600 dark:text-emerald-400">
+                          {importQAPairs.length} Q/A pair{importQAPairs.length === 1 ? "" : "s"} detected — will be imported directly, no AI.
+                        </p>
+                      )}
+                      {importTextTrimmed && !importQAPairs && (
+                        <p className="text-xs text-amber-600 dark:text-amber-400">
+                          No valid Q:/A: pairs found. Each card needs a Q: and A: line.
+                        </p>
+                      )}
+                      {importError && (
+                        <p className="text-xs text-destructive">{importError}</p>
+                      )}
+                      <p className="text-xs text-muted-foreground">
+                        Cards are imported exactly as written — no AI generation or paraphrasing.
+                      </p>
                     </div>
                   )}
           </section>
