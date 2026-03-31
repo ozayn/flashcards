@@ -43,6 +43,7 @@ function CreateDeckForm() {
 
   const [ytFallbackUrl, setYtFallbackUrl] = useState<string | null>(null);
   const [importText, setImportText] = useState("");
+  const [importFiles, setImportFiles] = useState<{ name: string; pairCount: number; error?: string }[]>([]);
   const [importError, setImportError] = useState<string | null>(null);
   const importFileRef = useRef<HTMLInputElement>(null);
 
@@ -104,28 +105,52 @@ function CreateDeckForm() {
               : "Create Deck";
 
   function handleImportFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
     setImportError(null);
-    if (!file.name.endsWith(".txt") && file.type !== "text/plain") {
-      setImportError("Only .txt files are supported.");
-      return;
+
+    const fileArray = Array.from(files);
+    const badType = fileArray.filter((f) => !f.name.endsWith(".txt") && f.type !== "text/plain");
+    const tooBig = fileArray.filter((f) => f.size > 500_000);
+    if (badType.length > 0) {
+      setImportError(`Only .txt files are supported. Skipped: ${badType.map((f) => f.name).join(", ")}`);
     }
-    if (file.size > 500_000) {
-      setImportError("File is too large (max 500 KB).");
-      return;
+    if (tooBig.length > 0) {
+      setImportError(`File too large (max 500 KB each): ${tooBig.map((f) => f.name).join(", ")}`);
     }
-    const reader = new FileReader();
-    reader.onload = () => {
-      const text = reader.result as string;
-      setImportText(text);
-      if (importFileRef.current) importFileRef.current.value = "";
-      const pairs = parseQAPairs(text.trim());
-      if (!pairs) {
-        setImportError("No valid Q:/A: pairs found in the file. Each card needs a Q: and A: line.");
-      }
-    };
-    reader.readAsText(file);
+
+    const validFiles = fileArray.filter(
+      (f) => f.size <= 500_000 && (f.name.endsWith(".txt") || f.type === "text/plain")
+    );
+    if (validFiles.length === 0) return;
+
+    const allTexts: string[] = [];
+    const fileSummaries: { name: string; pairCount: number; error?: string }[] = [];
+    let loaded = 0;
+
+    validFiles.forEach((file) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const text = reader.result as string;
+        const pairs = parseQAPairs(text.trim());
+        if (pairs && pairs.length > 0) {
+          allTexts.push(text);
+          fileSummaries.push({ name: file.name, pairCount: pairs.length });
+        } else {
+          fileSummaries.push({ name: file.name, pairCount: 0, error: "No valid Q:/A: pairs" });
+        }
+        loaded++;
+        if (loaded === validFiles.length) {
+          setImportText(allTexts.join("\n\n"));
+          setImportFiles(fileSummaries);
+          if (allTexts.length === 0) {
+            setImportError("No valid Q:/A: pairs found in any of the uploaded files.");
+          }
+          if (importFileRef.current) importFileRef.current.value = "";
+        }
+      };
+      reader.readAsText(file);
+    });
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -702,7 +727,7 @@ function CreateDeckForm() {
                           id="import-text"
                           placeholder={"Q: What is photosynthesis?\nA: The process by which plants convert light energy into chemical energy.\n\nQ: What is mitosis?\nA: A type of cell division that results in two identical daughter cells."}
                           value={importText}
-                          onChange={(e) => { setImportText(e.target.value); setImportError(null); }}
+                          onChange={(e) => { setImportText(e.target.value); setImportError(null); setImportFiles([]); }}
                           disabled={loading}
                           className="w-full min-h-[160px] max-mobile:min-h-[120px] rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 font-mono"
                         />
@@ -712,25 +737,35 @@ function CreateDeckForm() {
                             className="inline-flex items-center gap-1.5 cursor-pointer text-sm text-muted-foreground hover:text-foreground transition-colors"
                           >
                             <Upload className="size-3.5" />
-                            Upload .txt file
+                            Upload .txt files
                           </label>
                           <input
                             ref={importFileRef}
                             id="import-file-upload"
                             type="file"
                             accept=".txt,text/plain"
+                            multiple
                             onChange={handleImportFileUpload}
                             disabled={loading}
                             className="sr-only"
                           />
                         </div>
                       </div>
+                      {importFiles.length > 0 && (
+                        <div className="text-xs space-y-0.5">
+                          {importFiles.map((f) => (
+                            <p key={f.name} className={f.error ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground"}>
+                              {f.name}{f.error ? ` — ${f.error}` : ` — ${f.pairCount} pair${f.pairCount === 1 ? "" : "s"}`}
+                            </p>
+                          ))}
+                        </div>
+                      )}
                       {importQAPairs && importQAPairs.length > 0 && (
                         <p className="text-xs text-emerald-600 dark:text-emerald-400">
                           {importQAPairs.length} Q/A pair{importQAPairs.length === 1 ? "" : "s"} detected — will be imported directly, no AI.
                         </p>
                       )}
-                      {importTextTrimmed && !importQAPairs && (
+                      {importTextTrimmed && !importQAPairs && importFiles.length === 0 && (
                         <p className="text-xs text-amber-600 dark:text-amber-400">
                           No valid Q:/A: pairs found. Each card needs a Q: and A: line.
                         </p>
