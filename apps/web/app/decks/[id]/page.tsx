@@ -32,6 +32,7 @@ import {
   deleteDeck,
   deleteFlashcard,
   moveDeckToCategory,
+  createCategory,
 } from "@/lib/api";
 import PageContainer from "@/components/layout/page-container";
 import FormattedText from "@/components/FormattedText";
@@ -256,6 +257,10 @@ export default function DeckPage({ params }: DeckPageProps) {
   const [categoryModalOpen, setCategoryModalOpen] = useState(false);
   const [categoryModalSelectedId, setCategoryModalSelectedId] = useState<string>(UNCATEGORIZED);
   const [categorySaving, setCategorySaving] = useState(false);
+  const [showNewCatInput, setShowNewCatInput] = useState(false);
+  const [newCatName, setNewCatName] = useState("");
+  const [newCatError, setNewCatError] = useState<string | null>(null);
+  const [creatingCat, setCreatingCat] = useState(false);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [generating, setGenerating] = useState(false);
@@ -518,6 +523,42 @@ export default function DeckPage({ params }: DeckPageProps) {
     }
   }
 
+  async function handleCreateCategory() {
+    if (!deck || creatingCat) return;
+    const trimmed = newCatName.trim();
+    if (!trimmed) {
+      setNewCatError("Category name cannot be empty.");
+      return;
+    }
+    const duplicate = categories.find(
+      (c) => c.name.toLowerCase() === trimmed.toLowerCase()
+    );
+    if (duplicate) {
+      setCategoryModalSelectedId(duplicate.id);
+      setShowNewCatInput(false);
+      setNewCatName("");
+      setNewCatError(null);
+      return;
+    }
+    setCreatingCat(true);
+    setNewCatError(null);
+    try {
+      const created = await createCategory({ name: trimmed, user_id: deck.user_id! });
+      const catId = (created as { id: string }).id;
+      if (deck.user_id) {
+        const cats = await getCategories(deck.user_id);
+        setCategories(Array.isArray(cats) ? cats : []);
+      }
+      setCategoryModalSelectedId(catId);
+      setShowNewCatInput(false);
+      setNewCatName("");
+    } catch (err) {
+      setNewCatError(err instanceof Error ? err.message : "Failed to create category.");
+    } finally {
+      setCreatingCat(false);
+    }
+  }
+
   async function handleDeleteDeck() {
     if (!deck) return;
     try {
@@ -671,6 +712,9 @@ export default function DeckPage({ params }: DeckPageProps) {
                 size="sm"
                 onClick={() => {
                   setCategoryModalSelectedId(deck.category_id ?? UNCATEGORIZED);
+                  setShowNewCatInput(false);
+                  setNewCatName("");
+                  setNewCatError(null);
                   setCategoryModalOpen(true);
                 }}
                 className="text-muted-foreground hover:text-foreground h-7 px-2"
@@ -729,7 +773,7 @@ export default function DeckPage({ params }: DeckPageProps) {
                         name="category"
                         value={categoryModalSelectedId}
                         onChange={(e) => setCategoryModalSelectedId(e.target.value)}
-                        disabled={categorySaving}
+                        disabled={categorySaving || creatingCat}
                         className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm min-h-[44px]"
                       >
                         <option value={UNCATEGORIZED}>Uncategorized</option>
@@ -740,16 +784,60 @@ export default function DeckPage({ params }: DeckPageProps) {
                         ))}
                       </select>
                     </div>
+                    {showNewCatInput ? (
+                      <div className="space-y-2">
+                        <div className="flex gap-2">
+                          <Input
+                            placeholder="New category name"
+                            value={newCatName}
+                            onChange={(e) => { setNewCatName(e.target.value); setNewCatError(null); }}
+                            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleCreateCategory(); } }}
+                            disabled={creatingCat}
+                            autoFocus
+                            className="h-9 flex-1"
+                          />
+                          <Button
+                            type="button"
+                            size="sm"
+                            onClick={handleCreateCategory}
+                            disabled={creatingCat || !newCatName.trim()}
+                            className="h-9 px-3"
+                          >
+                            {creatingCat ? "Adding…" : "Add"}
+                          </Button>
+                        </div>
+                        {newCatError && (
+                          <p className="text-xs text-destructive">{newCatError}</p>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => { setShowNewCatInput(false); setNewCatName(""); setNewCatError(null); }}
+                          className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setShowNewCatInput(true)}
+                        disabled={categorySaving}
+                        className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+                      >
+                        <Plus className="size-3.5" />
+                        New category
+                      </button>
+                    )}
                     <div className="flex justify-end gap-2">
                       <Button
                         type="button"
                         variant="outline"
                         onClick={() => !categorySaving && setCategoryModalOpen(false)}
-                        disabled={categorySaving}
+                        disabled={categorySaving || creatingCat}
                       >
                         Cancel
                       </Button>
-                      <Button type="submit" disabled={categorySaving}>
+                      <Button type="submit" disabled={categorySaving || creatingCat}>
                         {categorySaving ? "Moving..." : "Move"}
                       </Button>
                     </div>
