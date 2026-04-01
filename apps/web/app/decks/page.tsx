@@ -1254,8 +1254,8 @@ export default function DecksPage() {
                                 href={`/study/category/${group.categoryId}`}
                                 onClick={(e) => e.stopPropagation()}
                                 className="p-1.5 rounded hover:bg-primary/10 transition-colors"
-                                aria-label="Review this category"
-                                title="Review category"
+                                aria-label="Quiz this category"
+                                title="Quiz category"
                               >
                                 <BookOpen className="w-4 h-4 text-muted-foreground" />
                               </Link>
@@ -1302,9 +1302,9 @@ export default function DecksPage() {
                               href={`/study/category/${group.categoryId}`}
                               onClick={(e) => e.stopPropagation()}
                               className="inline-flex h-8 items-center rounded-md px-2.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted active:opacity-80"
-                              aria-label="Review this category"
+                              aria-label="Quiz this category"
                             >
-                              Review
+                              Quiz
                             </Link>
                           </>
                         )}

@@ -235,7 +235,7 @@ export default function CategoryPage({ params }: CategoryPageProps) {
                 href={`/study/category/${params.categoryId}`}
                 className="inline-flex h-10 items-center gap-2 justify-center rounded-lg border border-border hover:bg-muted active:opacity-80 px-4 text-sm font-medium"
               >
-                Review
+                Quiz
               </Link>
             </div>
           )}

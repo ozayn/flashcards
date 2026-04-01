@@ -331,7 +331,7 @@ export default function CategoryStudyPage({ params }: CategoryStudyPageProps) {
                     setTotalCardsStudied(0);
                   }}
                 >
-                  Review again
+                  Quiz again
                 </Button>
                 <Link
                   href="/decks"
@@ -431,7 +431,7 @@ export default function CategoryStudyPage({ params }: CategoryStudyPageProps) {
         className="fixed bottom-4 right-4 sm:bottom-8 sm:right-[max(0.5rem,calc(50vw-min(50vw,18rem)))] z-50 inline-flex items-center gap-1.5 rounded-full bg-background/95 backdrop-blur border border-border shadow-lg px-3 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm font-medium hover:bg-muted active:opacity-80 transition-colors landscape-mobile:bottom-2 landscape-mobile:right-2 landscape-mobile:px-2.5 landscape-mobile:py-1 landscape-mobile:text-xs landscape-mobile:gap-1"
       >
         <X className="size-3.5 sm:size-4 landscape-mobile:size-3" />
-        <span className="hidden sm:inline landscape-mobile:hidden">Exit Category Review</span>
+        <span className="hidden sm:inline landscape-mobile:hidden">Exit category quiz</span>
         <span className="sm:hidden">Exit</span>
       </Link>
 

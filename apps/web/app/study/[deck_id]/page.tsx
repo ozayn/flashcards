@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef, useCallback } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { ChevronLeft, ChevronRight, X, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -22,18 +22,33 @@ interface StudyFlashcard {
   answer_detailed?: string | null;
 }
 
-type StudyMode = "study" | "explore";
-type ExploreView = "read" | "cards";
+/** Submodes inside the deck Explore experience (URL: ?view= read | cards | quiz). Legacy ?mode=study maps to quiz. */
+type DeckView = "read" | "cards" | "quiz";
+
+function parseDeckView(sp: URLSearchParams): DeckView {
+  const v = sp.get("view");
+  if (v === "quiz" || v === "cards" || v === "read") return v;
+  if (sp.get("mode") === "study") return "quiz";
+  return "read";
+}
 
 export default function StudyPage({ params }: StudyPageProps) {
+  const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
-  const urlMode = searchParams.get("mode");
-  const [mode, setMode] = useState<StudyMode>(urlMode === "study" ? "study" : "explore");
+  const deckView = parseDeckView(searchParams);
 
-  useEffect(() => {
-    setMode(urlMode === "study" ? "study" : "explore");
-  }, [urlMode]);
-  const [exploreView, setExploreView] = useState<ExploreView>("read");
+  const setDeckView = useCallback(
+    (next: DeckView) => {
+      const p = new URLSearchParams(searchParams.toString());
+      p.delete("mode");
+      if (next === "read") p.delete("view");
+      else p.set("view", next);
+      const q = p.toString();
+      router.replace(q ? `${pathname}?${q}` : pathname, { scroll: false });
+    },
+    [router, pathname, searchParams],
+  );
   const [flashcards, setFlashcards] = useState<StudyFlashcard[]>([]);
   const [loading, setLoading] = useState(true);
   const [noUserForStudy, setNoUserForStudy] = useState(false);
@@ -77,7 +92,7 @@ export default function StudyPage({ params }: StudyPageProps) {
     setLoading(true);
     setNoUserForStudy(false);
     async function fetchFlashcards() {
-      const dueOnly = mode === "study";
+      const dueOnly = deckView === "quiz";
       const userId = getStoredUserId();
       if (dueOnly && !userId) {
         setFlashcards([]);
@@ -99,7 +114,7 @@ export default function StudyPage({ params }: StudyPageProps) {
     }
 
     fetchFlashcards();
-  }, [params.deck_id, mode, userChangeKey]);
+  }, [params.deck_id, deckView, userChangeKey]);
 
   useEffect(() => {
     const handleUserChanged = () => setUserChangeKey((k) => k + 1);
@@ -134,7 +149,7 @@ export default function StudyPage({ params }: StudyPageProps) {
     setCurrentCardIndex(0);
     setShowAnswer(false);
     setSessionComplete(false);
-  }, [mode]);
+  }, [deckView]);
 
   useEffect(() => {
     if (loading || flashcards.length === 0 || sessionComplete) return;
@@ -209,7 +224,7 @@ export default function StudyPage({ params }: StudyPageProps) {
       el.removeEventListener("touchend", onFinish);
       el.removeEventListener("touchcancel", onFinish);
     };
-  }, [handlePrev, handleNext, mode, exploreView]);
+  }, [handlePrev, handleNext, deckView]);
 
 
   useEffect(() => {
@@ -228,7 +243,7 @@ export default function StudyPage({ params }: StudyPageProps) {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.code === "Space") {
         e.preventDefault();
-        if (mode === "explore" && exploreView === "read") {
+        if (deckView === "read") {
           if (currentCardIndex < flashcards.length - 1) handleNext();
         } else if (canFlip) {
           setShowAnswer((prev) => !prev);
@@ -245,7 +260,7 @@ export default function StudyPage({ params }: StudyPageProps) {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [loading, flashcards.length, canFlip, handleNext, handlePrev, mode, exploreView, currentCardIndex]);
+  }, [loading, flashcards.length, canFlip, handleNext, handlePrev, deckView, currentCardIndex]);
 
   if (loading) {
     return (
@@ -274,7 +289,7 @@ export default function StudyPage({ params }: StudyPageProps) {
             ← Back
           </Link>
           <p className="text-muted-foreground text-center">
-            No user selected. Please choose a user to start studying.
+            No user selected. Choose a user to use Quiz mode, or browse with Read or Cards.
           </p>
           <div className="flex flex-col sm:flex-row gap-3 justify-center">
             <Link
@@ -283,11 +298,7 @@ export default function StudyPage({ params }: StudyPageProps) {
             >
               Choose user
             </Link>
-            <Button
-              variant="outline"
-              onClick={() => setMode("explore")}
-              className="w-fit"
-            >
+            <Button variant="outline" onClick={() => setDeckView("cards")} className="w-fit">
               Browse all cards
             </Button>
           </div>
@@ -306,16 +317,12 @@ export default function StudyPage({ params }: StudyPageProps) {
           >
             ← Back
           </Link>
-          {mode === "study" ? (
+          {deckView === "quiz" ? (
             <>
               <p className="text-muted-foreground text-center">
-                You&apos;re all caught up! No cards are due for review.
+                You&apos;re all caught up! No cards are due for quiz.
               </p>
-              <Button
-                variant="outline"
-                onClick={() => setMode("explore")}
-                className="w-fit"
-              >
+              <Button variant="outline" onClick={() => setDeckView("cards")} className="w-fit">
                 Browse all cards
               </Button>
             </>
@@ -354,9 +361,7 @@ export default function StudyPage({ params }: StudyPageProps) {
           <div className="flex flex-1 w-full justify-center items-center mt-12">
             <div className="max-w-md w-full text-center space-y-6">
               <h2 className="text-2xl font-semibold">Session complete</h2>
-              <p className="text-muted-foreground">
-                All {flashcards.length} cards reviewed.
-              </p>
+              <p className="text-muted-foreground">All {flashcards.length} cards quizzed.</p>
               <div className="flex flex-col sm:flex-row gap-3 justify-center">
                 <Button
                   onClick={() => {
@@ -365,7 +370,7 @@ export default function StudyPage({ params }: StudyPageProps) {
                     setShowAnswer(false);
                   }}
                 >
-                  Review again
+                  Quiz again
                 </Button>
                 <Link
                   href={`/decks/${params.deck_id}`}
@@ -488,57 +493,38 @@ export default function StudyPage({ params }: StudyPageProps) {
             </div>
           </div>
           <div className="flex items-center gap-3 flex-wrap landscape-mobile:gap-2">
-            {mode === "explore" ? (
-              <>
-                <div className="flex items-center gap-0.5 rounded-lg border border-border/60 p-0.5 bg-muted/20">
-                  <button
-                    type="button"
-                    onClick={() => setExploreView("read")}
-                    className={`px-3 py-1 min-h-[32px] landscape-mobile:min-h-[28px] landscape-mobile:px-2 landscape-mobile:text-xs rounded-md text-sm font-medium transition-colors ${
-                      exploreView === "read"
-                        ? "bg-background text-foreground shadow-sm"
-                        : "text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    Read
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setExploreView("cards")}
-                    className={`px-3 py-1 min-h-[32px] landscape-mobile:min-h-[28px] landscape-mobile:px-2 landscape-mobile:text-xs rounded-md text-sm font-medium transition-colors ${
-                      exploreView === "cards"
-                        ? "bg-background text-foreground shadow-sm"
-                        : "text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    Cards
-                  </button>
-                </div>
-                <span className="hidden landscape-mobile:inline text-xs text-muted-foreground tabular-nums">
-                  {currentCardIndex + 1}/{flashcards.length}
-                </span>
+            <div
+              className="flex items-center gap-0.5 rounded-lg border border-border/60 p-0.5 bg-muted/20"
+              role="tablist"
+              aria-label="Deck view"
+            >
+              {(["read", "cards", "quiz"] as const).map((v) => (
                 <button
+                  key={v}
                   type="button"
-                  onClick={() => setMode("study")}
-                  className="text-xs text-muted-foreground hover:text-foreground transition-colors landscape-mobile:hidden"
+                  role="tab"
+                  aria-selected={deckView === v}
+                  onClick={() => setDeckView(v)}
+                  className={`px-2.5 sm:px-3 py-1 min-h-[32px] landscape-mobile:min-h-[28px] landscape-mobile:px-2 landscape-mobile:text-xs rounded-md text-sm font-medium transition-colors ${
+                    deckView === v
+                      ? "bg-background text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
                 >
-                  Switch to Review
+                  {v === "read" ? "Read" : v === "cards" ? "Cards" : "Quiz"}
                 </button>
-              </>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setMode("explore")}
-                className="text-xs text-muted-foreground hover:text-foreground transition-colors landscape-mobile:hidden"
-              >
-                Switch to Explore
-              </button>
+              ))}
+            </div>
+            {deckView !== "read" && (
+              <span className="hidden landscape-mobile:inline text-xs text-muted-foreground tabular-nums">
+                {currentCardIndex + 1}/{flashcards.length}
+              </span>
             )}
           </div>
         </div>
       </div>
 
-      {mode === "explore" && exploreView === "read" ? (
+      {deckView === "read" ? (
         <div ref={readScrollRef} className="flex-1 min-h-0 w-full overflow-y-auto touch-pan-y">
           <div className="max-w-2xl sm:max-w-3xl mx-auto w-full px-5 sm:px-6 md:px-8 py-6 sm:py-10 landscape-mobile:py-3">
             <article dir="auto" className="space-y-5 sm:space-y-8 landscape-mobile:space-y-3">
@@ -649,7 +635,7 @@ export default function StudyPage({ params }: StudyPageProps) {
                         />
                       )}
                   </div>
-                  {mode === "study" && showAnswer && (
+                  {deckView === "quiz" && showAnswer && (
                     <div className="flex flex-row gap-2 justify-center flex-wrap shrink-0 w-full" onClick={(e) => e.stopPropagation()}>
                       <Button
                         variant="ghost"
@@ -688,7 +674,7 @@ export default function StudyPage({ params }: StudyPageProps) {
             canFlip={canFlip}
           />
               </div>
-              {/* Portrait / non-landscape: nav on card midline (Explore Cards + Study) */}
+              {/* Portrait / non-landscape: nav on card midline (Cards + Quiz) */}
               <div className="landscape:hidden absolute inset-0 flex items-center justify-between pointer-events-none z-20 px-0">
                 <div className="pointer-events-auto flex w-11 justify-start pl-0.5">
                   {!isFirst ? (

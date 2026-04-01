@@ -5,7 +5,7 @@ import PageContainer from "@/components/layout/page-container";
 export default function StudyPage() {
   return (
     <PageContainer>
-      <h1 className="text-2xl font-semibold tracking-tight">Review</h1>
+      <h1 className="text-2xl font-semibold tracking-tight">Practice</h1>
 
       <div className="grid gap-3 sm:grid-cols-2">
         <Link
@@ -14,10 +14,10 @@ export default function StudyPage() {
         >
           <div className="flex items-center gap-3 mb-2">
             <Layers className="w-5 h-5 text-muted-foreground" />
-            <span className="font-medium">Review a Deck</span>
+            <span className="font-medium">Open a deck</span>
           </div>
           <p className="text-sm text-muted-foreground">
-            Pick a deck and review its due cards.
+            Explore with Read, Cards, or Quiz due cards from any deck.
           </p>
         </Link>
 
@@ -27,10 +27,10 @@ export default function StudyPage() {
         >
           <div className="flex items-center gap-3 mb-2">
             <BookOpen className="w-5 h-5 text-muted-foreground" />
-            <span className="font-medium">Review a Category</span>
+            <span className="font-medium">Quiz a category</span>
           </div>
           <p className="text-sm text-muted-foreground">
-            Review all decks in a category sequentially.
+            Work through all decks in a category in quiz order.
           </p>
         </Link>
       </div>

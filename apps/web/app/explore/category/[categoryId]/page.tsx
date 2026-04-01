@@ -296,7 +296,7 @@ export default function CategoryExplorePage({ params }: CategoryExplorePageProps
                   href={`/study/category/${params.categoryId}`}
                   className="inline-flex h-10 items-center justify-center rounded-lg bg-neutral-900 text-white hover:bg-neutral-800 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200 px-5 text-sm font-medium"
                 >
-                  Review this category
+                  Quiz this category
                 </Link>
                 <Button
                   variant="outline"

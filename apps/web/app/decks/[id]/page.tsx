@@ -1222,29 +1222,16 @@ export default function DeckPage({ params }: DeckPageProps) {
             )}
             <div className="flex flex-wrap gap-2">
               {flashcards.length > 0 ? (
-                <>
-                  <Link
-                    href={`/study/${deck.id}`}
-                    className="inline-flex h-10 items-center justify-center rounded-lg bg-neutral-900 text-white hover:bg-neutral-800 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200 px-4 text-sm font-medium max-mobile:min-h-[44px]"
-                  >
-                    Explore
-                  </Link>
-                  <Link
-                    href={`/study/${deck.id}?mode=study`}
-                    className="inline-flex h-10 items-center justify-center rounded-lg border border-border hover:bg-muted px-4 text-sm font-medium max-mobile:min-h-[44px]"
-                  >
-                    Review
-                  </Link>
-                </>
+                <Link
+                  href={`/study/${deck.id}`}
+                  className="inline-flex h-10 items-center justify-center rounded-lg bg-neutral-900 text-white hover:bg-neutral-800 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200 px-4 text-sm font-medium max-mobile:min-h-[44px]"
+                >
+                  Explore
+                </Link>
               ) : (
-                <>
-                  <span className="inline-flex h-10 items-center justify-center rounded-lg bg-neutral-900/40 text-white/60 dark:bg-neutral-100/40 dark:text-neutral-900/60 px-4 text-sm font-medium cursor-not-allowed max-mobile:min-h-[44px]">
-                    Explore
-                  </span>
-                  <span className="inline-flex h-10 items-center justify-center rounded-lg border border-border/50 text-muted-foreground/60 px-4 text-sm font-medium cursor-not-allowed max-mobile:min-h-[44px]">
-                    Review
-                  </span>
-                </>
+                <span className="inline-flex h-10 items-center justify-center rounded-lg bg-neutral-900/40 text-white/60 dark:bg-neutral-100/40 dark:text-neutral-900/60 px-4 text-sm font-medium cursor-not-allowed max-mobile:min-h-[44px]">
+                  Explore
+                </span>
               )}
               <Button
                 variant="ghost"
