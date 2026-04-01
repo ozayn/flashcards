@@ -43,6 +43,7 @@ import { GENERATION_TEXT_MAX_CHARS } from "@/lib/generation-text";
 import PageContainer from "@/components/layout/page-container";
 import FormattedText from "@/components/FormattedText";
 import { FlashcardModal } from "@/components/FlashcardModal";
+import { DeckGenerationBadge, isDeckGeneratingLike } from "@/components/DeckGenerationBadge";
 
 interface DeckPageProps {
   params: { id: string };
@@ -104,17 +105,11 @@ function addCardsBusyCopy(mode: "topic" | "text" | "import"): {
 } {
   switch (mode) {
     case "text":
-      return {
-        primary: "Processing text and generating flashcards…",
-        secondary: "Longer notes or transcripts can take a minute.",
-      };
+      return { primary: "Generating…", secondary: "May take a minute." };
     case "topic":
-      return {
-        primary: "Generating flashcards…",
-        secondary: "This may take a minute.",
-      };
+      return { primary: "Generating…", secondary: "May take a minute." };
     case "import":
-      return { primary: "Importing cards…" };
+      return { primary: "Importing…" };
   }
 }
 
@@ -413,11 +408,11 @@ export default function DeckPage({ params }: DeckPageProps) {
     return () => { cancelled = true; };
   }, [params.id]);
 
-  const isGenerating = deck?.generation_status === "generating";
+  const deckGenerating = isDeckGeneratingLike(deck?.generation_status);
   const isFailed = deck?.generation_status === "failed";
 
   useEffect(() => {
-    if (!isGenerating) return;
+    if (!deckGenerating) return;
     const interval = setInterval(async () => {
       try {
         const [deckData, flashcardsData] = await Promise.all([
@@ -429,7 +424,7 @@ export default function DeckPage({ params }: DeckPageProps) {
       } catch { /* ignore polling errors */ }
     }, 4000);
     return () => clearInterval(interval);
-  }, [isGenerating, params.id]);
+  }, [deckGenerating, params.id]);
 
   useEffect(() => {
     if (deck) {
@@ -827,12 +822,15 @@ export default function DeckPage({ params }: DeckPageProps) {
                   autoFocus
                 />
               ) : (
-                <h1
-                  className={`text-2xl font-semibold ${isReadOnly ? "" : "cursor-pointer"}`}
-                  onClick={() => !isReadOnly && setEditingTitle(true)}
-                >
-                  {title}
-                </h1>
+                <div className="flex flex-wrap items-center gap-2 gap-y-1">
+                  <h1
+                    className={`text-2xl font-semibold ${isReadOnly ? "" : "cursor-pointer"}`}
+                    onClick={() => !isReadOnly && setEditingTitle(true)}
+                  >
+                    {title}
+                  </h1>
+                  <DeckGenerationBadge status={deck.generation_status} />
+                </div>
               )}
               {editingDescription && !isReadOnly ? (
                 <textarea
@@ -878,6 +876,41 @@ export default function DeckPage({ params }: DeckPageProps) {
                 </button>
               ) : null}
             </div>
+            {!isReadOnly && deckGenerating && (
+              <div className="mb-4 rounded-xl border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/35 p-4 space-y-2">
+                {flashcards.length > 0 ? (
+                  <>
+                    <p className="text-sm font-medium text-blue-950 dark:text-blue-50">Generating more cards</p>
+                    <p className="text-sm text-blue-900/85 dark:text-blue-100/85">New cards will appear automatically.</p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-sm font-medium text-blue-950 dark:text-blue-50">Generating cards for this deck</p>
+                    <p className="text-sm text-blue-900/85 dark:text-blue-100/85">You can leave this page and come back later.</p>
+                  </>
+                )}
+                <div className="pt-1">
+                  <Link
+                    href="/decks"
+                    className="inline-flex h-9 items-center justify-center rounded-lg bg-blue-950 text-white hover:bg-blue-900 dark:bg-blue-100 dark:text-blue-950 dark:hover:bg-white px-4 text-sm font-medium"
+                  >
+                    My Decks
+                  </Link>
+                </div>
+              </div>
+            )}
+            {!isReadOnly && isFailed && (
+              <div className="mb-4 rounded-xl border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950/35 p-4 space-y-1">
+                <p className="text-sm font-medium text-red-950 dark:text-red-50">Generation failed</p>
+                <p className="text-sm text-red-900/85 dark:text-red-100/85">Try again from Add more cards.</p>
+              </div>
+            )}
+            {isReadOnly && isFailed && (
+              <div className="mb-4 rounded-xl border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950/35 p-4 space-y-1">
+                <p className="text-sm font-medium text-red-950 dark:text-red-50">Generation failed</p>
+                <p className="text-sm text-red-900/85 dark:text-red-100/85">Any cards below are still usable.</p>
+              </div>
+            )}
             {isReadOnly ? (
               <div className="flex items-center gap-2 mb-4">
                 <span className="rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
@@ -1373,11 +1406,7 @@ export default function DeckPage({ params }: DeckPageProps) {
                     <div
                       className="h-1 w-full overflow-hidden rounded-full bg-muted/90 dark:bg-muted/50"
                       role="progressbar"
-                      aria-label={
-                        genMode === "import"
-                          ? "Import in progress"
-                          : "Flashcard generation in progress"
-                      }
+                      aria-label={genMode === "import" ? "Importing" : "Generating"}
                     >
                       <div className="h-full w-[38%] rounded-full bg-primary/40 deck-load-indeterminate-fill" />
                     </div>
@@ -1415,7 +1444,7 @@ export default function DeckPage({ params }: DeckPageProps) {
                       disabled={generating || (genMode === "text" && genText.length > GENERATION_TEXT_MAX_CHARS)}
                       className="w-full sm:w-auto"
                     >
-                      {generating ? "Please wait…" : "Generate Cards"}
+                      {generating ? "Generating…" : "Generate Cards"}
                     </Button>
                   )}
                   <Link
@@ -1503,36 +1532,20 @@ export default function DeckPage({ params }: DeckPageProps) {
               )}
             </div>
           )}
-          {isGenerating && (
-            <div className="rounded-xl border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/40 p-4 mb-4 space-y-2.5">
+          {deckGenerating && (
+            <div className="rounded-xl border border-blue-200 dark:border-blue-800 bg-blue-50/80 dark:bg-blue-950/30 p-3 mb-4 space-y-2">
               <div
                 className="h-1 w-full max-w-md overflow-hidden rounded-full bg-blue-200/80 dark:bg-blue-900/60"
                 role="progressbar"
-                aria-label="Background generation in progress"
+                aria-label="Generating"
               >
                 <div className="h-full w-[38%] rounded-full bg-blue-500/50 dark:bg-blue-400/45 deck-load-indeterminate-fill" />
               </div>
-              <div className="flex items-start gap-3">
-                <svg className="size-5 text-blue-500 animate-spin shrink-0 mt-0.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" aria-hidden><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
-                <div>
-                  <p className="font-medium text-blue-900 dark:text-blue-100 text-sm">Generating flashcards…</p>
-                  <p className="text-blue-700 dark:text-blue-300 text-xs mt-0.5 leading-snug">
-                    This may take a minute for longer content. You can leave and come back later.
-                  </p>
-                </div>
-              </div>
+              <p className="text-sm text-blue-950 dark:text-blue-50 font-medium">Generating…</p>
+              <p className="text-xs text-blue-800/90 dark:text-blue-200/90">New cards will appear here.</p>
             </div>
           )}
-          {isFailed && flashcards.length === 0 && (
-            <div className="rounded-xl border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/40 p-4 mb-4 flex items-start gap-3">
-              <svg className="size-5 text-red-500 shrink-0 mt-0.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" /></svg>
-              <div>
-                <p className="font-medium text-red-900 dark:text-red-100 text-sm">Generation failed</p>
-                <p className="text-red-700 dark:text-red-300 text-xs mt-0.5">Something went wrong. You can try again using the &ldquo;Add more cards&rdquo; panel above.</p>
-              </div>
-            </div>
-          )}
-          {flashcards.length === 0 && !isGenerating && !isFailed ? (
+          {flashcards.length === 0 && !deckGenerating && !isFailed ? (
             <p className="text-muted-foreground text-sm">No flashcards yet.</p>
           ) : flashcards.length === 0 ? (
             null

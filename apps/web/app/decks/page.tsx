@@ -19,13 +19,11 @@ import {
   ArchiveRestore,
   BookOpen,
   ChevronDown,
-  CircleAlert,
   Eye,
   EyeOff,
   FolderInput,
   LayoutGrid,
   List,
-  Loader2,
   MoreVertical,
   Pencil,
   Search,
@@ -33,14 +31,10 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import { getUsers, getDecks, getCategories, updateDeck, createCategory, updateCategory, deleteCategory, deleteDeck, moveDeckToCategory } from "@/lib/api";
 import { getStoredUserId, useClientIsAdmin } from "@/components/user-selector";
 import PageContainer from "@/components/layout/page-container";
+import { DeckGenerationBadge } from "@/components/DeckGenerationBadge";
 
 export type Deck = {
   id: string;
@@ -66,25 +60,6 @@ export type Category = {
   user_id: string | null;
   created_at: string;
 };
-
-const GENERATION_STATUS_CONFIG: Record<
-  string,
-  { icon: React.ComponentType<{ className?: string }>; tooltip: string; spin?: boolean }
-> = {
-  generating: { icon: Loader2, tooltip: "Generating flashcards...", spin: true },
-  failed: { icon: CircleAlert, tooltip: "Generation failed" },
-};
-
-type DeckMetadata = {
-  icon: React.ComponentType<{ className?: string }>;
-  tooltip: string;
-  spin?: boolean;
-};
-
-function getGenerationStatusIcon(deck: Deck): DeckMetadata | null {
-  if (deck.generation_status === "completed" || !deck.generation_status) return null;
-  return GENERATION_STATUS_CONFIG[deck.generation_status] ?? null;
-}
 
 const UNCATEGORIZED = "__uncategorized__";
 
@@ -698,27 +673,13 @@ export default function DecksPage() {
         className="deck-card group rounded-lg border border-border px-4 py-3.5 flex items-center justify-between gap-3 hover:bg-muted/40 transition-colors cursor-pointer max-mobile:px-3.5 max-mobile:py-3"
       >
         <div className="flex items-center gap-3 flex-1 min-w-0">
-          {(() => {
-            const statusIcon = getGenerationStatusIcon(deck);
-            const StatusIcon = statusIcon?.icon;
-            return statusIcon && StatusIcon ? (
-              <Tooltip>
-                <TooltipTrigger
-                  className="inline-flex shrink-0"
-                  aria-label={statusIcon.tooltip}
-                >
-                  <StatusIcon
-                    className={`w-4 h-4 text-muted-foreground ${statusIcon.spin ? "animate-spin" : ""}`}
-                  />
-                </TooltipTrigger>
-                <TooltipContent>{statusIcon.tooltip}</TooltipContent>
-              </Tooltip>
-            ) : null;
-          })()}
           <div className="flex flex-col gap-0.5 min-w-0">
-            <span className="font-medium text-sm leading-snug truncate">
-              {deck.name}
-            </span>
+            <div className="flex flex-wrap items-center gap-2 min-w-0">
+              <span className="font-medium text-sm leading-snug truncate">
+                {deck.name}
+              </span>
+              <DeckGenerationBadge status={deck.generation_status} />
+            </div>
             <span className="text-xs text-muted-foreground">
               {deck.card_count ?? 0} {deck.card_count === 1 ? "card" : "cards"}
               {viewMode === "all" && deck.category_id && categoryNameMap.has(deck.category_id) && (
@@ -750,9 +711,14 @@ export default function DecksPage() {
         className="group relative rounded-xl border border-border bg-background p-4 flex flex-col gap-2 hover:bg-muted/30 transition-colors cursor-pointer max-mobile:p-3.5"
       >
         <div className="flex items-start justify-between gap-2 min-w-0">
-          <h3 className="font-semibold text-sm leading-snug line-clamp-2 min-w-0">
-            {deck.name}
-          </h3>
+          <div className="min-w-0 flex-1 space-y-1.5">
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="font-semibold text-sm leading-snug line-clamp-2 min-w-0 flex-1">
+                {deck.name}
+              </h3>
+              <DeckGenerationBadge status={deck.generation_status} />
+            </div>
+          </div>
           <div className="shrink-0">
             {renderDeckMenu(deck)}
           </div>

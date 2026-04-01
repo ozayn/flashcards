@@ -23,6 +23,9 @@ class SourceType(str, enum.Enum):
 
 
 class GenerationStatus(str, enum.Enum):
+    """Persisted on Deck.generation_status. UI treats completed as ready."""
+
+    queued = "queued"
     generating = "generating"
     completed = "completed"
     failed = "failed"

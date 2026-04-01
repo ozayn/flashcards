@@ -3092,12 +3092,12 @@ async def generate_flashcards_background(
     if deck.source_type in (None, SourceType.topic, SourceType.text):
         deck.source_type = SourceType.text if text_input else SourceType.topic
     deck.generated_by_ai = True
-    deck.generation_status = GenerationStatus.generating.value
+    deck.generation_status = GenerationStatus.queued.value
     await db.flush()
 
     asyncio.create_task(_run_generation_background(payload))
 
-    return BackgroundGenerationResponse(deck_id=deck_id_str, status="generating")
+    return BackgroundGenerationResponse(deck_id=deck_id_str, status="queued")
 
 
 @router.post("", response_model=GenerateFlashcardsResponse)
