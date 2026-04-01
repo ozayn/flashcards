@@ -24,11 +24,17 @@ function isNavActive(link: NavLink, pathname: string): boolean {
   return prefixes.some((p) => pathname === p || pathname.startsWith(p + "/"));
 }
 
-const landingNavLinks: NavLink[] = [
+const landingCenterLinks: NavLink[] = [
+  { href: "/decks", label: "Library", matchPrefixes: ["/decks", "/explore"] },
   { href: "/about", label: "About" },
+];
+
+const landingRightLinks: NavLink[] = [
   { href: "/signin", label: "Sign In" },
   { href: "/create-deck", label: "Get Started", primary: true },
 ];
+
+const landingNavLinks: NavLink[] = [...landingCenterLinks, ...landingRightLinks];
 
 export function Nav() {
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -54,7 +60,7 @@ export function Nav() {
 
         {/* Center: Desktop nav (hidden on mobile) */}
         <div className="hidden md:flex items-center gap-6">
-          {navLinks.map((link) => (
+          {(isLanding ? landingCenterLinks : navLinks).map((link) => (
             link.primary ? (
               <Link key={link.href} href={link.href}>
                 <Button size="sm" className="rounded-lg">
@@ -77,8 +83,25 @@ export function Nav() {
           ))}
         </div>
 
-        {/* Right: Theme + Settings + User (app only) or Theme (landing) */}
-        <div className="hidden md:flex items-center gap-2">
+        {/* Right: Theme + Settings + User (app) or CTA links (landing) */}
+        <div className="hidden md:flex items-center gap-4">
+          {isLanding && landingRightLinks.map((link) => (
+            link.primary ? (
+              <Link key={link.href} href={link.href}>
+                <Button size="sm" className="rounded-lg">
+                  {link.label}
+                </Button>
+              </Link>
+            ) : (
+              <Link
+                key={link.href}
+                href={link.href}
+                className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+              >
+                {link.label}
+              </Link>
+            )
+          ))}
           <ThemeToggle />
           {!isLanding && (
             <>

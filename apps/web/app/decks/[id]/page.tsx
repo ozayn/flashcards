@@ -13,6 +13,7 @@ import {
   List,
   Pencil,
   Plus,
+  MoreHorizontal,
   Search,
   Trash2,
   Upload,
@@ -269,6 +270,7 @@ export default function DeckPage({ params }: DeckPageProps) {
   const [title, setTitle] = useState(deck?.name ?? "");
   const [description, setDescription] = useState(deck?.description ?? "");
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [gridMenuOpenId, setGridMenuOpenId] = useState<string | null>(null);
   const [deckDeleteConfirm, setDeckDeleteConfirm] = useState(false);
   const [modalCardIndex, setModalCardIndex] = useState<number | null>(null);
   const [genTopic, setGenTopic] = useState("");
@@ -1278,34 +1280,49 @@ export default function DeckPage({ params }: DeckPageProps) {
                       <FormattedText text={card.answer_short} className="text-inherit" />
                     </div>
                   </button>
-                  <div className="flex items-center gap-1 px-3 py-1.5 border-t border-border/50">
-                    <Link
-                      href={`/decks/${params.id}/edit-card/${card.id}`}
-                      className="inline-flex"
-                    >
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                        aria-label="Edit card"
-                      >
-                        <Pencil className="size-3.5" />
-                      </Button>
-                    </Link>
-                    <Button
+                  <div className="relative flex items-center px-3 py-1.5 border-t border-border/50">
+                    <button
                       type="button"
-                      variant="ghost"
-                      size="icon"
                       onClick={(e) => {
                         e.preventDefault();
                         e.stopPropagation();
-                        setDeleteConfirmId(card.id);
+                        setGridMenuOpenId(gridMenuOpenId === card.id ? null : card.id);
                       }}
-                      className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                      aria-label="Delete card"
+                      className="h-7 w-7 flex items-center justify-center rounded-md text-muted-foreground opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 max-mobile:opacity-100 hover:bg-muted hover:text-foreground transition-all focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                      aria-label="Card actions"
+                      aria-expanded={gridMenuOpenId === card.id}
+                      aria-haspopup="true"
                     >
-                      <Trash2 className="size-3.5" />
-                    </Button>
+                      <MoreHorizontal className="size-4" />
+                    </button>
+                    {gridMenuOpenId === card.id && (
+                      <>
+                        <div className="fixed inset-0 z-40" onClick={() => setGridMenuOpenId(null)} />
+                        <div className="absolute left-2 bottom-full mb-1 z-50 min-w-[120px] rounded-lg border border-border bg-background shadow-md py-1">
+                          <Link
+                            href={`/decks/${params.id}/edit-card/${card.id}`}
+                            onClick={() => setGridMenuOpenId(null)}
+                            className="flex items-center gap-2 px-3 py-1.5 text-sm text-foreground hover:bg-muted transition-colors"
+                          >
+                            <Pencil className="size-3.5" />
+                            Edit
+                          </Link>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setGridMenuOpenId(null);
+                              setDeleteConfirmId(card.id);
+                            }}
+                            className="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-destructive hover:bg-muted transition-colors"
+                          >
+                            <Trash2 className="size-3.5" />
+                            Delete
+                          </button>
+                        </div>
+                      </>
+                    )}
                   </div>
                 </div>
               ))}
