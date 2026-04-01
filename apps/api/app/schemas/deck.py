@@ -48,6 +48,7 @@ class DeckResponse(BaseModel):
     generation_status: str = "completed"
     generated_by_ai: bool = False
     archived: bool = False
+    is_public: bool = False
     category_id: Optional[str] = None
     category_assigned_at: Optional[datetime] = None
     created_at: datetime

@@ -51,6 +51,7 @@ export type Deck = {
   generation_status?: string;
   generated_by_ai?: boolean;
   archived: boolean;
+  is_public?: boolean;
   created_at: string;
   card_count?: number;
   category_id?: string | null;
@@ -664,6 +665,17 @@ export default function DecksPage() {
                 </button>
                 <button
                   type="button"
+                  className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm hover:bg-muted max-mobile:min-h-[44px] max-mobile:py-3"
+                  onClick={(e) => {
+                    setOpenDeckMenuId(null);
+                    handleArchiveDeck(deck.id, !showArchived, e);
+                  }}
+                >
+                  {showArchived ? <ArchiveRestore className="size-4 shrink-0" /> : <Archive className="size-4 shrink-0" />}
+                  {showArchived ? "Unarchive" : "Archive"}
+                </button>
+                <button
+                  type="button"
                   className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-destructive hover:bg-destructive/10 max-mobile:min-h-[44px] max-mobile:py-3"
                   onClick={() => openDeleteDeckConfirm(deck.id)}
                 >
@@ -673,23 +685,6 @@ export default function DecksPage() {
               </div>
             )}
           </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            onPointerDown={(e) => e.stopPropagation()}
-            onClick={(e) => {
-              e.stopPropagation();
-              handleArchiveDeck(deck.id, !showArchived, e);
-            }}
-            className="text-muted-foreground hover:text-foreground"
-            aria-label={showArchived ? "Unarchive deck" : "Archive deck"}
-          >
-            {showArchived ? (
-              <ArchiveRestore className="size-4" />
-            ) : (
-              <Archive className="size-4" />
-            )}
-          </Button>
         </div>
       </div>
     );

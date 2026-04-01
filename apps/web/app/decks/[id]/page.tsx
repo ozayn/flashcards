@@ -34,7 +34,9 @@ import {
   deleteFlashcard,
   moveDeckToCategory,
   createCategory,
+  duplicateDeck,
 } from "@/lib/api";
+import { getStoredUserId } from "@/components/user-selector";
 import PageContainer from "@/components/layout/page-container";
 import FormattedText from "@/components/FormattedText";
 import { FlashcardModal } from "@/components/FlashcardModal";
@@ -51,6 +53,7 @@ interface Deck {
   source_topic?: string | null;
   source_url?: string | null;
   archived?: boolean;
+  is_public?: boolean;
   category_id?: string | null;
   user_id?: string;
 }
@@ -296,6 +299,10 @@ export default function DeckPage({ params }: DeckPageProps) {
     { value: "oldest", label: "Oldest" },
     { value: "az", label: "A–Z" },
   ];
+
+  const currentUserId = getStoredUserId();
+  const isReadOnly = Boolean(deck?.is_public && deck?.user_id && deck.user_id !== currentUserId);
+  const [duplicating, setDuplicating] = useState(false);
 
   const processedCards = useMemo(() => {
     let cards = [...flashcards];
@@ -573,6 +580,19 @@ export default function DeckPage({ params }: DeckPageProps) {
     }
   }
 
+  async function handleDuplicate() {
+    if (!deck || duplicating) return;
+    const userId = getStoredUserId();
+    if (!userId) return;
+    setDuplicating(true);
+    try {
+      const copy = await duplicateDeck(deck.id, userId);
+      router.push(`/decks/${(copy as { id: string }).id}`);
+    } catch {
+      setDuplicating(false);
+    }
+  }
+
   if (loading) {
     return (
       <PageContainer>
@@ -599,12 +619,12 @@ export default function DeckPage({ params }: DeckPageProps) {
     <PageContainer>
         <div className="flex items-center justify-between">
           <Link
-            href="/decks"
+            href={isReadOnly ? "/library" : "/decks"}
             className="inline-flex h-7 items-center justify-center rounded-lg px-2.5 text-sm font-medium hover:bg-muted"
           >
             ← Back
           </Link>
-          <Button
+          {!isReadOnly && <Button
             variant="ghost"
             size="icon"
             onClick={async () => {
@@ -623,13 +643,13 @@ export default function DeckPage({ params }: DeckPageProps) {
             ) : (
               <Archive className="size-4" />
             )}
-          </Button>
+          </Button>}
         </div>
 
         <Card>
           <div className="px-4 pt-4 pb-4">
             <div className="flex flex-col gap-2 mb-4">
-              {editingTitle ? (
+              {editingTitle && !isReadOnly ? (
                 <input
                   id="deck-title"
                   name="deckTitle"
@@ -664,13 +684,13 @@ export default function DeckPage({ params }: DeckPageProps) {
                 />
               ) : (
                 <h1
-                  className="text-2xl font-semibold cursor-pointer"
-                  onClick={() => setEditingTitle(true)}
+                  className={`text-2xl font-semibold ${isReadOnly ? "" : "cursor-pointer"}`}
+                  onClick={() => !isReadOnly && setEditingTitle(true)}
                 >
                   {title}
                 </h1>
               )}
-              {editingDescription ? (
+              {editingDescription && !isReadOnly ? (
                 <textarea
                   id="deck-description"
                   name="deckDescription"
@@ -693,37 +713,45 @@ export default function DeckPage({ params }: DeckPageProps) {
                 />
               ) : (
                 <p
-                  className="text-sm text-neutral-500 mb-3 cursor-pointer dark:text-neutral-400"
-                  onClick={() => setEditingDescription(true)}
+                  className={`text-sm text-neutral-500 mb-3 dark:text-neutral-400 ${isReadOnly ? "" : "cursor-pointer"}`}
+                  onClick={() => !isReadOnly && setEditingDescription(true)}
                 >
                   {description || "Add description…"}
                 </p>
               )}
             </div>
-            <div className="flex flex-wrap items-center gap-2 mb-4">
-              <span className="text-sm text-muted-foreground">
-                Category:{" "}
-                <span className="font-medium text-foreground">
-                  {deck.category_id
-                    ? categories.find((c) => c.id === deck.category_id)?.name ?? "—"
-                    : "Uncategorized"}
+            {isReadOnly ? (
+              <div className="flex items-center gap-2 mb-4">
+                <span className="rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
+                  Public · Read-only
                 </span>
-              </span>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  setCategoryModalSelectedId(deck.category_id ?? UNCATEGORIZED);
-                  setShowNewCatInput(false);
-                  setNewCatName("");
-                  setNewCatError(null);
-                  setCategoryModalOpen(true);
-                }}
-                className="text-muted-foreground hover:text-foreground h-7 px-2"
-              >
-                {deck.category_id ? "Change category" : "Assign category"}
-              </Button>
-            </div>
+              </div>
+            ) : (
+              <div className="flex flex-wrap items-center gap-2 mb-4">
+                <span className="text-sm text-muted-foreground">
+                  Category:{" "}
+                  <span className="font-medium text-foreground">
+                    {deck.category_id
+                      ? categories.find((c) => c.id === deck.category_id)?.name ?? "—"
+                      : "Uncategorized"}
+                  </span>
+                </span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setCategoryModalSelectedId(deck.category_id ?? UNCATEGORIZED);
+                    setShowNewCatInput(false);
+                    setNewCatName("");
+                    setNewCatError(null);
+                    setCategoryModalOpen(true);
+                  }}
+                  className="text-muted-foreground hover:text-foreground h-7 px-2"
+                >
+                  {deck.category_id ? "Change category" : "Assign category"}
+                </Button>
+              </div>
+            )}
             {deck.source_type === "youtube" && deck.source_url ? (
               <div className="text-sm mb-4 leading-relaxed space-y-1">
                 <p>
@@ -755,7 +783,7 @@ export default function DeckPage({ params }: DeckPageProps) {
                 <span className="font-medium text-foreground">{deck.source_topic.trim()}</span>
               </p>
             ) : null}
-            {categoryModalOpen && (
+            {!isReadOnly && categoryModalOpen && (
               <div
                 className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
                 onClick={() => !categorySaving && setCategoryModalOpen(false)}
@@ -875,8 +903,17 @@ export default function DeckPage({ params }: DeckPageProps) {
               >
                 <Download className="size-4" />
               </Button>
+              {isReadOnly && (
+                <Button
+                  onClick={handleDuplicate}
+                  disabled={duplicating}
+                  className="max-mobile:min-h-[44px]"
+                >
+                  {duplicating ? "Saving…" : "Save to my decks"}
+                </Button>
+              )}
             </div>
-            {hasFlashcards && !genPanelExpanded ? (
+            {!isReadOnly && (hasFlashcards && !genPanelExpanded ? (
               <div className="mt-4 pt-4 border-t border-border/80">
                 <button
                   type="button"
@@ -1128,7 +1165,7 @@ export default function DeckPage({ params }: DeckPageProps) {
                   </Link>
                 </div>
               </div>
-            )}
+            ))}
           </div>
         </Card>
 
@@ -1229,35 +1266,37 @@ export default function DeckPage({ params }: DeckPageProps) {
                       </div>
                     </div>
                   </button>
-                  <div className="flex items-center gap-1 flex-shrink-0 mt-1 [&_svg]:max-mobile:!size-4">
-                    <Link
-                      href={`/decks/${params.id}/edit-card/${card.id}`}
-                      className="inline-flex"
-                    >
+                  {!isReadOnly && (
+                    <div className="flex items-center gap-1 flex-shrink-0 mt-1 [&_svg]:max-mobile:!size-4">
+                      <Link
+                        href={`/decks/${params.id}/edit-card/${card.id}`}
+                        className="inline-flex"
+                      >
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="text-muted-foreground hover:text-foreground"
+                          aria-label="Edit card"
+                        >
+                          <Pencil className="size-4" />
+                        </Button>
+                      </Link>
                       <Button
+                        type="button"
                         variant="ghost"
                         size="icon"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setDeleteConfirmId(card.id);
+                        }}
                         className="text-muted-foreground hover:text-foreground"
-                        aria-label="Edit card"
+                        aria-label="Delete card"
                       >
-                        <Pencil className="size-4" />
+                        <Trash2 className="w-4 h-4 text-muted-foreground" />
                       </Button>
-                    </Link>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        setDeleteConfirmId(card.id);
-                      }}
-                      className="text-muted-foreground hover:text-foreground"
-                      aria-label="Delete card"
-                    >
-                      <Trash2 className="w-4 h-4 text-muted-foreground" />
-                    </Button>
-                  </div>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -1280,50 +1319,52 @@ export default function DeckPage({ params }: DeckPageProps) {
                       <FormattedText text={card.answer_short} className="text-inherit" />
                     </div>
                   </button>
-                  <div className="relative flex items-center px-3 py-1.5 border-t border-border/50">
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        setGridMenuOpenId(gridMenuOpenId === card.id ? null : card.id);
-                      }}
-                      className="h-7 w-7 flex items-center justify-center rounded-md text-muted-foreground opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 max-mobile:opacity-100 hover:bg-muted hover:text-foreground transition-all focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                      aria-label="Card actions"
-                      aria-expanded={gridMenuOpenId === card.id}
-                      aria-haspopup="true"
-                    >
-                      <MoreHorizontal className="size-4" />
-                    </button>
-                    {gridMenuOpenId === card.id && (
-                      <>
-                        <div className="fixed inset-0 z-40" onClick={() => setGridMenuOpenId(null)} />
-                        <div className="absolute left-2 bottom-full mb-1 z-50 min-w-[120px] rounded-lg border border-border bg-background shadow-md py-1">
-                          <Link
-                            href={`/decks/${params.id}/edit-card/${card.id}`}
-                            onClick={() => setGridMenuOpenId(null)}
-                            className="flex items-center gap-2 px-3 py-1.5 text-sm text-foreground hover:bg-muted transition-colors"
-                          >
-                            <Pencil className="size-3.5" />
-                            Edit
-                          </Link>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              setGridMenuOpenId(null);
-                              setDeleteConfirmId(card.id);
-                            }}
-                            className="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-destructive hover:bg-muted transition-colors"
-                          >
-                            <Trash2 className="size-3.5" />
-                            Delete
-                          </button>
-                        </div>
-                      </>
-                    )}
-                  </div>
+                  {!isReadOnly && (
+                    <div className="relative flex items-center px-3 py-1.5 border-t border-border/50">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setGridMenuOpenId(gridMenuOpenId === card.id ? null : card.id);
+                        }}
+                        className="h-7 w-7 flex items-center justify-center rounded-md text-muted-foreground opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 max-mobile:opacity-100 hover:bg-muted hover:text-foreground transition-all focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                        aria-label="Card actions"
+                        aria-expanded={gridMenuOpenId === card.id}
+                        aria-haspopup="true"
+                      >
+                        <MoreHorizontal className="size-4" />
+                      </button>
+                      {gridMenuOpenId === card.id && (
+                        <>
+                          <div className="fixed inset-0 z-40" onClick={() => setGridMenuOpenId(null)} />
+                          <div className="absolute left-2 bottom-full mb-1 z-50 min-w-[120px] rounded-lg border border-border bg-background shadow-md py-1">
+                            <Link
+                              href={`/decks/${params.id}/edit-card/${card.id}`}
+                              onClick={() => setGridMenuOpenId(null)}
+                              className="flex items-center gap-2 px-3 py-1.5 text-sm text-foreground hover:bg-muted transition-colors"
+                            >
+                              <Pencil className="size-3.5" />
+                              Edit
+                            </Link>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                setGridMenuOpenId(null);
+                                setDeleteConfirmId(card.id);
+                              }}
+                              className="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-destructive hover:bg-muted transition-colors"
+                            >
+                              <Trash2 className="size-3.5" />
+                              Delete
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -1361,7 +1402,7 @@ export default function DeckPage({ params }: DeckPageProps) {
           </section>
         )}
 
-        <section className="section space-y-4 pt-8 border-t border-border">
+        {!isReadOnly && <section className="section space-y-4 pt-8 border-t border-border">
           <h2 className="text-lg font-semibold">Danger Zone</h2>
           <div className="rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3">
             <p className="font-medium mb-1">Delete deck</p>
@@ -1376,17 +1417,17 @@ export default function DeckPage({ params }: DeckPageProps) {
               Delete Deck
             </Button>
           </div>
-        </section>
+        </section>}
 
         <FlashcardModal
           cards={processedCards}
           initialIndex={modalCardIndex ?? 0}
           isOpen={modalCardIndex !== null}
           onClose={() => setModalCardIndex(null)}
-          editBasePath={`/decks/${params.id}/edit-card`}
+          editBasePath={isReadOnly ? undefined : `/decks/${params.id}/edit-card`}
         />
 
-        {deleteConfirmId && (
+        {!isReadOnly && deleteConfirmId && (
           <div
             className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
             onClick={() => setDeleteConfirmId(null)}
@@ -1415,7 +1456,7 @@ export default function DeckPage({ params }: DeckPageProps) {
           </div>
         )}
 
-        {deckDeleteConfirm && (
+        {!isReadOnly && deckDeleteConfirm && (
           <div
             className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
             onClick={() => setDeckDeleteConfirm(false)}

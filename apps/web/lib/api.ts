@@ -115,6 +115,23 @@ export async function getDecks(userId: string, archived = false) {
   return res.json();
 }
 
+export async function getLibraryDecks() {
+  const res = await fetch(`${API_BASE}/decks/library`, { cache: "no-store" });
+  if (!res.ok) throw new Error("Failed to fetch library decks");
+  return res.json();
+}
+
+export async function duplicateDeck(deckId: string, userId: string) {
+  const res = await fetch(`${API_BASE}/decks/${deckId}/duplicate?user_id=${userId}`, {
+    method: "POST",
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail ?? "Failed to duplicate deck");
+  }
+  return res.json();
+}
+
 export async function getDeck(deckId: string) {
   const res = await fetch(`${API_BASE}/decks/${deckId}`, { cache: "no-store" });
   if (!res.ok) throw new Error("Failed to fetch deck");

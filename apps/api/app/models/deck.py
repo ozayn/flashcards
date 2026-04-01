@@ -35,6 +35,7 @@ class Deck(Base):
     )
     generated_by_ai: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     archived: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    is_public: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     category_id: Mapped[Optional[str]] = mapped_column(
         UUID(as_uuid=False), ForeignKey("categories.id", ondelete="SET NULL"), nullable=True
     )

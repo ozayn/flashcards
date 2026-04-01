@@ -13,10 +13,10 @@ import { Button } from "@/components/ui/button";
 type NavLink = { href: string; label: string; primary?: boolean; matchPrefixes?: string[] };
 
 const appNavLinks: NavLink[] = [
-  { href: "/decks", label: "Decks", matchPrefixes: ["/decks", "/categories"] },
+  { href: "/decks", label: "My Decks", matchPrefixes: ["/decks", "/categories"] },
+  { href: "/library", label: "Library", matchPrefixes: ["/library"] },
   { href: "/study", label: "Review", matchPrefixes: ["/study", "/explore"] },
   { href: "/create-deck", label: "Create Deck" },
-  { href: "/about", label: "About" },
 ];
 
 function isNavActive(link: NavLink, pathname: string): boolean {
@@ -25,7 +25,7 @@ function isNavActive(link: NavLink, pathname: string): boolean {
 }
 
 const landingCenterLinks: NavLink[] = [
-  { href: "/decks", label: "Library", matchPrefixes: ["/decks", "/explore"] },
+  { href: "/library", label: "Library", matchPrefixes: ["/library"] },
   { href: "/about", label: "About" },
 ];
 

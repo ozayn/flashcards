@@ -45,6 +45,76 @@ async def get_decks(
     ]
 
 
+@router.get("/library", response_model=List[DeckResponse])
+async def get_library_decks(
+    db: AsyncSession = Depends(get_db),
+):
+    """Get all public/library decks."""
+    result = await db.execute(
+        select(Deck)
+        .where(Deck.is_public == True, Deck.archived == False)
+        .order_by(Deck.created_at.desc())
+    )
+    decks = result.scalars().all()
+    if not decks:
+        return []
+    deck_ids = [d.id for d in decks]
+    count_result = await db.execute(
+        select(Flashcard.deck_id, func.count(Flashcard.id))
+        .where(Flashcard.deck_id.in_(deck_ids))
+        .group_by(Flashcard.deck_id)
+    )
+    counts = {row[0]: row[1] for row in count_result.all()}
+    return [
+        DeckResponse.model_validate(d).model_copy(update={"card_count": counts.get(d.id, 0)})
+        for d in decks
+    ]
+
+
+@router.post("/{deck_id}/duplicate", response_model=DeckResponse, status_code=201)
+async def duplicate_deck(
+    deck_id: str,
+    user_id: str = Query(..., description="User ID to own the duplicated deck"),
+    db: AsyncSession = Depends(get_db),
+):
+    """Create a personal copy of a deck and all its flashcards."""
+    result = await db.execute(select(Deck).where(Deck.id == deck_id))
+    source = result.scalar_one_or_none()
+    if not source:
+        raise HTTPException(status_code=404, detail="Deck not found")
+
+    new_deck = Deck(
+        user_id=user_id,
+        name=source.name,
+        description=source.description,
+        source_type=source.source_type,
+        source_url=source.source_url,
+        source_topic=source.source_topic,
+        is_public=False,
+    )
+    db.add(new_deck)
+    await db.flush()
+
+    cards_result = await db.execute(
+        select(Flashcard).where(Flashcard.deck_id == deck_id).order_by(Flashcard.created_at)
+    )
+    cards = cards_result.scalars().all()
+    card_count = 0
+    for card in cards:
+        db.add(Flashcard(
+            deck_id=new_deck.id,
+            question=card.question,
+            answer_short=card.answer_short,
+            answer_detailed=card.answer_detailed,
+            difficulty=card.difficulty,
+        ))
+        card_count += 1
+
+    await db.flush()
+    await db.refresh(new_deck)
+    return DeckResponse.model_validate(new_deck).model_copy(update={"card_count": card_count})
+
+
 @router.get("/{deck_id}/flashcards", response_model=List[FlashcardResponse])
 async def get_deck_flashcards(
     deck_id: str,

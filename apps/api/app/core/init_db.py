@@ -135,6 +135,12 @@ async def init_db() -> None:
                 "ALTER TABLE decks ADD COLUMN category_assigned_at TIMESTAMP",
                 pg_if_not_exists="ALTER TABLE decks ADD COLUMN IF NOT EXISTS category_assigned_at TIMESTAMP"
             )
+            _add_column_if_missing(
+                sync_conn, "decks", "is_public",
+                "ALTER TABLE decks ADD COLUMN is_public BOOLEAN DEFAULT 0" if _IS_SQLITE
+                else "ALTER TABLE decks ADD COLUMN is_public BOOLEAN DEFAULT false",
+                pg_if_not_exists="ALTER TABLE decks ADD COLUMN IF NOT EXISTS is_public BOOLEAN DEFAULT false"
+            )
         await conn.run_sync(_migrate_decks)
     logger.info("Applied decks column migrations")
 
