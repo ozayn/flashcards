@@ -733,7 +733,7 @@ export default function DecksPage() {
         : null;
 
     const metaRow = (
-      <div className="flex min-w-0 flex-nowrap items-center gap-x-0.5 overflow-hidden text-muted-foreground max-mobile:text-[9px] max-mobile:leading-tight sm:gap-x-1 sm:text-[11px] sm:leading-snug">
+      <div className="flex min-w-0 flex-nowrap items-center gap-x-0.5 overflow-hidden text-muted-foreground text-[9px] leading-tight sm:gap-x-1 sm:text-[10px] sm:leading-tight md:text-[11px]">
         <span className="shrink-0 tabular-nums">
           {deck.card_count ?? 0} {(deck.card_count ?? 0) === 1 ? "card" : "cards"}
         </span>
@@ -781,34 +781,28 @@ export default function DecksPage() {
             router.push(`/decks/${deck.id}`);
           }
         }}
-        className="group relative flex w-full min-w-0 cursor-pointer flex-col overflow-hidden rounded-lg border border-border bg-background transition-colors hover:bg-muted/30 max-mobile:h-[92px] max-mobile:min-h-[92px] max-mobile:p-1.5 max-mobile:py-1 sm:h-[120px] sm:min-h-[120px] sm:rounded-xl sm:p-2.5"
+        className="group relative flex w-full min-w-0 cursor-pointer flex-col rounded-md border border-border bg-background p-1.5 transition-colors hover:bg-muted/30 sm:rounded-lg sm:p-2"
       >
-        <div className="absolute right-0.5 top-0.5 z-10 sm:right-1.5 sm:top-1.5">
-          <div className="shrink-0 max-mobile:[&_button]:h-6 max-mobile:[&_button]:w-6 sm:[&_button]:h-7 sm:[&_button]:w-7 sm:[&_button]:h-8 sm:[&_button]:w-8">
+        <div className="absolute right-0.5 top-0.5 z-10 sm:right-1 sm:top-1">
+          <div className="shrink-0 [&_button]:h-6 [&_button]:w-6 sm:[&_button]:h-7 sm:[&_button]:w-7">
             {renderDeckMenu(deck)}
           </div>
         </div>
 
-        <div className="flex h-full min-h-0 min-w-0 flex-col justify-between pr-8 max-mobile:pr-7 sm:pr-10">
-          <div className="min-w-0 shrink-0">
-            <h3
-              className={`min-w-0 break-words font-semibold text-foreground line-clamp-2 max-mobile:text-[11px] max-mobile:leading-tight sm:leading-snug ${
-                narrowGrid ? "max-mobile:text-[10px] sm:text-xs" : "sm:text-sm"
-              }`}
-            >
-              {deck.name}
-            </h3>
-            <div className="mt-0 min-w-0 sm:hidden">{metaRow}</div>
-            <div className="mt-0.5 min-w-0 max-w-full max-mobile:[&_span]:py-0 max-mobile:[&_span]:text-[9px] sm:mt-0.5 sm:[&_span]:text-[10px] md:[&_span]:text-[11px]">
-              <DeckGenerationBadge status={deck.generation_status} />
-            </div>
+        <div className="flex min-h-0 min-w-0 flex-col gap-0.5 pr-7 sm:pr-8">
+          <h3
+            className={`min-w-0 break-words font-semibold leading-[1.2] text-foreground line-clamp-2 ${
+              narrowGrid
+                ? "text-[10px] sm:text-[11px] md:text-xs"
+                : "text-[11px] sm:text-xs md:text-sm"
+            }`}
+          >
+            {deck.name}
+          </h3>
+          <div className="min-w-0 max-w-full leading-none [&_span]:py-0 max-mobile:[&_span]:text-[9px] sm:[&_span]:text-[10px]">
+            <DeckGenerationBadge status={deck.generation_status} />
           </div>
-
-          <div className="hidden min-h-0 flex-1 sm:block" aria-hidden />
-
-          <div className="hidden shrink-0 border-t border-transparent pt-0.5 sm:flex sm:items-center">
-            {metaRow}
-          </div>
+          <div className="min-w-0">{metaRow}</div>
         </div>
       </div>
     );
@@ -818,7 +812,7 @@ export default function DecksPage() {
     const groupedDeckLayout = viewMode === "grouped";
     if (deckLayout === "grid") {
       const gridClassName = groupedDeckLayout
-        ? "grid w-full min-w-0 grid-cols-2 gap-2 sm:gap-3 sm:grid-cols-2 lg:grid-cols-3"
+        ? "grid w-full min-w-0 grid-cols-2 gap-2 sm:grid-cols-2 sm:gap-2 md:gap-3 xl:grid-cols-3"
         : "grid w-full min-w-0 grid-cols-1 gap-4 max-mobile:gap-3 sm:grid-cols-2 lg:grid-cols-3";
       return (
         <div className={gridClassName}>
