@@ -35,6 +35,9 @@ import { getUsers, getDecks, getCategories, updateDeck, createCategory, updateCa
 import { getStoredUserId, useClientIsAdmin } from "@/components/user-selector";
 import PageContainer from "@/components/layout/page-container";
 import { DeckGenerationBadge } from "@/components/DeckGenerationBadge";
+import { formatDeckCreatedCalendarDate } from "@/lib/format-deck-date";
+
+const SHOW_DECK_DATES_STORAGE_KEY = "flashcards_deck_show_dates";
 
 export type Deck = {
   id: string;
@@ -209,6 +212,7 @@ export default function DecksPage() {
   const [viewMode, setViewMode] = useState<"grouped" | "all">("grouped");
   const [sortMode, setSortMode] = useState<"newest" | "oldest" | "az">("newest");
   const [deckLayout, setDeckLayout] = useState<"list" | "grid">("list");
+  const [showDeckDates, setShowDeckDates] = useState(false);
   const isAdminClient = useClientIsAdmin();
 
   useEffect(() => {
@@ -219,6 +223,10 @@ export default function DecksPage() {
     try {
       const stored = localStorage.getItem("flashcards_deck_layout");
       if (stored === "grid" || stored === "list") setDeckLayout(stored);
+    } catch {}
+    try {
+      const d = localStorage.getItem(SHOW_DECK_DATES_STORAGE_KEY);
+      if (d === "1" || d === "true") setShowDeckDates(true);
     } catch {}
   }, []);
 
@@ -659,6 +667,8 @@ export default function DecksPage() {
   }
 
   function renderDeckRow(deck: Deck) {
+    const dateShort =
+      showDeckDates ? formatDeckCreatedCalendarDate(deck.created_at) : null;
     return (
       <div
         role="link"
@@ -680,12 +690,18 @@ export default function DecksPage() {
               </span>
               <DeckGenerationBadge status={deck.generation_status} />
             </div>
-            <span className="text-xs text-muted-foreground">
+            <span className="text-xs text-muted-foreground break-words">
               {deck.card_count ?? 0} {deck.card_count === 1 ? "card" : "cards"}
               {viewMode === "all" && deck.category_id && categoryNameMap.has(deck.category_id) && (
                 <> · {categoryNameMap.get(deck.category_id)}</>
               )}
               {deck.is_public && <> · <span className="text-emerald-600 dark:text-emerald-400">Public</span></>}
+              {dateShort && (
+                <>
+                  {" "}
+                  · <span className="text-muted-foreground/75">{dateShort}</span>
+                </>
+              )}
             </span>
           </div>
         </div>
@@ -697,6 +713,8 @@ export default function DecksPage() {
   }
 
   function renderDeckTile(deck: Deck) {
+    const dateShort =
+      showDeckDates ? formatDeckCreatedCalendarDate(deck.created_at) : null;
     return (
       <div
         role="link"
@@ -726,12 +744,20 @@ export default function DecksPage() {
         {deck.description && (
           <p className="text-xs text-muted-foreground leading-relaxed line-clamp-2">{deck.description}</p>
         )}
-        <div className="flex items-center gap-2 mt-auto pt-1 text-xs text-muted-foreground">
-          <span>{deck.card_count ?? 0} {(deck.card_count ?? 0) === 1 ? "card" : "cards"}</span>
-          {viewMode === "all" && deck.category_id && categoryNameMap.has(deck.category_id) && (
-            <> · <span>{categoryNameMap.get(deck.category_id)}</span></>
-          )}
-          {deck.is_public && <> · <span className="text-emerald-600 dark:text-emerald-400">Public</span></>}
+        <div className="flex flex-wrap items-baseline gap-x-1 gap-y-0.5 mt-auto pt-1 text-xs text-muted-foreground">
+          <span className="break-words min-w-0">
+            {deck.card_count ?? 0} {(deck.card_count ?? 0) === 1 ? "card" : "cards"}
+            {viewMode === "all" && deck.category_id && categoryNameMap.has(deck.category_id) && (
+              <> · <span>{categoryNameMap.get(deck.category_id)}</span></>
+            )}
+            {deck.is_public && <> · <span className="text-emerald-600 dark:text-emerald-400">Public</span></>}
+            {dateShort && (
+              <>
+                {" "}
+                · <span className="text-muted-foreground/75">{dateShort}</span>
+              </>
+            )}
+          </span>
         </div>
       </div>
     );
@@ -1038,8 +1064,8 @@ export default function DecksPage() {
               className="w-full rounded-lg border border-border bg-background pl-9 pr-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
             />
           </div>
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+            <div className="flex flex-wrap items-center gap-2">
               <div className="inline-flex rounded-lg border border-border/50 bg-muted/30 p-0.5">
                 {(
                   [
@@ -1080,7 +1106,7 @@ export default function DecksPage() {
                 </button>
               </div>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-2">
               {viewMode === "all" && (
                 <select
                   value={sortMode}
@@ -1092,7 +1118,7 @@ export default function DecksPage() {
                   <option value="az">A–Z</option>
                 </select>
               )}
-              <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer whitespace-nowrap">
+              <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer whitespace-nowrap shrink-0">
                 <input
                   type="checkbox"
                   checked={showArchived}
@@ -1100,6 +1126,23 @@ export default function DecksPage() {
                   className="rounded border-input"
                 />
                 Archived
+              </label>
+              <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer whitespace-nowrap shrink-0">
+                <input
+                  type="checkbox"
+                  checked={showDeckDates}
+                  onChange={(e) => {
+                    const v = e.target.checked;
+                    setShowDeckDates(v);
+                    try {
+                      localStorage.setItem(SHOW_DECK_DATES_STORAGE_KEY, v ? "1" : "0");
+                    } catch {
+                      /* ignore */
+                    }
+                  }}
+                  className="rounded border-input"
+                />
+                Show dates
               </label>
             </div>
           </div>

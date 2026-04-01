@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { getUsers, createDeck, generateFlashcardsBackground, importFlashcards, parseQAPairs, fetchYouTubeTranscript, fetchWebpageContent, normalizeYouTubeUrl, isYouTubePlaylistUrl, TranscriptFetchError } from "@/lib/api";
 import { getStoredUserId, useCardCountOptions } from "@/components/user-selector";
 import { GENERATION_TEXT_MAX_CHARS } from "@/lib/generation-text";
+import { markDeckBackgroundGenerationNavigation } from "@/lib/deck-pending-generation";
 import { Upload } from "lucide-react";
 import PageContainer from "@/components/layout/page-container";
 
@@ -339,6 +340,7 @@ function CreateDeckForm() {
           language: transcript.language || "en",
         }).catch(() => {});
 
+        markDeckBackgroundGenerationNavigation(deckId);
         router.push(`/decks/${deckId}`);
         return;
       }
@@ -375,6 +377,7 @@ function CreateDeckForm() {
           num_cards: cardCount,
         }).catch(() => {});
 
+        markDeckBackgroundGenerationNavigation(deckId);
         router.push(`/decks/${deckId}`);
         return;
       }
@@ -409,6 +412,7 @@ function CreateDeckForm() {
           num_cards: cardCount,
           language: "en",
         }).catch(() => {});
+        markDeckBackgroundGenerationNavigation(deckId);
       } else if (generationMode === "topic" && effectiveTopic) {
         await generateFlashcardsBackground({
           deck_id: deckId,
@@ -416,6 +420,7 @@ function CreateDeckForm() {
           num_cards: cardCount,
           language: "en",
         }).catch(() => {});
+        markDeckBackgroundGenerationNavigation(deckId);
       }
 
       router.push(`/decks/${deckId}`);

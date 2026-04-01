@@ -32,12 +32,41 @@ export function UserSelector() {
   const [addLoading, setAddLoading] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
+  function applyUserList(data: unknown) {
+    const userList = Array.isArray(data) ? data : [];
+    setUsers(userList);
+
+    const stored = localStorage.getItem(STORAGE_KEY);
+    const validStored = userList.some((u: User) => u.id === stored);
+    const userId = validStored && stored ? stored : userList[0]?.id ?? null;
+
+    if (userId) {
+      setSelectedUserId(userId);
+      if (!validStored || !stored) {
+        localStorage.setItem(STORAGE_KEY, userId);
+      }
+      const matchedUser = userList.find((u: User) => u.id === userId);
+      if (matchedUser) {
+        localStorage.setItem(ROLE_STORAGE_KEY, matchedUser.role);
+      }
+    }
+  }
+
   async function loadUsers() {
     setApiError(false);
     try {
+      try {
+        const data = await getUsers();
+        applyUserList(data);
+        return;
+      } catch {
+        /* cold start or transient failure — retry after brief readiness poll */
+      }
+
       const available = await waitForApiReadiness({
-        budgetMs: 14_000,
-        retryDelayMs: 1_500,
+        budgetMs: 10_000,
+        retryDelayMs: 800,
+        timeoutPerAttemptMs: 4000,
       });
       if (!available) {
         setApiError(true);
@@ -46,23 +75,7 @@ export function UserSelector() {
       }
 
       const data = await getUsers();
-      const userList = Array.isArray(data) ? data : [];
-      setUsers(userList);
-
-      const stored = localStorage.getItem(STORAGE_KEY);
-      const validStored = userList.some((u: User) => u.id === stored);
-      const userId = validStored && stored ? stored : userList[0]?.id ?? null;
-
-      if (userId) {
-        setSelectedUserId(userId);
-        if (!validStored || !stored) {
-          localStorage.setItem(STORAGE_KEY, userId);
-        }
-        const matchedUser = userList.find((u: User) => u.id === userId);
-        if (matchedUser) {
-          localStorage.setItem(ROLE_STORAGE_KEY, matchedUser.role);
-        }
-      }
+      applyUserList(data);
     } catch {
       setUsers([]);
       setApiError(true);

@@ -3100,6 +3100,613 @@ async def generate_flashcards_background(
     return BackgroundGenerationResponse(deck_id=deck_id_str, status="queued")
 
 
+
+def _sync_prepare_generated_cards(
+    payload: GenerateFlashcardsRequest,
+    deck_id_str: str,
+    text_input: Optional[str],
+) -> list:
+    """LLM + card shaping (sync). Runs in a worker thread so the API event loop stays responsive."""
+    lang_hint = (payload.language or "").strip().lower()[:2] or None
+    
+    requested_cards = max(1, min(payload.num_cards or 10, 50))
+    topic_for_estimate = (payload.topic or "") or (
+        (text_input[:200] + "...") if text_input else ""
+    )
+    
+    used_simple_mode = False
+    for attempt in range(3):
+        if attempt == 1:
+            requested_cards = max(3, requested_cards - 2)
+        elif attempt == 2:
+            requested_cards = max(3, requested_cards - 3)
+        num_cards, safe_max = _compute_safe_card_count(
+            requested_cards, topic_for_estimate, retry_attempt=attempt
+        )
+        retry_max_tokens = int(_get_default_max_tokens() * 1.5) if attempt > 0 else None
+        if _is_formula_topic(topic_for_estimate):
+            base = _get_default_max_tokens()
+            retry_max_tokens = min(retry_max_tokens or base, 800)
+        logger.info(
+            "Requested cards: %d, Safe max cards: %d, Final cards used: %d (attempt %d)%s",
+            requested_cards,
+            safe_max,
+            num_cards,
+            attempt + 1,
+            f", max_tokens={retry_max_tokens}" if retry_max_tokens else "",
+        )
+    
+        if text_input:
+            # Text mode: generate only from pasted text. Topic optional (e.g. deck name) for example detection.
+            try:
+                response_text = _generate_flashcards_from_text(
+                    text_input,
+                    lang_hint,
+                    num_cards=num_cards,
+                    strict_text_only=payload.strict_text_only,
+                    include_background=payload.include_background,
+                    topic=payload.topic,
+                    skip_cache=attempt > 0,
+                    max_tokens_override=retry_max_tokens,
+                )
+            except ValueError as e:
+                raise HTTPException(status_code=503, detail=str(e))
+        else:
+            # Topic mode
+            topic_str = payload.topic or ""
+            is_vocab = is_vocabulary_topic(topic_str)
+    
+            # Formula topics: one plaintext card per call (no JSON dependency)
+            if _is_formula_topic(topic_str):
+                seen_questions: set[tuple[str, str]] = set()
+                all_cards: list[dict] = []
+    
+                for i in range(num_cards):
+                    card = None
+    
+                    for attempt in range(3):
+                        try:
+                            response_text = _generate_formula_card_plaintext(
+                                topic_str,
+                                lang_hint,
+                                skip_cache=(attempt > 0 or i > 0),
+                                max_tokens_override=256,
+                            )
+                            logger.debug("Formula plaintext received (card %d, attempt %d): %s", i + 1, attempt + 1, response_text[:200])
+                        except ValueError as e:
+                            logger.warning("Formula plaintext generation failed (card %d, attempt %d): %s", i + 1, attempt + 1, e)
+                            if attempt == 2:
+                                raise HTTPException(status_code=503, detail=str(e))
+                            continue
+    
+                        card = _parse_formula_plaintext_card(response_text, topic_str, card_index=i)
+                        if card:
+                            break
+                        logger.warning("Formula plaintext parser failed (card %d, attempt %d)", i + 1, attempt + 1)
+    
+                    if not card:
+                        continue
+    
+                    q = card.get("question", "").strip().lower()
+                    a = card.get("answer_short", "").strip()
+    
+                    if not q:
+                        logger.warning("Skipping card with empty question")
+                        continue
+    
+                    key = (q, a)
+                    if key in seen_questions:
+                        logger.warning("Skipping exact duplicate (q+a): %s", q)
+                        continue
+    
+                    seen_questions.add(key)
+                    all_cards.append(card)
+    
+                if len(all_cards) == 0:
+                    logger.warning("Formula generation produced zero valid cards")
+                    raise HTTPException(status_code=503, detail="No flashcards generated")
+    
+                parsed_json = {"flashcards": all_cards}
+                break
+    
+            # Loanword vocabulary: Persian word → French origin (e.g. French loanwords in Persian)
+            if is_vocab and is_loanword_vocab_topic(topic_str):
+                try:
+                    response_text = _generate_flashcards_from_loanword_vocab(
+                        topic_str,
+                        lang_hint,
+                        num_cards=num_cards,
+                        skip_cache=attempt > 0,
+                        max_tokens_override=retry_max_tokens,
+                    )
+                    parsed_json = _extract_json(response_text)
+                    break
+                except ValueError as e:
+                    raise HTTPException(status_code=503, detail=str(e))
+    
+            # Translation vocabulary: direct generation (word → translation)
+            if is_vocab and is_translation_vocab_topic(topic_str):
+                try:
+                    response_text = _generate_flashcards_from_translation_vocab(
+                        topic_str,
+                        lang_hint,
+                        num_cards=num_cards,
+                        skip_cache=attempt > 0,
+                        max_tokens_override=retry_max_tokens,
+                    )
+                    parsed_json = _extract_json(response_text)
+                    break
+                except ValueError as e:
+                    raise HTTPException(status_code=503, detail=str(e))
+    
+            # Use simple mode only for non-formula topics. Formula topics (including "simple formulas")
+            # use the per-card path to avoid truncation when LaTeX-heavy responses exceed token limits.
+            use_simple_mode = not _is_formula_topic(topic_str)
+            if use_simple_mode:
+                used_simple_mode = True
+                # Simple generation mode: no LaTeX, minimal prompt, json.loads only
+                # Retry once with same prompt on parse failure (do not modify content)
+                parsed_json = {}
+                # Use higher max_tokens for multi-card to reduce truncation
+                simple_max = max(_get_default_max_tokens(), 120 * num_cards + 600)
+                for parse_attempt in range(2):
+                    try:
+                        response_text = _generate_flashcards_simple(
+                            topic_str, lang_hint, num_cards=num_cards, skip_cache=parse_attempt > 0, max_tokens_override=simple_max
+                        )
+                        parsed_json = _extract_json_simple(response_text)
+                        if "flashcards" in parsed_json and isinstance(parsed_json.get("flashcards"), list):
+                            break
+                    except ValueError as e:
+                        raise HTTPException(status_code=503, detail=str(e))
+                    if parse_attempt == 0:
+                        logger.warning("Simple mode parse failed, retrying with same prompt")
+                if "flashcards" not in parsed_json or not isinstance(parsed_json.get("flashcards"), list):
+                    preview = (response_text or "")[:500].replace("\n", " ")
+                    logger.error("Simple mode parse failed after retry. Preview: %s", preview)
+                    raise HTTPException(status_code=502, detail="Failed to parse LLM response as JSON")
+                break
+            elif _is_single_person_topic(topic_str):
+                # Single-person topics: identity, works, achievements (e.g. Hafez, Who is Hafez?)
+                try:
+                    response_text = _generate_flashcards_from_person_topic(
+                        topic_str, lang_hint, num_cards=num_cards, skip_cache=attempt > 0, max_tokens_override=retry_max_tokens
+                    )
+                except ValueError as e:
+                    raise HTTPException(status_code=503, detail=str(e))
+            elif _is_question_style_topic(topic_str):
+                # Skip concept extraction for question-style topics; generate directly
+                try:
+                    if _is_formula_topic(topic_str):
+                        def _gen_question(batch_size: int, batch_index: int) -> str:
+                            return _generate_flashcards_from_question_topic(
+                                topic_str,
+                                lang_hint,
+                                num_cards=batch_size,
+                                skip_cache=(batch_index > 0 or attempt > 0),
+                                max_tokens_override=retry_max_tokens,
+                            )
+    
+                        response_text = _generate_flashcards_formula_batched(
+                            _gen_question, num_cards
+                        )
+                    else:
+                        response_text = _generate_flashcards_from_question_topic(
+                            topic_str, lang_hint, num_cards=num_cards, skip_cache=attempt > 0, max_tokens_override=retry_max_tokens
+                        )
+                except ValueError as e:
+                    raise HTTPException(status_code=503, detail=str(e))
+            elif _is_mapping_mode(topic_str):
+                # Mapping topics: item A ↔ item B (e.g. phonetic alphabet, symbols)
+                try:
+                    response_text = _generate_flashcards_from_mapping_topic(
+                        topic_str, lang_hint, num_cards=num_cards, skip_cache=attempt > 0, max_tokens_override=retry_max_tokens
+                    )
+                except ValueError as e:
+                    raise HTTPException(status_code=503, detail=str(e))
+            elif _is_people_list_topic(topic_str) and not is_vocab:
+                # List-of-people topics: use dedicated extraction + generation for "Who was X?" cards
+                # (vocabulary topics use generic path above)
+                concepts = _extract_concepts(
+                    topic=topic_str, language_hint=lang_hint, is_people_list=True, num_cards=num_cards
+                )
+                if concepts:
+                    try:
+                        response_text = _generate_flashcards_from_people_list(
+                            concepts, topic_str, lang_hint, num_cards=num_cards, skip_cache=attempt > 0, max_tokens_override=retry_max_tokens
+                        )
+                    except ValueError as e:
+                        raise HTTPException(status_code=503, detail=str(e))
+                else:
+                    # Fallback to generic generation if people extraction fails
+                    concepts = _extract_concepts(topic=topic_str, language_hint=lang_hint, num_cards=num_cards)
+                    if concepts:
+                        try:
+                            response_text = _generate_flashcards_from_concepts(
+                                concepts, topic_str, lang_hint, is_vocab=False, num_cards=num_cards, skip_cache=attempt > 0, max_tokens_override=retry_max_tokens
+                            )
+                        except ValueError as e:
+                            raise HTTPException(status_code=503, detail=str(e))
+                    else:
+                        # Fallback: single-stage generation
+                        wants_ex = _topic_wants_examples(topic_str)
+                        if wants_ex:
+                            style_rules = """Instructions:
+        - Prefer specific facts, names, events, or individuals over abstract concepts.
+        - Prefer questions that start with: Who, What, When, Where.
+        - Each question must be exactly: 'Who was [Name]?' for people-list topics.
+        - Format each answer as:
+        Definition:
+        <one concise sentence>
+    
+        Example:
+        <one concrete example (notable work, achievement)>
+    
+        Do NOT combine into a single paragraph. Include a blank line between definition and Example.
+        - Cards must be directly related to the topic."""
+                            json_schema = '''{
+          "flashcards": [
+    {
+      "question": "Who was <Name>?",
+      "answer_short": "Definition:\\n\\n<definition>\\n\\nExample:\\n\\n<example>",
+      "has_example": true,
+      "answer_detailed": null,
+      "difficulty": "easy"
+    }
+          ]
+        }'''
+                        else:
+                            style_rules = """Instructions:
+        - Prefer specific facts, names, events, or individuals over abstract concepts.
+        - Prefer questions that start with: Who, What, When, Where.
+        - Each question must be exactly: 'Who was [Name]?' for people-list topics.
+        - Each answer must be a concise definition only (1–2 sentences). Do NOT include examples.
+        - Cards must be directly related to the topic."""
+                            json_schema = '''{
+          "flashcards": [
+    {
+      "question": "Who was <Name>?",
+      "answer_short": "<concise definition only, 1-2 sentences>",
+      "answer_detailed": null,
+      "difficulty": "easy"
+    }
+          ]
+        }'''
+    
+                        example_block = f"\n{EXAMPLE_REQUIREMENT_MANDATORY}\n" if wants_ex else ""
+                        fallback_prompt = f"""{JSON_HEADER}
+        {build_language_rule(topic_str, "", lang_hint)}{example_block}
+        You are generating flashcards for studying notable individuals.
+    
+        Topic:
+        {topic_str}
+    
+        {style_rules}
+    
+        {CONTENT_RULES}
+    
+        {_get_math_instruction(topic_str)}
+    
+        {JSON_OUTPUT_REQUIREMENT}
+    
+        Return ONLY this JSON structure (no other text):
+        {json_schema}
+    
+        Rules:
+        - {_build_count_instruction(num_cards)}
+        - Output MUST be valid JSON. No plain text, no Q/A format. Use double quotes. Escape newlines as \\n.
+        {JSON_CLOSING_CONSTRAINT}
+        {NON_FORMULA_STRICT_RULE}"""
+    
+                        try:
+                            response_text = generate_completion(fallback_prompt, skip_cache=attempt > 0, max_tokens=retry_max_tokens)
+                        except ValueError as e:
+                            raise HTTPException(status_code=503, detail=str(e))
+            else:
+                # Extract concepts then generate (generic topics)
+                concepts = _extract_concepts(topic=topic_str, language_hint=lang_hint, num_cards=num_cards)
+    
+                if concepts:
+                    try:
+                        if _is_formula_topic(topic_str):
+                            concept_batches = [
+                                concepts[i : i + FORMULA_BATCH_SIZE]
+                                for i in range(0, len(concepts), FORMULA_BATCH_SIZE)
+                            ]
+                            num_batches = min(
+                                len(concept_batches),
+                                (num_cards + FORMULA_BATCH_SIZE - 1) // FORMULA_BATCH_SIZE,
+                            )
+    
+                            def _gen_from_concepts(batch_size: int, batch_index: int) -> str:
+                                subset = concept_batches[batch_index] if batch_index < len(concept_batches) else concept_batches[-1]
+                                return _generate_flashcards_from_concepts(
+                                    subset,
+                                    topic_str,
+                                    lang_hint,
+                                    is_vocab=is_vocab,
+                                    num_cards=batch_size,
+                                    skip_cache=(batch_index > 0 or attempt > 0),
+                                    max_tokens_override=retry_max_tokens,
+                                )
+    
+                            response_text = _generate_flashcards_formula_batched(
+                                _gen_from_concepts, num_cards, num_batches=num_batches
+                            )
+                        else:
+                            response_text = _generate_flashcards_from_concepts(
+                                concepts, topic_str, lang_hint, is_vocab=is_vocab, num_cards=num_cards, skip_cache=attempt > 0, max_tokens_override=retry_max_tokens
+                            )
+                    except ValueError as e:
+                        raise HTTPException(status_code=503, detail=str(e))
+                else:
+                    # Fallback: single-stage generation when concept extraction fails
+                    wants_ex = _topic_wants_examples(topic_str)
+                    is_formula = _is_formula_topic(topic_str)
+                    if is_vocab:
+                        vocab_instruction = build_vocab_instruction(topic_str)
+                        if wants_ex:
+                            style_rules = f"""Vocabulary Topics:
+        If the topic appears to be vocabulary, slang, or terminology:
+        - Each flashcard should explain a specific word or phrase.
+        - The question should ask for the meaning of the word.
+        - The answer should define it clearly and include an example.
+        {vocab_instruction}
+        {EXAMPLE_FORMAT_REQUIREMENT}"""
+                            fallback_json = '''{
+          "flashcards": [
+    {
+      "question": "<question>",
+      "answer_short": "Definition:\\n\\n<definition>\\n\\nExample:\\n\\n<example>",
+      "has_example": true,
+      "answer_detailed": null,
+      "difficulty": "easy"
+    }
+          ]
+        }'''
+                        else:
+                            style_rules = f"""Vocabulary Topics:
+        If the topic appears to be vocabulary, slang, or terminology:
+        - Each flashcard should explain a specific word or phrase.
+        - The question should ask for the meaning of the word.
+        - The answer should be a concise definition only (1–2 sentences). Do NOT include examples.
+        {vocab_instruction}
+        {DEFINITION_ONLY_FORMAT}"""
+                            fallback_json = '''{
+          "flashcards": [
+    {
+      "question": "<question>",
+      "answer_short": "<concise definition only, 1-2 sentences>",
+      "answer_detailed": null,
+      "difficulty": "easy"
+    }
+          ]
+        }'''
+                    else:
+                        if _is_formula_topic(topic_str):
+                            style_rules = FORMULA_INSTRUCTION
+                            fallback_json = '''{
+          "flashcards": [
+    {
+      "question": "<question>",
+      "answer_short": "<short explanation, formula when appropriate>",
+      "answer_detailed": null,
+      "difficulty": "easy"
+    }
+          ]
+        }'''
+                        elif wants_ex:
+                            style_rules = f"""Instructions:
+        - Prefer specific facts, names, events, or individuals over abstract concepts.
+        - Avoid abstract explanations; focus on concrete, memorable facts.
+        - Questions should be concise and suitable for active recall.
+        - Each flashcard must test exactly ONE piece of knowledge AND include a real-world example.
+        - Prefer named entities (people, places, works, events) when possible.
+        - Prefer questions that start with: Who, What, When, Where.
+        - Avoid questions that start with: Why, How—unless absolutely necessary.
+        - Avoid multi-part questions. Bad: "Who was Henri Cartier-Bresson and what was the decisive moment?" Good: "Who was Henri Cartier-Bresson?" / "What is the decisive moment in photography?"
+        - Questions must be concise and focused on recall.
+        - Cards must be directly related to the topic.
+    
+        {EXAMPLE_FORMAT_REQUIREMENT}"""
+                            fallback_json = '''{
+          "flashcards": [
+    {
+      "question": "<question>",
+      "answer_short": "Definition:\\n\\n<definition>\\n\\nExample:\\n\\n<example>",
+      "has_example": true,
+      "answer_detailed": null,
+      "difficulty": "easy"
+    }
+          ]
+        }'''
+                        else:
+                            style_rules = f"""Instructions:
+        - Prefer specific facts, names, events, or individuals over abstract concepts.
+        - Avoid abstract explanations; focus on concrete, memorable facts.
+        - Questions should be concise and suitable for active recall.
+        - Each flashcard must test exactly ONE piece of knowledge.
+        - Prefer named entities (people, places, works, events) when possible.
+        - Prefer questions that start with: Who, What, When, Where.
+        - Avoid questions that start with: Why, How—unless absolutely necessary.
+        - Avoid multi-part questions. Bad: "Who was Henri Cartier-Bresson and what was the decisive moment?" Good: "Who was Henri Cartier-Bresson?" / "What is the decisive moment in photography?"
+        - Questions must be concise and focused on recall.
+        - Cards must be directly related to the topic.
+    
+        {DEFINITION_ONLY_FORMAT}"""
+                            fallback_json = '''{
+          "flashcards": [
+    {
+      "question": "<question>",
+      "answer_short": "<concise definition only, 1-2 sentences>",
+      "answer_detailed": null,
+      "difficulty": "easy"
+    }
+          ]
+        }'''
+    
+                    example_block = f"\n{EXAMPLE_REQUIREMENT_MANDATORY}\n" if wants_ex else ""
+                    fallback_prompt = f"""{JSON_HEADER}
+        {build_language_rule(topic_str, "", lang_hint)}{example_block}
+        You are generating flashcards for studying.
+    
+        Topic:
+        {topic_str}
+    
+        {style_rules}
+    
+        {CONTENT_RULES}
+    
+        {_get_math_instruction(topic_str)}
+    
+        {JSON_OUTPUT_REQUIREMENT}
+    
+        Return ONLY this JSON structure (no other text):
+        {fallback_json}
+    
+        Rules:
+        - {_build_count_instruction(num_cards)}
+        - Output MUST be valid JSON. No plain text, no Q/A format. Use double quotes. Escape newlines as \\n.
+        {JSON_CLOSING_CONSTRAINT}
+        {NON_FORMULA_STRICT_RULE}"""
+    
+                    try:
+                        if is_formula:
+                            def _gen_fallback(batch_size: int, batch_index: int) -> str:
+                                prompt = f"""{JSON_HEADER}
+        {build_language_rule(topic_str, "", lang_hint)}
+        You are generating flashcards for studying.
+    
+        Topic:
+        {topic_str}
+    
+        {style_rules}
+    
+        {CONTENT_RULES}
+    
+        {_get_math_instruction(topic_str)}
+    
+        {JSON_OUTPUT_REQUIREMENT}
+    
+        Return ONLY this JSON structure (no other text):
+        {fallback_json}
+    
+        Rules:
+        - {_build_count_instruction(batch_size)}
+        - Output MUST be valid JSON. No plain text, no Q/A format. Use double quotes. Escape newlines as \\n.
+        {JSON_CLOSING_CONSTRAINT}"""
+                                return generate_completion(
+                                    prompt,
+                                    skip_cache=(batch_index > 0 or attempt > 0),
+                                    max_tokens=retry_max_tokens,
+                                )
+    
+                            response_text = _generate_flashcards_formula_batched(
+                                _gen_fallback, num_cards
+                            )
+                        else:
+                            response_text = generate_completion(fallback_prompt, skip_cache=attempt > 0, max_tokens=retry_max_tokens)
+                    except ValueError as e:
+                        raise HTTPException(status_code=503, detail=str(e))
+    
+        try:
+            parsed_json = _extract_json(response_text)
+        except ValueError as e:
+            if "truncated" in str(e).lower() and attempt < 2:
+                logger.warning(
+                    "LLM response truncated on attempt %d, retrying with fewer cards",
+                    attempt + 1,
+                )
+                continue
+            logger.error(
+                "%sGeneration failed after retry: %s response_preview=%s",
+                _gen_log_prefix(),
+                e,
+                _preview_for_log(response_text or ""),
+            )
+            raise HTTPException(status_code=503, detail=str(e))
+        if "flashcards" not in parsed_json or not isinstance(
+            parsed_json.get("flashcards"), list
+        ):
+            if attempt < 2:
+                continue
+            preview = (response_text or "")[:500].replace("\n", " ")
+            logger.error(
+                "Failed to parse LLM response: expected flashcards JSON. Preview: %s",
+                preview,
+            )
+            raise HTTPException(
+                status_code=502,
+                detail="Failed to parse LLM response as JSON",
+            )
+        break
+    
+    cards: list = parsed_json["flashcards"]
+    logger.info("Parsed cards preview: %s", cards[:2])
+    if text_input:
+        logger.info("[text-mode] Stage 1 - candidate cards after generation: %d", len(cards))
+    
+    # RULE: If at least 1 valid card exists → SUCCESS. Only 503 when ZERO valid cards.
+    # Never fail for len(cards) < num_cards (partial results are accepted).
+    if not cards:
+        raise HTTPException(status_code=503, detail="No flashcards generated")
+    
+    topic_str = (payload.topic or "").strip()
+    
+    is_persian_mapping_mode = bool(
+        text_input and _is_persian_mapping_text(text_input)
+    )
+    if is_persian_mapping_mode:
+        logger.info("Persian mapping mode detected — skipping transcript filters")
+    
+    # Grounding check: when text mode and strict_text_only, filter out unsupported cards
+    if text_input and payload.strict_text_only and cards and not is_persian_mapping_mode:
+        before_ground = len(cards)
+        cards = _filter_ungrounded_cards(cards, text_input)
+        logger.info("[text-mode] Stage 2 - after grounding: %d kept (removed %d)", len(cards), before_ground - len(cards))
+    
+    # Low-value filter: when text mode, remove transcript housekeeping cards
+    if text_input and cards and not is_persian_mapping_mode:
+        before_lv = len(cards)
+        cards = _filter_low_value_transcript_cards(cards)
+        logger.info("[text-mode] Stage 3 - after low-value filter: %d kept (removed %d)", len(cards), before_lv - len(cards))
+    
+    # Generic card filter: limit shallow "What is X?" cards in transcript mode
+    if text_input and cards and not is_persian_mapping_mode:
+        before_gen = len(cards)
+        cards = _filter_generic_transcript_cards(cards, text_input, max_generic=2)
+        if len(cards) < before_gen:
+            logger.info("[text-mode] Stage 3b - after generic filter: %d kept (removed %d)", len(cards), before_gen - len(cards))
+    
+    # Example requirement: only when USER explicitly requested via topic (not inferred from transcript text)
+    wants_examples = _topic_wants_examples(topic_str)
+    if wants_examples and cards:
+        before_ex = len(cards)
+        cards = [c for c in cards if "Example:" in (c.get("answer_short") or "")]
+        if text_input:
+            logger.info("[text-mode] after example filter: %d kept (removed %d)", len(cards), before_ex - len(cards))
+        if len(cards) == 0:
+            raise HTTPException(
+                status_code=503,
+                detail="No valid cards with examples generated",
+            )
+        if not text_input:
+            logger.info("After example filter: %d cards with examples", len(cards))
+    
+    # Transcript-only: overlap reduction, cap (skip for Persian mapping mode)
+    if text_input and cards and not is_persian_mapping_mode:
+        before_overlap = len(cards)
+        cards = _reduce_transcript_overlaps(cards)
+        logger.info("[text-mode] Stage 4 - after overlap reduction: %d kept (removed %d)", len(cards), before_overlap - len(cards))
+        transcript_cap = max(requested_cards, 10)
+        before_cap = len(cards)
+        cards = _select_best_transcript_cards(cards, max_cards=transcript_cap)
+        if before_cap > transcript_cap:
+            logger.info("[text-mode] Stage 5 - capped at %d (had %d)", transcript_cap, before_cap)
+
+    return cards
+
+
 @router.post("", response_model=GenerateFlashcardsResponse)
 async def generate_flashcards(
     payload: GenerateFlashcardsRequest,
@@ -3146,602 +3753,14 @@ async def generate_flashcards(
 
     _gen_log_token = generation_log_deck_id.set(deck_id_str)
     try:
-        lang_hint = (payload.language or "").strip().lower()[:2] or None
-
-        requested_cards = max(1, min(payload.num_cards or 10, 50))
-        topic_for_estimate = (payload.topic or "") or (
-            (text_input[:200] + "...") if text_input else ""
+        cards = await asyncio.to_thread(
+            _sync_prepare_generated_cards,
+            payload,
+            deck_id_str,
+            text_input,
         )
-
-        used_simple_mode = False
-        for attempt in range(3):
-            if attempt == 1:
-                requested_cards = max(3, requested_cards - 2)
-            elif attempt == 2:
-                requested_cards = max(3, requested_cards - 3)
-            num_cards, safe_max = _compute_safe_card_count(
-                requested_cards, topic_for_estimate, retry_attempt=attempt
-            )
-            retry_max_tokens = int(_get_default_max_tokens() * 1.5) if attempt > 0 else None
-            if _is_formula_topic(topic_for_estimate):
-                base = _get_default_max_tokens()
-                retry_max_tokens = min(retry_max_tokens or base, 800)
-            logger.info(
-                "Requested cards: %d, Safe max cards: %d, Final cards used: %d (attempt %d)%s",
-                requested_cards,
-                safe_max,
-                num_cards,
-                attempt + 1,
-                f", max_tokens={retry_max_tokens}" if retry_max_tokens else "",
-            )
-
-            if text_input:
-                # Text mode: generate only from pasted text. Topic optional (e.g. deck name) for example detection.
-                try:
-                    response_text = _generate_flashcards_from_text(
-                        text_input,
-                        lang_hint,
-                        num_cards=num_cards,
-                        strict_text_only=payload.strict_text_only,
-                        include_background=payload.include_background,
-                        topic=payload.topic,
-                        skip_cache=attempt > 0,
-                        max_tokens_override=retry_max_tokens,
-                    )
-                except ValueError as e:
-                    raise HTTPException(status_code=503, detail=str(e))
-            else:
-                # Topic mode
-                topic_str = payload.topic or ""
-                is_vocab = is_vocabulary_topic(topic_str)
-
-                # Formula topics: one plaintext card per call (no JSON dependency)
-                if _is_formula_topic(topic_str):
-                    seen_questions: set[tuple[str, str]] = set()
-                    all_cards: list[dict] = []
-
-                    for i in range(num_cards):
-                        card = None
-
-                        for attempt in range(3):
-                            try:
-                                response_text = _generate_formula_card_plaintext(
-                                    topic_str,
-                                    lang_hint,
-                                    skip_cache=(attempt > 0 or i > 0),
-                                    max_tokens_override=256,
-                                )
-                                logger.debug("Formula plaintext received (card %d, attempt %d): %s", i + 1, attempt + 1, response_text[:200])
-                            except ValueError as e:
-                                logger.warning("Formula plaintext generation failed (card %d, attempt %d): %s", i + 1, attempt + 1, e)
-                                if attempt == 2:
-                                    raise HTTPException(status_code=503, detail=str(e))
-                                continue
-
-                            card = _parse_formula_plaintext_card(response_text, topic_str, card_index=i)
-                            if card:
-                                break
-                            logger.warning("Formula plaintext parser failed (card %d, attempt %d)", i + 1, attempt + 1)
-
-                        if not card:
-                            continue
-
-                        q = card.get("question", "").strip().lower()
-                        a = card.get("answer_short", "").strip()
-
-                        if not q:
-                            logger.warning("Skipping card with empty question")
-                            continue
-
-                        key = (q, a)
-                        if key in seen_questions:
-                            logger.warning("Skipping exact duplicate (q+a): %s", q)
-                            continue
-
-                        seen_questions.add(key)
-                        all_cards.append(card)
-
-                    if len(all_cards) == 0:
-                        logger.warning("Formula generation produced zero valid cards")
-                        raise HTTPException(status_code=503, detail="No flashcards generated")
-
-                    parsed_json = {"flashcards": all_cards}
-                    break
-
-                # Loanword vocabulary: Persian word → French origin (e.g. French loanwords in Persian)
-                if is_vocab and is_loanword_vocab_topic(topic_str):
-                    try:
-                        response_text = _generate_flashcards_from_loanword_vocab(
-                            topic_str,
-                            lang_hint,
-                            num_cards=num_cards,
-                            skip_cache=attempt > 0,
-                            max_tokens_override=retry_max_tokens,
-                        )
-                        parsed_json = _extract_json(response_text)
-                        break
-                    except ValueError as e:
-                        raise HTTPException(status_code=503, detail=str(e))
-
-                # Translation vocabulary: direct generation (word → translation)
-                if is_vocab and is_translation_vocab_topic(topic_str):
-                    try:
-                        response_text = _generate_flashcards_from_translation_vocab(
-                            topic_str,
-                            lang_hint,
-                            num_cards=num_cards,
-                            skip_cache=attempt > 0,
-                            max_tokens_override=retry_max_tokens,
-                        )
-                        parsed_json = _extract_json(response_text)
-                        break
-                    except ValueError as e:
-                        raise HTTPException(status_code=503, detail=str(e))
-
-                # Use simple mode only for non-formula topics. Formula topics (including "simple formulas")
-                # use the per-card path to avoid truncation when LaTeX-heavy responses exceed token limits.
-                use_simple_mode = not _is_formula_topic(topic_str)
-                if use_simple_mode:
-                    used_simple_mode = True
-                    # Simple generation mode: no LaTeX, minimal prompt, json.loads only
-                    # Retry once with same prompt on parse failure (do not modify content)
-                    parsed_json = {}
-                    # Use higher max_tokens for multi-card to reduce truncation
-                    simple_max = max(_get_default_max_tokens(), 120 * num_cards + 600)
-                    for parse_attempt in range(2):
-                        try:
-                            response_text = _generate_flashcards_simple(
-                                topic_str, lang_hint, num_cards=num_cards, skip_cache=parse_attempt > 0, max_tokens_override=simple_max
-                            )
-                            parsed_json = _extract_json_simple(response_text)
-                            if "flashcards" in parsed_json and isinstance(parsed_json.get("flashcards"), list):
-                                break
-                        except ValueError as e:
-                            raise HTTPException(status_code=503, detail=str(e))
-                        if parse_attempt == 0:
-                            logger.warning("Simple mode parse failed, retrying with same prompt")
-                    if "flashcards" not in parsed_json or not isinstance(parsed_json.get("flashcards"), list):
-                        preview = (response_text or "")[:500].replace("\n", " ")
-                        logger.error("Simple mode parse failed after retry. Preview: %s", preview)
-                        raise HTTPException(status_code=502, detail="Failed to parse LLM response as JSON")
-                    break
-                elif _is_single_person_topic(topic_str):
-                    # Single-person topics: identity, works, achievements (e.g. Hafez, Who is Hafez?)
-                    try:
-                        response_text = _generate_flashcards_from_person_topic(
-                            topic_str, lang_hint, num_cards=num_cards, skip_cache=attempt > 0, max_tokens_override=retry_max_tokens
-                        )
-                    except ValueError as e:
-                        raise HTTPException(status_code=503, detail=str(e))
-                elif _is_question_style_topic(topic_str):
-                    # Skip concept extraction for question-style topics; generate directly
-                    try:
-                        if _is_formula_topic(topic_str):
-                            def _gen_question(batch_size: int, batch_index: int) -> str:
-                                return _generate_flashcards_from_question_topic(
-                                    topic_str,
-                                    lang_hint,
-                                    num_cards=batch_size,
-                                    skip_cache=(batch_index > 0 or attempt > 0),
-                                    max_tokens_override=retry_max_tokens,
-                                )
-
-                            response_text = _generate_flashcards_formula_batched(
-                                _gen_question, num_cards
-                            )
-                        else:
-                            response_text = _generate_flashcards_from_question_topic(
-                                topic_str, lang_hint, num_cards=num_cards, skip_cache=attempt > 0, max_tokens_override=retry_max_tokens
-                            )
-                    except ValueError as e:
-                        raise HTTPException(status_code=503, detail=str(e))
-                elif _is_mapping_mode(topic_str):
-                    # Mapping topics: item A ↔ item B (e.g. phonetic alphabet, symbols)
-                    try:
-                        response_text = _generate_flashcards_from_mapping_topic(
-                            topic_str, lang_hint, num_cards=num_cards, skip_cache=attempt > 0, max_tokens_override=retry_max_tokens
-                        )
-                    except ValueError as e:
-                        raise HTTPException(status_code=503, detail=str(e))
-                elif _is_people_list_topic(topic_str) and not is_vocab:
-                    # List-of-people topics: use dedicated extraction + generation for "Who was X?" cards
-                    # (vocabulary topics use generic path above)
-                    concepts = _extract_concepts(
-                        topic=topic_str, language_hint=lang_hint, is_people_list=True, num_cards=num_cards
-                    )
-                    if concepts:
-                        try:
-                            response_text = _generate_flashcards_from_people_list(
-                                concepts, topic_str, lang_hint, num_cards=num_cards, skip_cache=attempt > 0, max_tokens_override=retry_max_tokens
-                            )
-                        except ValueError as e:
-                            raise HTTPException(status_code=503, detail=str(e))
-                    else:
-                        # Fallback to generic generation if people extraction fails
-                        concepts = _extract_concepts(topic=topic_str, language_hint=lang_hint, num_cards=num_cards)
-                        if concepts:
-                            try:
-                                response_text = _generate_flashcards_from_concepts(
-                                    concepts, topic_str, lang_hint, is_vocab=False, num_cards=num_cards, skip_cache=attempt > 0, max_tokens_override=retry_max_tokens
-                                )
-                            except ValueError as e:
-                                raise HTTPException(status_code=503, detail=str(e))
-                        else:
-                            # Fallback: single-stage generation
-                            wants_ex = _topic_wants_examples(topic_str)
-                            if wants_ex:
-                                style_rules = """Instructions:
-    - Prefer specific facts, names, events, or individuals over abstract concepts.
-    - Prefer questions that start with: Who, What, When, Where.
-    - Each question must be exactly: 'Who was [Name]?' for people-list topics.
-    - Format each answer as:
-    Definition:
-    <one concise sentence>
-
-    Example:
-    <one concrete example (notable work, achievement)>
-
-    Do NOT combine into a single paragraph. Include a blank line between definition and Example.
-    - Cards must be directly related to the topic."""
-                                json_schema = '''{
-      "flashcards": [
-        {
-          "question": "Who was <Name>?",
-          "answer_short": "Definition:\\n\\n<definition>\\n\\nExample:\\n\\n<example>",
-          "has_example": true,
-          "answer_detailed": null,
-          "difficulty": "easy"
-        }
-      ]
-    }'''
-                            else:
-                                style_rules = """Instructions:
-    - Prefer specific facts, names, events, or individuals over abstract concepts.
-    - Prefer questions that start with: Who, What, When, Where.
-    - Each question must be exactly: 'Who was [Name]?' for people-list topics.
-    - Each answer must be a concise definition only (1–2 sentences). Do NOT include examples.
-    - Cards must be directly related to the topic."""
-                                json_schema = '''{
-      "flashcards": [
-        {
-          "question": "Who was <Name>?",
-          "answer_short": "<concise definition only, 1-2 sentences>",
-          "answer_detailed": null,
-          "difficulty": "easy"
-        }
-      ]
-    }'''
-
-                            example_block = f"\n{EXAMPLE_REQUIREMENT_MANDATORY}\n" if wants_ex else ""
-                            fallback_prompt = f"""{JSON_HEADER}
-    {build_language_rule(topic_str, "", lang_hint)}{example_block}
-    You are generating flashcards for studying notable individuals.
-
-    Topic:
-    {topic_str}
-
-    {style_rules}
-
-    {CONTENT_RULES}
-
-    {_get_math_instruction(topic_str)}
-
-    {JSON_OUTPUT_REQUIREMENT}
-
-    Return ONLY this JSON structure (no other text):
-    {json_schema}
-
-    Rules:
-    - {_build_count_instruction(num_cards)}
-    - Output MUST be valid JSON. No plain text, no Q/A format. Use double quotes. Escape newlines as \\n.
-    {JSON_CLOSING_CONSTRAINT}
-    {NON_FORMULA_STRICT_RULE}"""
-
-                            try:
-                                response_text = generate_completion(fallback_prompt, skip_cache=attempt > 0, max_tokens=retry_max_tokens)
-                            except ValueError as e:
-                                raise HTTPException(status_code=503, detail=str(e))
-                else:
-                    # Extract concepts then generate (generic topics)
-                    concepts = _extract_concepts(topic=topic_str, language_hint=lang_hint, num_cards=num_cards)
-
-                    if concepts:
-                        try:
-                            if _is_formula_topic(topic_str):
-                                concept_batches = [
-                                    concepts[i : i + FORMULA_BATCH_SIZE]
-                                    for i in range(0, len(concepts), FORMULA_BATCH_SIZE)
-                                ]
-                                num_batches = min(
-                                    len(concept_batches),
-                                    (num_cards + FORMULA_BATCH_SIZE - 1) // FORMULA_BATCH_SIZE,
-                                )
-
-                                def _gen_from_concepts(batch_size: int, batch_index: int) -> str:
-                                    subset = concept_batches[batch_index] if batch_index < len(concept_batches) else concept_batches[-1]
-                                    return _generate_flashcards_from_concepts(
-                                        subset,
-                                        topic_str,
-                                        lang_hint,
-                                        is_vocab=is_vocab,
-                                        num_cards=batch_size,
-                                        skip_cache=(batch_index > 0 or attempt > 0),
-                                        max_tokens_override=retry_max_tokens,
-                                    )
-
-                                response_text = _generate_flashcards_formula_batched(
-                                    _gen_from_concepts, num_cards, num_batches=num_batches
-                                )
-                            else:
-                                response_text = _generate_flashcards_from_concepts(
-                                    concepts, topic_str, lang_hint, is_vocab=is_vocab, num_cards=num_cards, skip_cache=attempt > 0, max_tokens_override=retry_max_tokens
-                                )
-                        except ValueError as e:
-                            raise HTTPException(status_code=503, detail=str(e))
-                    else:
-                        # Fallback: single-stage generation when concept extraction fails
-                        wants_ex = _topic_wants_examples(topic_str)
-                        is_formula = _is_formula_topic(topic_str)
-                        if is_vocab:
-                            vocab_instruction = build_vocab_instruction(topic_str)
-                            if wants_ex:
-                                style_rules = f"""Vocabulary Topics:
-    If the topic appears to be vocabulary, slang, or terminology:
-    - Each flashcard should explain a specific word or phrase.
-    - The question should ask for the meaning of the word.
-    - The answer should define it clearly and include an example.
-    {vocab_instruction}
-    {EXAMPLE_FORMAT_REQUIREMENT}"""
-                                fallback_json = '''{
-      "flashcards": [
-        {
-          "question": "<question>",
-          "answer_short": "Definition:\\n\\n<definition>\\n\\nExample:\\n\\n<example>",
-          "has_example": true,
-          "answer_detailed": null,
-          "difficulty": "easy"
-        }
-      ]
-    }'''
-                            else:
-                                style_rules = f"""Vocabulary Topics:
-    If the topic appears to be vocabulary, slang, or terminology:
-    - Each flashcard should explain a specific word or phrase.
-    - The question should ask for the meaning of the word.
-    - The answer should be a concise definition only (1–2 sentences). Do NOT include examples.
-    {vocab_instruction}
-    {DEFINITION_ONLY_FORMAT}"""
-                                fallback_json = '''{
-      "flashcards": [
-        {
-          "question": "<question>",
-          "answer_short": "<concise definition only, 1-2 sentences>",
-          "answer_detailed": null,
-          "difficulty": "easy"
-        }
-      ]
-    }'''
-                        else:
-                            if _is_formula_topic(topic_str):
-                                style_rules = FORMULA_INSTRUCTION
-                                fallback_json = '''{
-      "flashcards": [
-        {
-          "question": "<question>",
-          "answer_short": "<short explanation, formula when appropriate>",
-          "answer_detailed": null,
-          "difficulty": "easy"
-        }
-      ]
-    }'''
-                            elif wants_ex:
-                                style_rules = f"""Instructions:
-    - Prefer specific facts, names, events, or individuals over abstract concepts.
-    - Avoid abstract explanations; focus on concrete, memorable facts.
-    - Questions should be concise and suitable for active recall.
-    - Each flashcard must test exactly ONE piece of knowledge AND include a real-world example.
-    - Prefer named entities (people, places, works, events) when possible.
-    - Prefer questions that start with: Who, What, When, Where.
-    - Avoid questions that start with: Why, How—unless absolutely necessary.
-    - Avoid multi-part questions. Bad: "Who was Henri Cartier-Bresson and what was the decisive moment?" Good: "Who was Henri Cartier-Bresson?" / "What is the decisive moment in photography?"
-    - Questions must be concise and focused on recall.
-    - Cards must be directly related to the topic.
-
-    {EXAMPLE_FORMAT_REQUIREMENT}"""
-                                fallback_json = '''{
-      "flashcards": [
-        {
-          "question": "<question>",
-          "answer_short": "Definition:\\n\\n<definition>\\n\\nExample:\\n\\n<example>",
-          "has_example": true,
-          "answer_detailed": null,
-          "difficulty": "easy"
-        }
-      ]
-    }'''
-                            else:
-                                style_rules = f"""Instructions:
-    - Prefer specific facts, names, events, or individuals over abstract concepts.
-    - Avoid abstract explanations; focus on concrete, memorable facts.
-    - Questions should be concise and suitable for active recall.
-    - Each flashcard must test exactly ONE piece of knowledge.
-    - Prefer named entities (people, places, works, events) when possible.
-    - Prefer questions that start with: Who, What, When, Where.
-    - Avoid questions that start with: Why, How—unless absolutely necessary.
-    - Avoid multi-part questions. Bad: "Who was Henri Cartier-Bresson and what was the decisive moment?" Good: "Who was Henri Cartier-Bresson?" / "What is the decisive moment in photography?"
-    - Questions must be concise and focused on recall.
-    - Cards must be directly related to the topic.
-
-    {DEFINITION_ONLY_FORMAT}"""
-                                fallback_json = '''{
-      "flashcards": [
-        {
-          "question": "<question>",
-          "answer_short": "<concise definition only, 1-2 sentences>",
-          "answer_detailed": null,
-          "difficulty": "easy"
-        }
-      ]
-    }'''
-
-                        example_block = f"\n{EXAMPLE_REQUIREMENT_MANDATORY}\n" if wants_ex else ""
-                        fallback_prompt = f"""{JSON_HEADER}
-    {build_language_rule(topic_str, "", lang_hint)}{example_block}
-    You are generating flashcards for studying.
-
-    Topic:
-    {topic_str}
-
-    {style_rules}
-
-    {CONTENT_RULES}
-
-    {_get_math_instruction(topic_str)}
-
-    {JSON_OUTPUT_REQUIREMENT}
-
-    Return ONLY this JSON structure (no other text):
-    {fallback_json}
-
-    Rules:
-    - {_build_count_instruction(num_cards)}
-    - Output MUST be valid JSON. No plain text, no Q/A format. Use double quotes. Escape newlines as \\n.
-    {JSON_CLOSING_CONSTRAINT}
-    {NON_FORMULA_STRICT_RULE}"""
-
-                        try:
-                            if is_formula:
-                                def _gen_fallback(batch_size: int, batch_index: int) -> str:
-                                    prompt = f"""{JSON_HEADER}
-    {build_language_rule(topic_str, "", lang_hint)}
-    You are generating flashcards for studying.
-
-    Topic:
-    {topic_str}
-
-    {style_rules}
-
-    {CONTENT_RULES}
-
-    {_get_math_instruction(topic_str)}
-
-    {JSON_OUTPUT_REQUIREMENT}
-
-    Return ONLY this JSON structure (no other text):
-    {fallback_json}
-
-    Rules:
-    - {_build_count_instruction(batch_size)}
-    - Output MUST be valid JSON. No plain text, no Q/A format. Use double quotes. Escape newlines as \\n.
-    {JSON_CLOSING_CONSTRAINT}"""
-                                    return generate_completion(
-                                        prompt,
-                                        skip_cache=(batch_index > 0 or attempt > 0),
-                                        max_tokens=retry_max_tokens,
-                                    )
-
-                                response_text = _generate_flashcards_formula_batched(
-                                    _gen_fallback, num_cards
-                                )
-                            else:
-                                response_text = generate_completion(fallback_prompt, skip_cache=attempt > 0, max_tokens=retry_max_tokens)
-                        except ValueError as e:
-                            raise HTTPException(status_code=503, detail=str(e))
-
-            try:
-                parsed_json = _extract_json(response_text)
-            except ValueError as e:
-                if "truncated" in str(e).lower() and attempt < 2:
-                    logger.warning(
-                        "LLM response truncated on attempt %d, retrying with fewer cards",
-                        attempt + 1,
-                    )
-                    continue
-                logger.error(
-                    "%sGeneration failed after retry: %s response_preview=%s",
-                    _gen_log_prefix(),
-                    e,
-                    _preview_for_log(response_text or ""),
-                )
-                raise HTTPException(status_code=503, detail=str(e))
-            if "flashcards" not in parsed_json or not isinstance(
-                parsed_json.get("flashcards"), list
-            ):
-                if attempt < 2:
-                    continue
-                preview = (response_text or "")[:500].replace("\n", " ")
-                logger.error(
-                    "Failed to parse LLM response: expected flashcards JSON. Preview: %s",
-                    preview,
-                )
-                raise HTTPException(
-                    status_code=502,
-                    detail="Failed to parse LLM response as JSON",
-                )
-            break
-
-        cards: list = parsed_json["flashcards"]
-        logger.info("Parsed cards preview: %s", cards[:2])
-        if text_input:
-            logger.info("[text-mode] Stage 1 - candidate cards after generation: %d", len(cards))
-
-        # RULE: If at least 1 valid card exists → SUCCESS. Only 503 when ZERO valid cards.
-        # Never fail for len(cards) < num_cards (partial results are accepted).
-        if not cards:
-            raise HTTPException(status_code=503, detail="No flashcards generated")
 
         topic_str = (payload.topic or "").strip()
-
-        is_persian_mapping_mode = bool(
-            text_input and _is_persian_mapping_text(text_input)
-        )
-        if is_persian_mapping_mode:
-            logger.info("Persian mapping mode detected — skipping transcript filters")
-
-        # Grounding check: when text mode and strict_text_only, filter out unsupported cards
-        if text_input and payload.strict_text_only and cards and not is_persian_mapping_mode:
-            before_ground = len(cards)
-            cards = _filter_ungrounded_cards(cards, text_input)
-            logger.info("[text-mode] Stage 2 - after grounding: %d kept (removed %d)", len(cards), before_ground - len(cards))
-
-        # Low-value filter: when text mode, remove transcript housekeeping cards
-        if text_input and cards and not is_persian_mapping_mode:
-            before_lv = len(cards)
-            cards = _filter_low_value_transcript_cards(cards)
-            logger.info("[text-mode] Stage 3 - after low-value filter: %d kept (removed %d)", len(cards), before_lv - len(cards))
-
-        # Generic card filter: limit shallow "What is X?" cards in transcript mode
-        if text_input and cards and not is_persian_mapping_mode:
-            before_gen = len(cards)
-            cards = _filter_generic_transcript_cards(cards, text_input, max_generic=2)
-            if len(cards) < before_gen:
-                logger.info("[text-mode] Stage 3b - after generic filter: %d kept (removed %d)", len(cards), before_gen - len(cards))
-
-        # Example requirement: only when USER explicitly requested via topic (not inferred from transcript text)
-        wants_examples = _topic_wants_examples(topic_str)
-        if wants_examples and cards:
-            before_ex = len(cards)
-            cards = [c for c in cards if "Example:" in (c.get("answer_short") or "")]
-            if text_input:
-                logger.info("[text-mode] after example filter: %d kept (removed %d)", len(cards), before_ex - len(cards))
-            if len(cards) == 0:
-                raise HTTPException(
-                    status_code=503,
-                    detail="No valid cards with examples generated",
-                )
-            if not text_input:
-                logger.info("After example filter: %d cards with examples", len(cards))
-
-        # Transcript-only: overlap reduction, cap (skip for Persian mapping mode)
-        if text_input and cards and not is_persian_mapping_mode:
-            before_overlap = len(cards)
-            cards = _reduce_transcript_overlaps(cards)
-            logger.info("[text-mode] Stage 4 - after overlap reduction: %d kept (removed %d)", len(cards), before_overlap - len(cards))
-            transcript_cap = max(requested_cards, 10)
-            before_cap = len(cards)
-            cards = _select_best_transcript_cards(cards, max_cards=transcript_cap)
-            if before_cap > transcript_cap:
-                logger.info("[text-mode] Stage 5 - capped at %d (had %d)", transcript_cap, before_cap)
 
         # Preload existing questions for duplicate prevention (one query for entire batch)
         existing_result = await db.execute(
