@@ -27,6 +27,7 @@ import {
   MoreVertical,
   Pencil,
   Search,
+  SlidersHorizontal,
   Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -68,7 +69,7 @@ const UNCATEGORIZED = "__uncategorized__";
 
 function DeckListSkeleton({ rows = 4 }: { rows?: number }) {
   return (
-    <div className="space-y-3" aria-hidden>
+    <div className="space-y-3 max-mobile:space-y-2" aria-hidden>
       {Array.from({ length: rows }).map((_, i) => (
         <div
           key={i}
@@ -198,6 +199,9 @@ export default function DecksPage() {
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [openDeckMenuId, setOpenDeckMenuId] = useState<string | null>(null);
+  const [openCategoryActionsId, setOpenCategoryActionsId] = useState<string | null>(null);
+  const [filtersMenuOpen, setFiltersMenuOpen] = useState(false);
+  const [pageMenuOpen, setPageMenuOpen] = useState(false);
   const [moveModalDeckId, setMoveModalDeckId] = useState<string | null>(null);
   const [moveModalCategoryId, setMoveModalCategoryId] = useState<string | null>(null);
   const [moveModalSaving, setMoveModalSaving] = useState(false);
@@ -549,12 +553,15 @@ export default function DecksPage() {
   useEffect(() => {
     function handleClickOutside() {
       setOpenDeckMenuId(null);
+      setOpenCategoryActionsId(null);
+      setFiltersMenuOpen(false);
+      setPageMenuOpen(false);
     }
-    if (openDeckMenuId) {
+    if (openDeckMenuId || openCategoryActionsId || filtersMenuOpen || pageMenuOpen) {
       document.addEventListener("click", handleClickOutside);
       return () => document.removeEventListener("click", handleClickOutside);
     }
-  }, [openDeckMenuId]);
+  }, [openDeckMenuId, openCategoryActionsId, filtersMenuOpen, pageMenuOpen]);
 
   const categoryNameMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -586,7 +593,11 @@ export default function DecksPage() {
 
   function switchDeckLayout(layout: "list" | "grid") {
     setDeckLayout(layout);
-    try { localStorage.setItem("flashcards_deck_layout", layout); } catch {}
+    try {
+      localStorage.setItem("flashcards_deck_layout", layout);
+    } catch {
+      /* ignore */
+    }
   }
 
   function renderDeckMenu(deck: Deck) {
@@ -680,17 +691,17 @@ export default function DecksPage() {
             router.push(`/decks/${deck.id}`);
           }
         }}
-        className="deck-card group rounded-lg border border-border px-4 py-3.5 flex items-center justify-between gap-3 hover:bg-muted/40 transition-colors cursor-pointer max-mobile:px-3.5 max-mobile:py-3"
+        className="deck-card group rounded-lg border border-border px-4 py-3.5 flex items-center justify-between gap-3 hover:bg-muted/40 transition-colors cursor-pointer max-mobile:px-3 max-mobile:py-2.5 max-mobile:gap-2"
       >
-        <div className="flex items-center gap-3 flex-1 min-w-0">
+        <div className="flex items-center gap-3 flex-1 min-w-0 max-mobile:gap-2">
           <div className="flex flex-col gap-0.5 min-w-0">
             <div className="flex flex-wrap items-center gap-2 min-w-0">
-              <span className="font-medium text-sm leading-snug truncate">
+              <span className="font-semibold text-sm leading-snug truncate max-mobile:text-base max-mobile:font-semibold">
                 {deck.name}
               </span>
               <DeckGenerationBadge status={deck.generation_status} />
             </div>
-            <span className="text-xs text-muted-foreground break-words">
+            <span className="text-xs text-muted-foreground break-words max-mobile:leading-snug">
               {deck.card_count ?? 0} {deck.card_count === 1 ? "card" : "cards"}
               {viewMode === "all" && deck.category_id && categoryNameMap.has(deck.category_id) && (
                 <> · {categoryNameMap.get(deck.category_id)}</>
@@ -705,7 +716,7 @@ export default function DecksPage() {
             </span>
           </div>
         </div>
-        <div className="shrink-0 flex items-center gap-0.5 max-mobile:opacity-60">
+        <div className="shrink-0 flex items-center gap-0.5 max-mobile:opacity-100">
           {renderDeckMenu(deck)}
         </div>
       </div>
@@ -715,6 +726,50 @@ export default function DecksPage() {
   function renderDeckTile(deck: Deck) {
     const dateShort =
       showDeckDates ? formatDeckCreatedCalendarDate(deck.created_at) : null;
+    const narrowGrid = viewMode === "grouped";
+    const categoryLabel =
+      viewMode === "all" && deck.category_id && categoryNameMap.has(deck.category_id)
+        ? categoryNameMap.get(deck.category_id)
+        : null;
+
+    const metaRow = (
+      <div className="flex min-w-0 flex-nowrap items-center gap-x-0.5 overflow-hidden text-muted-foreground max-mobile:text-[9px] max-mobile:leading-tight sm:gap-x-1 sm:text-[11px] sm:leading-snug">
+        <span className="shrink-0 tabular-nums">
+          {deck.card_count ?? 0} {(deck.card_count ?? 0) === 1 ? "card" : "cards"}
+        </span>
+        {categoryLabel && (
+          <>
+            <span className="shrink-0 text-muted-foreground/40" aria-hidden>
+              ·
+            </span>
+            <span className="min-w-0 truncate" title={categoryLabel}>
+              {categoryLabel}
+            </span>
+          </>
+        )}
+        {deck.is_public && (
+          <>
+            <span className="shrink-0 text-muted-foreground/40" aria-hidden>
+              ·
+            </span>
+            <span className="shrink-0 whitespace-nowrap text-emerald-600 dark:text-emerald-400">
+              Public
+            </span>
+          </>
+        )}
+        {dateShort && (
+          <>
+            <span className="shrink-0 text-muted-foreground/40" aria-hidden>
+              ·
+            </span>
+            <span className="min-w-0 truncate text-muted-foreground/80" title={dateShort}>
+              {dateShort}
+            </span>
+          </>
+        )}
+      </div>
+    );
+
     return (
       <div
         role="link"
@@ -726,79 +781,124 @@ export default function DecksPage() {
             router.push(`/decks/${deck.id}`);
           }
         }}
-        className="group relative rounded-xl border border-border bg-background p-4 flex flex-col gap-2 hover:bg-muted/30 transition-colors cursor-pointer max-mobile:p-3.5"
+        className="group relative flex w-full min-w-0 cursor-pointer flex-col overflow-hidden rounded-lg border border-border bg-background transition-colors hover:bg-muted/30 max-mobile:h-[92px] max-mobile:min-h-[92px] max-mobile:p-1.5 max-mobile:py-1 sm:h-[120px] sm:min-h-[120px] sm:rounded-xl sm:p-2.5"
       >
-        <div className="flex items-start justify-between gap-2 min-w-0">
-          <div className="min-w-0 flex-1 space-y-1.5">
-            <div className="flex flex-wrap items-center gap-2">
-              <h3 className="font-semibold text-sm leading-snug line-clamp-2 min-w-0 flex-1">
-                {deck.name}
-              </h3>
-              <DeckGenerationBadge status={deck.generation_status} />
-            </div>
-          </div>
-          <div className="shrink-0">
+        <div className="absolute right-0.5 top-0.5 z-10 sm:right-1.5 sm:top-1.5">
+          <div className="shrink-0 max-mobile:[&_button]:h-6 max-mobile:[&_button]:w-6 sm:[&_button]:h-7 sm:[&_button]:w-7 sm:[&_button]:h-8 sm:[&_button]:w-8">
             {renderDeckMenu(deck)}
           </div>
         </div>
-        {deck.description && (
-          <p className="text-xs text-muted-foreground leading-relaxed line-clamp-2">{deck.description}</p>
-        )}
-        <div className="flex flex-wrap items-baseline gap-x-1 gap-y-0.5 mt-auto pt-1 text-xs text-muted-foreground">
-          <span className="break-words min-w-0">
-            {deck.card_count ?? 0} {(deck.card_count ?? 0) === 1 ? "card" : "cards"}
-            {viewMode === "all" && deck.category_id && categoryNameMap.has(deck.category_id) && (
-              <> · <span>{categoryNameMap.get(deck.category_id)}</span></>
-            )}
-            {deck.is_public && <> · <span className="text-emerald-600 dark:text-emerald-400">Public</span></>}
-            {dateShort && (
-              <>
-                {" "}
-                · <span className="text-muted-foreground/75">{dateShort}</span>
-              </>
-            )}
-          </span>
+
+        <div className="flex h-full min-h-0 min-w-0 flex-col justify-between pr-8 max-mobile:pr-7 sm:pr-10">
+          <div className="min-w-0 shrink-0">
+            <h3
+              className={`min-w-0 break-words font-semibold text-foreground line-clamp-2 max-mobile:text-[11px] max-mobile:leading-tight sm:leading-snug ${
+                narrowGrid ? "max-mobile:text-[10px] sm:text-xs" : "sm:text-sm"
+              }`}
+            >
+              {deck.name}
+            </h3>
+            <div className="mt-0 min-w-0 sm:hidden">{metaRow}</div>
+            <div className="mt-0.5 min-w-0 max-w-full max-mobile:[&_span]:py-0 max-mobile:[&_span]:text-[9px] sm:mt-0.5 sm:[&_span]:text-[10px] md:[&_span]:text-[11px]">
+              <DeckGenerationBadge status={deck.generation_status} />
+            </div>
+          </div>
+
+          <div className="hidden min-h-0 flex-1 sm:block" aria-hidden />
+
+          <div className="hidden shrink-0 border-t border-transparent pt-0.5 sm:flex sm:items-center">
+            {metaRow}
+          </div>
         </div>
       </div>
     );
   }
 
   function renderDecks(deckList: Deck[], wrapper?: (deck: Deck, content: React.ReactNode) => React.ReactNode) {
+    const groupedDeckLayout = viewMode === "grouped";
     if (deckLayout === "grid") {
+      const gridClassName = groupedDeckLayout
+        ? "grid w-full min-w-0 grid-cols-2 gap-2 sm:gap-3 sm:grid-cols-2 lg:grid-cols-3"
+        : "grid w-full min-w-0 grid-cols-1 gap-4 max-mobile:gap-3 sm:grid-cols-2 lg:grid-cols-3";
       return (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {deckList.map((deck) => {
-            const tile = <div key={deck.id}>{renderDeckTile(deck)}</div>;
-            return wrapper ? <div key={deck.id}>{wrapper(deck, renderDeckTile(deck))}</div> : tile;
-          })}
+        <div className={gridClassName}>
+          {deckList.map((deck) => (
+            <div key={deck.id} className="min-w-0 w-full">
+              {wrapper ? wrapper(deck, renderDeckTile(deck)) : renderDeckTile(deck)}
+            </div>
+          ))}
         </div>
       );
     }
     return (
-      <div className="space-y-1.5">
-        {deckList.map((deck) => {
-          const row = <div key={deck.id}>{renderDeckRow(deck)}</div>;
-          return wrapper ? <div key={deck.id}>{wrapper(deck, renderDeckRow(deck))}</div> : row;
-        })}
+      <div className={groupedDeckLayout ? "flex flex-col gap-3" : "flex flex-col gap-4 max-mobile:gap-3"}>
+        {deckList.map((deck) =>
+          wrapper ? (
+            <div key={deck.id}>{wrapper(deck, renderDeckRow(deck))}</div>
+          ) : (
+            <div key={deck.id} className="min-w-0 w-full">
+              {renderDeckRow(deck)}
+            </div>
+          ),
+        )}
       </div>
     );
   }
 
   return (
-    <PageContainer>
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-semibold tracking-tight">Decks</h1>
-          <div className="flex items-center gap-2">
+    <PageContainer className="max-mobile:space-y-3">
+        <div className="flex items-center justify-between gap-2 max-mobile:gap-2">
+          <h1 className="text-2xl font-semibold tracking-tight max-mobile:text-xl shrink-0 min-w-0">Decks</h1>
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             <button
               type="button"
-              onClick={() => { setCategoryModalOpen(true); setCategoryCreateError(null); }}
-              className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+              onClick={() => {
+                setCategoryModalOpen(true);
+                setCategoryCreateError(null);
+              }}
+              className="hidden sm:inline text-sm text-muted-foreground hover:text-foreground transition-colors"
             >
               + Category
             </button>
+            <div className="relative sm:hidden">
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-9 w-9 text-muted-foreground"
+                aria-label="More deck list actions"
+                aria-expanded={pageMenuOpen}
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  e.preventDefault();
+                  setPageMenuOpen((o) => !o);
+                }}
+              >
+                <MoreVertical className="size-4" />
+              </Button>
+              {pageMenuOpen && (
+                <div
+                  className="absolute right-0 top-full z-50 mt-1 min-w-[11rem] rounded-lg border border-border bg-popover py-1 shadow-lg"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <button
+                    type="button"
+                    className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm hover:bg-muted max-mobile:min-h-[44px]"
+                    onClick={() => {
+                      setPageMenuOpen(false);
+                      setCategoryModalOpen(true);
+                      setCategoryCreateError(null);
+                    }}
+                  >
+                    Create category
+                  </button>
+                </div>
+              )}
+            </div>
             <Link
               href="/create-deck"
-              className="inline-flex h-9 items-center justify-center rounded-lg bg-neutral-900 text-white hover:bg-neutral-800 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200 px-4 text-sm font-medium"
+              className="inline-flex h-9 items-center justify-center rounded-lg bg-neutral-900 text-white hover:bg-neutral-800 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200 px-4 text-sm font-medium max-mobile:px-3 max-mobile:text-sm"
             >
               New Deck
             </Link>
@@ -1052,8 +1152,8 @@ export default function DecksPage() {
           </div>
         )}
 
-        <div className="space-y-3">
-          <div className="relative">
+        <div className="space-y-2 sm:space-y-3">
+          <div className="relative w-full">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none" />
             <input
               type="text"
@@ -1061,12 +1161,12 @@ export default function DecksPage() {
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search decks…"
               autoComplete="off"
-              className="w-full rounded-lg border border-border bg-background pl-9 pr-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+              className="w-full rounded-lg border border-border bg-background pl-9 pr-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 max-mobile:py-1.5 max-mobile:text-sm"
             />
           </div>
-          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="inline-flex rounded-lg border border-border/50 bg-muted/30 p-0.5">
+          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:gap-x-3 sm:gap-y-2">
+            <div className="flex w-full min-w-0 flex-row flex-wrap items-center gap-2 sm:w-auto sm:flex-nowrap sm:items-center sm:gap-2">
+              <div className="flex shrink-0 items-stretch rounded-lg border border-border/50 bg-muted/30 p-0.5 max-mobile:h-7 sm:inline-flex sm:h-auto">
                 {(
                   [
                     { value: "grouped" as const, label: "Grouped" },
@@ -1077,7 +1177,7 @@ export default function DecksPage() {
                     key={value}
                     type="button"
                     onClick={() => setViewMode(value)}
-                    className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
+                    className={`inline-flex flex-none items-center justify-center rounded-md font-medium transition-colors max-mobile:min-h-0 max-mobile:px-2.5 max-mobile:py-0 max-mobile:text-[11px] sm:px-3 sm:py-1.5 sm:text-xs ${
                       viewMode === value
                         ? "bg-background text-foreground shadow-sm ring-1 ring-border/60"
                         : "text-muted-foreground hover:text-foreground"
@@ -1087,26 +1187,113 @@ export default function DecksPage() {
                   </button>
                 ))}
               </div>
-              <div className="inline-flex rounded-lg border border-border/50 bg-muted/30 p-0.5">
+              <div
+                className="flex h-7 shrink-0 items-stretch rounded-lg border border-border/50 bg-muted/30 p-0.5 sm:h-auto sm:min-w-0 sm:flex-none"
+                role="tablist"
+                aria-label="List or grid layout"
+              >
                 <button
                   type="button"
+                  role="tab"
+                  aria-selected={deckLayout === "list"}
                   onClick={() => switchDeckLayout("list")}
-                  className={`rounded-md p-1 transition-colors ${deckLayout === "list" ? "bg-background text-foreground shadow-sm ring-1 ring-border/60" : "text-muted-foreground hover:text-foreground"}`}
+                  className={`inline-flex min-w-0 flex-none items-center justify-center gap-1 rounded-md font-medium transition-colors max-mobile:min-h-0 max-mobile:px-1.5 max-mobile:py-0 max-mobile:text-[11px] sm:flex-none sm:gap-1.5 sm:p-1.5 sm:text-xs ${
+                    deckLayout === "list"
+                      ? "bg-background text-foreground shadow-sm ring-1 ring-border/60"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
                   aria-label="List view"
                 >
-                  <List className="size-3.5" />
+                  <List className="size-3.5 shrink-0" />
+                  <span className="sm:sr-only">List</span>
                 </button>
                 <button
                   type="button"
+                  role="tab"
+                  aria-selected={deckLayout === "grid"}
+                  title="Grid view"
                   onClick={() => switchDeckLayout("grid")}
-                  className={`rounded-md p-1 transition-colors ${deckLayout === "grid" ? "bg-background text-foreground shadow-sm ring-1 ring-border/60" : "text-muted-foreground hover:text-foreground"}`}
+                  className={`inline-flex min-w-0 flex-none items-center justify-center gap-1 rounded-md font-medium transition-colors max-mobile:min-h-0 max-mobile:px-1.5 max-mobile:py-0 max-mobile:text-[11px] sm:flex-none sm:gap-1.5 sm:p-1.5 sm:text-xs ${
+                    deckLayout === "grid"
+                      ? "bg-background text-foreground shadow-sm ring-1 ring-border/60"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
                   aria-label="Grid view"
                 >
-                  <LayoutGrid className="size-3.5" />
+                  <LayoutGrid className="size-3.5 shrink-0" />
+                  <span className="sm:sr-only">Grid</span>
                 </button>
               </div>
+              <div className="relative ml-auto shrink-0 sm:ml-0 sm:hidden">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-7 gap-1 px-2 text-[11px] shrink-0"
+                  aria-expanded={filtersMenuOpen}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    setFiltersMenuOpen((o) => !o);
+                  }}
+                >
+                  <SlidersHorizontal className="size-3 shrink-0" />
+                  Filters
+                </Button>
+                {filtersMenuOpen && (
+                  <div
+                    className="absolute right-0 top-full z-50 mt-1 w-[min(100vw-2rem,16rem)] rounded-lg border border-border bg-popover p-3 shadow-lg space-y-3"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {viewMode === "all" && (
+                      <div className="space-y-1">
+                        <label htmlFor="deck-sort-mobile" className="text-xs font-medium text-muted-foreground">
+                          Sort
+                        </label>
+                        <select
+                          id="deck-sort-mobile"
+                          value={sortMode}
+                          onChange={(e) => setSortMode(e.target.value as "newest" | "oldest" | "az")}
+                          className="w-full h-9 rounded-md border border-border bg-background px-2 text-sm"
+                        >
+                          <option value="newest">Newest</option>
+                          <option value="oldest">Oldest</option>
+                          <option value="az">A–Z</option>
+                        </select>
+                      </div>
+                    )}
+                    <label className="flex items-center gap-2 text-sm text-foreground cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={showArchived}
+                        onChange={(e) => setShowArchived(e.target.checked)}
+                        className="rounded border-input size-4 shrink-0"
+                      />
+                      Show archived
+                    </label>
+                    <label className="flex items-center gap-2 text-sm text-foreground cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={showDeckDates}
+                        onChange={(e) => {
+                          const v = e.target.checked;
+                          setShowDeckDates(v);
+                          try {
+                            localStorage.setItem(SHOW_DECK_DATES_STORAGE_KEY, v ? "1" : "0");
+                          } catch {
+                            /* ignore */
+                          }
+                        }}
+                        className="rounded border-input size-4 shrink-0"
+                      />
+                      Show dates on cards
+                    </label>
+                  </div>
+                )}
+              </div>
             </div>
-            <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-2">
+            <div className="hidden sm:flex flex-wrap items-center justify-end gap-x-3 gap-y-2">
               {viewMode === "all" && (
                 <select
                   value={sortMode}
@@ -1148,18 +1335,18 @@ export default function DecksPage() {
           </div>
         </div>
 
-        <div className="space-y-3">
+        <div className="space-y-2 sm:space-y-3">
           {showDeckListSkeleton ? (
             <DeckListSkeleton rows={5} />
           ) : decksError ? (
-            <div className="text-center py-12">
+            <div className="text-center py-8 sm:py-12">
               <p className="font-medium mb-1">Unable to load decks</p>
               <p className="text-sm text-muted-foreground">
                 The API may be unavailable. Please refresh the page.
               </p>
             </div>
           ) : decks.length === 0 ? (
-            <div className="text-center py-12">
+            <div className="text-center py-8 sm:py-12">
               <p className="text-muted-foreground mb-4">
                 {showArchived
                   ? "No archived decks."
@@ -1175,7 +1362,7 @@ export default function DecksPage() {
               )}
             </div>
           ) : filteredDecks.length === 0 ? (
-            <div className="text-center py-12">
+            <div className="text-center py-8 sm:py-12">
               <p className="text-muted-foreground">No decks match &ldquo;{searchQuery.trim()}&rdquo;</p>
             </div>
           ) : viewMode === "all" ? (
@@ -1205,31 +1392,31 @@ export default function DecksPage() {
                   isOver={isDropTarget}
                 >
                   <div
-                    className={`group ${idx === 0 ? "mt-0" : "mt-6"}`}
+                    className={`group ${idx === 0 ? "mt-0" : "mt-4 sm:mt-6"}`}
                   >
-                    <div className="flex items-center gap-1.5 min-h-[40px] mb-0.5">
+                    <div className="flex items-center gap-1 min-h-[36px] sm:min-h-[40px] mb-0 max-mobile:gap-0.5">
                       <button
                         type="button"
                         onClick={() => toggleCollapsed(group.categoryId)}
-                        className="p-1.5 -ml-1.5 rounded hover:bg-muted transition-colors shrink-0"
+                        className="p-1 -ml-1 rounded-md hover:bg-muted transition-colors shrink-0 touch-manipulation"
                         aria-label={collapsedCategories.has(group.categoryId) ? "Expand category" : "Collapse category"}
                       >
                         <ChevronDown
-                          className={`w-4 h-4 text-muted-foreground transition-transform duration-200 ${
+                          className={`size-4 text-muted-foreground transition-transform duration-200 ${
                             collapsedCategories.has(group.categoryId) ? "-rotate-90" : ""
                           }`}
                         />
                       </button>
-                      <div className="flex items-center gap-2 flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5 sm:gap-2 flex-1 min-w-0">
                         {group.categoryId !== UNCATEGORIZED ? (
                           <Link
                             href={`/categories/${group.categoryId}`}
-                            className="text-base font-semibold text-foreground hover:text-foreground/70 transition-colors truncate"
+                            className="text-sm sm:text-base font-semibold text-foreground hover:text-foreground/70 transition-colors truncate"
                           >
                             {group.categoryName}
                           </Link>
                         ) : (
-                          <span className="text-base font-semibold text-foreground truncate">
+                          <span className="text-sm sm:text-base font-semibold text-foreground truncate">
                             {group.categoryName}
                           </span>
                         )}
@@ -1238,112 +1425,139 @@ export default function DecksPage() {
                         </span>
                       </div>
                       {group.categoryId !== UNCATEGORIZED && (
-                        <div className="hidden sm:flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity shrink-0">
-                          {group.decks.length > 0 && (
-                            <>
-                              <Link
-                                href={`/explore/category/${group.categoryId}`}
+                        <>
+                          <div className="hidden sm:flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity shrink-0">
+                            {group.decks.length > 0 && (
+                              <>
+                                <Link
+                                  href={`/explore/category/${group.categoryId}`}
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="p-1.5 rounded hover:bg-muted/60 transition-colors"
+                                  aria-label="Explore this category"
+                                  title="Explore cards"
+                                >
+                                  <Eye className="w-4 h-4 text-muted-foreground" />
+                                </Link>
+                                <Link
+                                  href={`/study/category/${group.categoryId}`}
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="p-1.5 rounded hover:bg-primary/10 transition-colors"
+                                  aria-label="Quiz this category"
+                                  title="Quiz category"
+                                >
+                                  <BookOpen className="w-4 h-4 text-muted-foreground" />
+                                </Link>
+                              </>
+                            )}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openRenameModal(group.categoryId, group.categoryName);
+                              }}
+                              className="p-1.5 rounded hover:bg-muted/60"
+                              aria-label="Rename category"
+                            >
+                              <Pencil className="w-4 h-4 text-muted-foreground" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setDeleteConfirmId(group.categoryId);
+                              }}
+                              className="p-1.5 rounded hover:bg-muted/60"
+                              aria-label="Delete category"
+                            >
+                              <Trash2 className="w-4 h-4 text-muted-foreground" />
+                            </button>
+                          </div>
+                          <div className="relative sm:hidden shrink-0">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-muted-foreground"
+                              aria-label="Category actions"
+                              aria-expanded={openCategoryActionsId === group.categoryId}
+                              onPointerDown={(e) => e.stopPropagation()}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                e.preventDefault();
+                                setOpenCategoryActionsId((prev) =>
+                                  prev === group.categoryId ? null : group.categoryId
+                                );
+                              }}
+                            >
+                              <MoreVertical className="size-4" />
+                            </Button>
+                            {openCategoryActionsId === group.categoryId && (
+                              <div
+                                className="absolute right-0 top-full z-50 mt-0.5 min-w-[11rem] rounded-lg border border-border bg-popover py-1 shadow-lg"
                                 onClick={(e) => e.stopPropagation()}
-                                className="p-1.5 rounded hover:bg-muted/60 transition-colors"
-                                aria-label="Explore this category"
-                                title="Explore cards"
                               >
-                                <Eye className="w-4 h-4 text-muted-foreground" />
-                              </Link>
-                              <Link
-                                href={`/study/category/${group.categoryId}`}
-                                onClick={(e) => e.stopPropagation()}
-                                className="p-1.5 rounded hover:bg-primary/10 transition-colors"
-                                aria-label="Quiz this category"
-                                title="Quiz category"
-                              >
-                                <BookOpen className="w-4 h-4 text-muted-foreground" />
-                              </Link>
-                            </>
-                          )}
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              openRenameModal(group.categoryId, group.categoryName);
-                            }}
-                            className="p-1.5 rounded hover:bg-muted/60"
-                            aria-label="Rename category"
-                          >
-                            <Pencil className="w-4 h-4 text-muted-foreground" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setDeleteConfirmId(group.categoryId);
-                            }}
-                            className="p-1.5 rounded hover:bg-muted/60"
-                            aria-label="Delete category"
-                          >
-                            <Trash2 className="w-4 h-4 text-muted-foreground" />
-                          </button>
-                        </div>
+                                {group.decks.length > 0 && (
+                                  <>
+                                    <Link
+                                      href={`/explore/category/${group.categoryId}`}
+                                      className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm hover:bg-muted min-h-[44px]"
+                                      onClick={() => setOpenCategoryActionsId(null)}
+                                    >
+                                      <Eye className="size-4 shrink-0" />
+                                      Explore category
+                                    </Link>
+                                    <Link
+                                      href={`/study/category/${group.categoryId}`}
+                                      className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm hover:bg-muted min-h-[44px]"
+                                      onClick={() => setOpenCategoryActionsId(null)}
+                                    >
+                                      <BookOpen className="size-4 shrink-0" />
+                                      Quiz category
+                                    </Link>
+                                  </>
+                                )}
+                                <button
+                                  type="button"
+                                  className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm hover:bg-muted min-h-[44px]"
+                                  onClick={() => {
+                                    setOpenCategoryActionsId(null);
+                                    openRenameModal(group.categoryId, group.categoryName);
+                                  }}
+                                >
+                                  <Pencil className="size-4 shrink-0" />
+                                  Rename category
+                                </button>
+                                <button
+                                  type="button"
+                                  className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-destructive hover:bg-destructive/10 min-h-[44px]"
+                                  onClick={() => {
+                                    setOpenCategoryActionsId(null);
+                                    setDeleteConfirmId(group.categoryId);
+                                  }}
+                                >
+                                  <Trash2 className="size-4 shrink-0" />
+                                  Delete category
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        </>
                       )}
                     </div>
-                    {group.categoryId !== UNCATEGORIZED && (
-                      <div className="flex sm:hidden items-center gap-1.5 mb-2 pl-6">
-                        {group.decks.length > 0 && (
-                          <>
-                            <Link
-                              href={`/explore/category/${group.categoryId}`}
-                              onClick={(e) => e.stopPropagation()}
-                              className="inline-flex h-8 items-center rounded-md px-2.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted active:opacity-80"
-                              aria-label="Explore this category"
-                            >
-                              Explore
-                            </Link>
-                            <Link
-                              href={`/study/category/${group.categoryId}`}
-                              onClick={(e) => e.stopPropagation()}
-                              className="inline-flex h-8 items-center rounded-md px-2.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted active:opacity-80"
-                              aria-label="Quiz this category"
-                            >
-                              Quiz
-                            </Link>
-                          </>
-                        )}
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            openRenameModal(group.categoryId, group.categoryName);
-                          }}
-                          className="inline-flex h-8 w-8 items-center justify-center rounded-md hover:bg-muted active:opacity-80"
-                          aria-label="Rename category"
-                        >
-                          <Pencil className="w-3.5 h-3.5 text-muted-foreground" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setDeleteConfirmId(group.categoryId);
-                          }}
-                          className="inline-flex h-8 w-8 items-center justify-center rounded-md hover:bg-muted active:opacity-80"
-                          aria-label="Delete category"
-                        >
-                          <Trash2 className="w-3.5 h-3.5 text-muted-foreground" />
-                        </button>
-                      </div>
-                    )}
                   </div>
-                  {!collapsedCategories.has(group.categoryId) && <div className="pl-6">
-                    {renderDecks(group.decks, (deck, content) => (
-                      <DraggableDeckRow
-                        key={deck.id}
-                        deck={deck}
-                        isDragging={activeDragId === deck.id}
-                      >
-                        {content}
-                      </DraggableDeckRow>
-                    ))}
-                  </div>}
+                  {!collapsedCategories.has(group.categoryId) && (
+                    <div className="pl-5 sm:pl-6 max-mobile:pl-2">
+                      {renderDecks(group.decks, (deck, content) => (
+                        <DraggableDeckRow
+                          key={deck.id}
+                          deck={deck}
+                          isDragging={activeDragId === deck.id}
+                        >
+                          {content}
+                        </DraggableDeckRow>
+                      ))}
+                    </div>
+                  )}
                 </DroppableCategory>
               );
               })}

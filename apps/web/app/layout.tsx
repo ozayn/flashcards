@@ -34,6 +34,54 @@ export const metadata: Metadata = {
 const themeScript = `
   (function() {
     try {
+      if (typeof Element !== 'undefined') {
+        var blockDashlane = function(name) {
+          return String(name).toLowerCase() === 'data-dashlane-rid';
+        };
+        var _set = Element.prototype.setAttribute;
+        Element.prototype.setAttribute = function(name, value) {
+          if (blockDashlane(name)) return;
+          return _set.call(this, name, value);
+        };
+        var _setNS = Element.prototype.setAttributeNS;
+        Element.prototype.setAttributeNS = function(ns, name, value) {
+          if (blockDashlane(name)) return;
+          return _setNS.call(this, ns, name, value);
+        };
+      }
+    } catch (e) {}
+    try {
+      if (typeof MutationObserver !== 'undefined' && document.documentElement) {
+        var stripRid = function(root) {
+          try {
+            if (!root || root.nodeType !== 1) return;
+            if (root.hasAttribute('data-dashlane-rid')) root.removeAttribute('data-dashlane-rid');
+            root.querySelectorAll('[data-dashlane-rid]').forEach(function(el) {
+              el.removeAttribute('data-dashlane-rid');
+            });
+          } catch (e) {}
+        };
+        stripRid(document.documentElement);
+        new MutationObserver(function(records) {
+          records.forEach(function(r) {
+            if (r.type === 'attributes' && r.attributeName === 'data-dashlane-rid' && r.target && r.target.nodeType === 1) {
+              r.target.removeAttribute('data-dashlane-rid');
+            }
+            if (r.type === 'childList' && r.addedNodes) {
+              r.addedNodes.forEach(function(n) {
+                stripRid(n);
+              });
+            }
+          });
+        }).observe(document.documentElement, {
+          subtree: true,
+          childList: true,
+          attributes: true,
+          attributeFilter: ['data-dashlane-rid'],
+        });
+      }
+    } catch (e) {}
+    try {
       var s = localStorage.getItem('flashcard-theme');
       var d = s === 'dark' || (s !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches);
       document.documentElement.classList.toggle('dark', d);
