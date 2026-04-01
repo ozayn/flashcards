@@ -407,7 +407,7 @@ export default function StudyPage({ params }: StudyPageProps) {
   };
 
   return (
-    <main className="h-full min-h-0 flex flex-col items-center overflow-hidden relative" data-study>
+    <main className="h-full min-h-0 flex flex-col items-center overflow-hidden relative landscape-mobile:h-[100dvh] landscape-mobile:max-h-[100dvh]" data-study>
       {resetConfirmOpen && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
@@ -442,59 +442,18 @@ export default function StudyPage({ params }: StudyPageProps) {
           </div>
         </div>
       )}
-      <div className="pt-3 sm:pt-4 landscape-mobile:pt-2 shrink-0 w-full">
-        <div className="max-w-4xl mx-auto w-full px-4 sm:px-6 md:px-8 space-y-2 landscape-mobile:space-y-1">
-          <div className="flex items-center justify-between">
+      <div className="pt-3 sm:pt-4 landscape-mobile:py-1 shrink-0 w-full landscape-mobile:border-b landscape-mobile:border-border/50">
+        <div className="max-w-4xl mx-auto w-full px-4 sm:px-6 md:px-8 landscape-mobile:px-2">
+          {/* Mobile landscape: single compact control band */}
+          <div className="hidden landscape-mobile:flex landscape-mobile:items-center landscape-mobile:gap-1.5 landscape-mobile:min-h-8 landscape-mobile:max-h-9">
             <Link
               href={`/decks/${params.deck_id}`}
-              className="inline-flex h-7 items-center justify-center rounded-lg px-2.5 text-sm font-medium hover:bg-muted landscape-mobile:h-6 landscape-mobile:text-xs landscape-mobile:px-1.5"
+              className="inline-flex h-7 shrink-0 items-center justify-center rounded-md px-1.5 text-[11px] font-medium hover:bg-muted"
             >
               ← Back
             </Link>
-            <div className="flex items-center gap-2">
-              <div className="hidden landscape-mobile:flex items-center gap-1.5">
-                <ThemeToggle className="size-7 text-muted-foreground hover:text-foreground" />
-                <div ref={settingsRef} className="relative">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => setShowSettings((s) => !s)}
-                    className="size-7 text-muted-foreground hover:text-foreground"
-                    aria-label="Flashcard style"
-                  >
-                    <Settings className="size-4" />
-                  </Button>
-                  {showSettings && (
-                    <div className="absolute right-0 top-full z-50 mt-1 w-44 rounded-lg border border-border bg-popover p-2 shadow-lg">
-                      <p className="text-xs font-medium text-muted-foreground mb-1.5">Style</p>
-                      <div className="grid grid-cols-2 gap-1">
-                        {(["paper", "minimal", "modern", "anki"] as const).map((style) => (
-                          <button
-                            key={style}
-                            type="button"
-                            onClick={async () => {
-                              const userId = getStoredUserId();
-                              if (userId) {
-                                const updated = await updateUserSettings(userId, { card_style: style });
-                                setUserSettings(updated);
-                                setShowSettings(false);
-                              }
-                            }}
-                            className={`px-2 py-1 rounded text-xs font-medium capitalize ${userSettings.card_style === style ? "bg-accent" : "hover:bg-muted"}`}
-                          >
-                            {style}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-          <div className="flex items-center gap-3 flex-wrap landscape-mobile:gap-2">
             <div
-              className="flex items-center gap-0.5 rounded-lg border border-border/60 p-0.5 bg-muted/20"
+              className="flex min-w-0 flex-1 items-center justify-center gap-0.5 rounded-md border border-border/60 p-0.5 bg-muted/20"
               role="tablist"
               aria-label="Deck view"
             >
@@ -505,7 +464,7 @@ export default function StudyPage({ params }: StudyPageProps) {
                   role="tab"
                   aria-selected={deckView === v}
                   onClick={() => setDeckView(v)}
-                  className={`px-2.5 sm:px-3 py-1 min-h-[32px] landscape-mobile:min-h-[28px] landscape-mobile:px-2 landscape-mobile:text-xs rounded-md text-sm font-medium transition-colors ${
+                  className={`shrink-0 px-1.5 py-0.5 min-h-[26px] rounded text-[11px] font-medium leading-none transition-colors ${
                     deckView === v
                       ? "bg-background text-foreground shadow-sm"
                       : "text-muted-foreground hover:text-foreground"
@@ -515,34 +474,127 @@ export default function StudyPage({ params }: StudyPageProps) {
                 </button>
               ))}
             </div>
-            {deckView !== "read" && (
-              <span className="hidden landscape-mobile:inline text-xs text-muted-foreground tabular-nums">
-                {currentCardIndex + 1}/{flashcards.length}
-              </span>
-            )}
+            <span className="shrink-0 text-[11px] text-muted-foreground tabular-nums">
+              {currentCardIndex + 1}/{flashcards.length}
+            </span>
+            <div className="ml-auto flex shrink-0 items-center gap-0.5">
+              <ThemeToggle className="size-6 text-muted-foreground hover:text-foreground [&_svg]:size-3.5" />
+              <div ref={settingsRef} className="relative">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setShowSettings((s) => !s)}
+                  className="size-6 text-muted-foreground hover:text-foreground"
+                  aria-label="Flashcard style"
+                >
+                  <Settings className="size-3.5" />
+                </Button>
+                {showSettings && (
+                  <div className="absolute right-0 top-full z-50 mt-1 w-40 rounded-lg border border-border bg-popover p-2 shadow-lg">
+                    <p className="text-xs font-medium text-muted-foreground mb-1.5">Style</p>
+                    <div className="grid grid-cols-2 gap-1">
+                      {(["paper", "minimal", "modern", "anki"] as const).map((style) => (
+                        <button
+                          key={style}
+                          type="button"
+                          onClick={async () => {
+                            const userId = getStoredUserId();
+                            if (userId) {
+                              const updated = await updateUserSettings(userId, { card_style: style });
+                              setUserSettings(updated);
+                              setShowSettings(false);
+                            }
+                          }}
+                          className={`px-2 py-1 rounded text-xs font-medium capitalize ${userSettings.card_style === style ? "bg-accent" : "hover:bg-muted"}`}
+                        >
+                          {style}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+              <Link
+                href={`/decks/${params.deck_id}`}
+                className="inline-flex h-7 items-center gap-1 rounded-md border border-border bg-background px-2 text-[11px] font-medium text-foreground shadow-sm hover:bg-muted"
+                aria-label="Exit to deck"
+              >
+                <X className="size-3 shrink-0" />
+                Exit
+              </Link>
+              {isDev && (
+                <button
+                  type="button"
+                  onClick={() => setResetConfirmOpen(true)}
+                  className="px-1 py-0.5 text-[10px] text-muted-foreground hover:text-foreground rounded hover:bg-muted/70"
+                >
+                  Reset
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Portrait & taller landscape: two-row chrome */}
+          <div className="space-y-2 landscape-mobile:hidden">
+            <div className="flex items-center justify-between">
+              <Link
+                href={`/decks/${params.deck_id}`}
+                className="inline-flex h-7 items-center justify-center rounded-lg px-2.5 text-sm font-medium hover:bg-muted"
+              >
+                ← Back
+              </Link>
+              <div className="flex items-center gap-2" />
+            </div>
+            <div className="flex items-center gap-3 flex-wrap">
+              <div
+                className="flex items-center gap-0.5 rounded-lg border border-border/60 p-0.5 bg-muted/20"
+                role="tablist"
+                aria-label="Deck view"
+              >
+                {(["read", "cards", "quiz"] as const).map((v) => (
+                  <button
+                    key={v}
+                    type="button"
+                    role="tab"
+                    aria-selected={deckView === v}
+                    onClick={() => setDeckView(v)}
+                    className={`px-2.5 sm:px-3 py-1 min-h-[32px] rounded-md text-sm font-medium transition-colors ${
+                      deckView === v
+                        ? "bg-background text-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    {v === "read" ? "Read" : v === "cards" ? "Cards" : "Quiz"}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
       </div>
 
       {deckView === "read" ? (
-        <div ref={readScrollRef} className="flex-1 min-h-0 w-full overflow-y-auto touch-pan-y">
-          <div className="max-w-2xl sm:max-w-3xl mx-auto w-full px-5 sm:px-6 md:px-8 py-6 sm:py-10 landscape-mobile:py-3">
-            <article dir="auto" className="space-y-5 sm:space-y-8 landscape-mobile:space-y-3">
+        <div
+          ref={readScrollRef}
+          className="flex-1 min-h-0 w-full overflow-y-auto touch-pan-y landscape-mobile:min-h-0"
+        >
+          <div className="max-w-2xl sm:max-w-3xl mx-auto w-full px-5 sm:px-6 md:px-8 py-6 sm:py-10 landscape-mobile:py-2 landscape-mobile:px-3">
+            <article dir="auto" className="space-y-5 sm:space-y-8 landscape-mobile:space-y-2">
               <FormattedText
                 text={card.question}
-                className="text-2xl sm:text-3xl lg:text-4xl font-medium leading-snug sm:leading-relaxed"
+                className="text-2xl sm:text-3xl lg:text-4xl font-medium leading-snug sm:leading-relaxed landscape-mobile:text-2xl landscape-mobile:leading-snug"
               />
-              <hr className="border-border" />
+              <hr className="border-border landscape-mobile:my-0" />
               <FormattedText
                 text={card.answer_short}
-                className="whitespace-pre-line text-lg sm:text-2xl lg:text-[1.75rem] leading-relaxed"
+                className="whitespace-pre-line text-lg sm:text-2xl lg:text-[1.75rem] leading-relaxed landscape-mobile:text-xl landscape-mobile:leading-snug"
               />
               {card.answer_detailed &&
                 card.answer_detailed.trim() !== card.answer_short.trim() && (
-                  <div className="border-l-2 border-border pl-4 sm:pl-5">
+                  <div className="border-l-2 border-border pl-4 sm:pl-5 landscape-mobile:pl-3">
                     <FormattedText
                       text={card.answer_detailed}
-                      className="whitespace-pre-line text-base sm:text-lg lg:text-xl text-muted-foreground leading-relaxed"
+                      className="whitespace-pre-line text-base sm:text-lg lg:text-xl text-muted-foreground leading-relaxed landscape-mobile:text-base landscape-mobile:leading-snug"
                     />
                   </div>
                 )}
@@ -581,9 +633,9 @@ export default function StudyPage({ params }: StudyPageProps) {
           </div>
         </div>
       ) : (
-      <div className="flex flex-col flex-1 min-h-0 w-full min-w-0">
-        <div className="flex flex-1 min-h-0 flex flex-col justify-center items-stretch max-w-4xl mx-auto w-full px-4 sm:px-6 md:px-8 py-2 sm:py-3 min-h-0">
-        <div className="flex flex-1 min-h-0 min-h-[160px] landscape-mobile:min-h-0 flex flex-col landscape:flex-row landscape:items-center landscape:min-h-0 justify-center items-center gap-2 landscape:gap-3 landscape-mobile:gap-0 w-full relative overflow-hidden [perspective:1000px]">
+      <div className="flex flex-col flex-1 min-h-0 w-full min-w-0 landscape-mobile:overflow-hidden">
+        <div className="flex flex-1 min-h-0 flex flex-col justify-center items-stretch max-w-4xl mx-auto w-full px-4 sm:px-6 md:px-8 py-2 sm:py-3 min-h-0 landscape-mobile:justify-start landscape-mobile:py-0 landscape-mobile:px-2">
+        <div className="flex flex-1 min-h-0 min-h-[160px] landscape-mobile:min-h-0 flex flex-col landscape:flex-row landscape:items-center landscape-mobile:items-stretch landscape:min-h-0 justify-center items-center gap-2 landscape:gap-3 landscape-mobile:gap-1 w-full relative overflow-hidden [perspective:1000px]">
           {!isFirst ? (
             <Button
               variant="outline"
@@ -597,111 +649,149 @@ export default function StudyPage({ params }: StudyPageProps) {
           ) : (
             <span className="hidden landscape:block landscape-mobile:!hidden w-10 shrink-0 order-2 landscape:order-1" aria-hidden />
           )}
-          <div className="flex justify-center items-center flex-1 min-w-0 w-full order-1 landscape:order-2 px-2 min-h-0">
-            <div className="relative w-full max-w-2xl sm:max-w-3xl mx-auto">
-              <div
-                onTouchStart={handleTouchStart}
-                onTouchEnd={handleTouchEnd}
-                dir="auto"
-                className="flashcard relative w-full aspect-[3/2] landscape-mobile:aspect-auto landscape-mobile:h-[calc(100dvh-5rem)] rounded-2xl shadow-lg overflow-hidden flex flex-col touch-pan-y transition-all duration-200 ease-out hover:-translate-y-1 hover:shadow-xl hover:rotate-[0.3deg] active:translate-y-0 active:shadow-md"
-              >
-            <div className="absolute top-6 right-6 text-sm text-muted-foreground z-10 landscape-mobile:top-2 landscape-mobile:right-3 landscape-mobile:text-xs">
-              {currentCardIndex + 1} / {flashcards.length}
-            </div>
-            <Flashcard
-              cardStyle={userSettings.card_style}
-              front={
-                <>
-                  <div className="flex-1 min-h-0 w-full overflow-y-auto">
-                    <FormattedText
-                      text={card.question}
-                      className="text-2xl sm:text-3xl lg:text-4xl font-medium leading-snug sm:leading-relaxed"
-                    />
-                  </div>
-                </>
-              }
-              back={
-                <>
-                  <div className="flex-1 min-h-0 flex flex-col items-stretch justify-start w-full overflow-y-auto cursor-pointer">
-                    <FormattedText
-                      text={card.answer_short}
-                      className="whitespace-pre-line text-xl sm:text-2xl lg:text-[1.75rem] leading-relaxed mt-6 sm:mt-8 landscape-mobile:mt-2"
-                    />
-                    {card.answer_detailed &&
-                      card.answer_detailed.trim() !== card.answer_short.trim() && (
-                        <FormattedText
-                          text={card.answer_detailed}
-                          className="whitespace-pre-line text-base sm:text-lg lg:text-xl text-muted-foreground mt-4 sm:mt-5 landscape-mobile:mt-2"
-                        />
-                      )}
-                  </div>
-                  {deckView === "quiz" && showAnswer && (
-                    <div className="flex flex-row gap-2 justify-center flex-wrap shrink-0 w-full" onClick={(e) => e.stopPropagation()}>
-                      <Button
-                        variant="ghost"
-                        onClick={() => rateCard("again")}
-                        className="shrink-0 !bg-mondrian-red !text-white hover:!bg-mondrian-red/90 border-0"
-                      >
-                        Again
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        onClick={() => rateCard("hard")}
-                        className="shrink-0 !bg-mondrian-yellow !text-mondrian-black hover:!bg-mondrian-yellow/90 border-0"
-                      >
-                        Hard
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        onClick={() => rateCard("good")}
-                        className="shrink-0 !bg-mondrian-blue !text-white hover:!bg-mondrian-blue/90 border-0"
-                      >
-                        Good
-                      </Button>
-                      <Button
-                        variant="outline"
-                        onClick={() => rateCard("easy")}
-                        className="shrink-0"
-                      >
-                        Easy
-                      </Button>
-                    </div>
-                  )}
-              </>
-            }
-            flipped={showAnswer}
-            onFlip={() => setShowAnswer((prev) => !prev)}
-            canFlip={canFlip}
-          />
+          <div className="flex justify-center items-center landscape-mobile:items-stretch flex-1 min-w-0 w-full order-1 landscape:order-2 px-2 min-h-0 landscape-mobile:px-0.5 landscape-mobile:min-h-0">
+            <div className="relative flex h-full min-h-0 w-full max-w-2xl sm:max-w-3xl mx-auto flex-col landscape-mobile:h-full landscape-mobile:min-h-0 landscape-mobile:self-stretch landscape-mobile:max-h-full landscape-mobile:max-w-none landscape-mobile:w-full landscape-mobile:flex-row landscape-mobile:items-center landscape-mobile:justify-center landscape-mobile:gap-1">
+              {/* Mobile landscape: arrows beside the card (not on the card) */}
+              <div className="hidden landscape-mobile:flex w-9 shrink-0 items-center justify-center self-stretch">
+                {!isFirst ? (
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={handlePrev}
+                    className="h-9 w-9 shrink-0 rounded-full border-border/80 bg-background shadow-sm"
+                    aria-label="Previous card"
+                  >
+                    <ChevronLeft className="size-4" />
+                  </Button>
+                ) : (
+                  <span className="inline-block h-9 w-9 shrink-0" aria-hidden />
+                )}
               </div>
-              {/* Portrait / non-landscape: nav on card midline (Cards + Quiz) */}
-              <div className="landscape:hidden absolute inset-0 flex items-center justify-between pointer-events-none z-20 px-0">
-                <div className="pointer-events-auto flex w-11 justify-start pl-0.5">
-                  {!isFirst ? (
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      onClick={handlePrev}
-                      className="h-10 w-10 shrink-0 rounded-full border-border/80 bg-background/95 shadow-sm backdrop-blur-sm"
-                      aria-label="Previous card"
-                    >
-                      <ChevronLeft className="size-5" />
-                    </Button>
-                  ) : null}
+
+              <div className="relative flex min-h-0 w-full flex-1 flex-col justify-center landscape-mobile:min-h-0 landscape-mobile:min-w-0 landscape-mobile:max-w-[min(100%,36rem)]">
+                <div
+                  onTouchStart={handleTouchStart}
+                  onTouchEnd={handleTouchEnd}
+                  dir="auto"
+                  className="flashcard relative w-full aspect-[3/2] landscape-mobile:aspect-auto landscape-mobile:h-[calc(100dvh-2.85rem-env(safe-area-inset-top,0px))] landscape-mobile:max-h-[calc(100dvh-2.85rem-env(safe-area-inset-top,0px))] landscape-mobile:min-h-[10rem] landscape-mobile:shrink-0 rounded-2xl shadow-lg overflow-hidden flex flex-col touch-pan-y transition-all duration-200 ease-out hover:-translate-y-1 hover:shadow-xl hover:rotate-[0.3deg] active:translate-y-0 active:shadow-md landscape-mobile:hover:translate-y-0 landscape-mobile:hover:rotate-0"
+                >
+                  <div className="absolute top-6 right-6 text-sm text-muted-foreground z-10 landscape-mobile:hidden">
+                    {currentCardIndex + 1} / {flashcards.length}
+                  </div>
+                  <Flashcard
+                    cardStyle={userSettings.card_style}
+                    front={
+                      <>
+                        <div className="flex-1 min-h-0 w-full overflow-y-auto">
+                          <FormattedText
+                            text={card.question}
+                            className="text-2xl sm:text-3xl lg:text-4xl font-medium leading-snug sm:leading-relaxed landscape-mobile:text-2xl landscape-mobile:leading-snug"
+                          />
+                        </div>
+                      </>
+                    }
+                    back={
+                      <>
+                        <div className="flex-1 min-h-0 flex flex-col items-stretch justify-start w-full overflow-y-auto cursor-pointer">
+                          <FormattedText
+                            text={card.answer_short}
+                            className="whitespace-pre-line text-xl sm:text-2xl lg:text-[1.75rem] leading-relaxed mt-6 sm:mt-8 landscape-mobile:mt-1 landscape-mobile:text-xl landscape-mobile:leading-snug"
+                          />
+                          {card.answer_detailed &&
+                            card.answer_detailed.trim() !== card.answer_short.trim() && (
+                              <FormattedText
+                                text={card.answer_detailed}
+                                className="whitespace-pre-line text-base sm:text-lg lg:text-xl text-muted-foreground mt-4 sm:mt-5 landscape-mobile:mt-1.5 landscape-mobile:text-base landscape-mobile:leading-snug"
+                              />
+                            )}
+                        </div>
+                        {deckView === "quiz" && showAnswer && (
+                          <div
+                            className="flex flex-row gap-1 landscape-mobile:gap-0.5 justify-center flex-wrap shrink-0 w-full landscape-mobile:py-0.5"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <Button
+                              variant="ghost"
+                              onClick={() => rateCard("again")}
+                              className="shrink-0 !bg-mondrian-red !text-white hover:!bg-mondrian-red/90 border-0 landscape-mobile:h-7 landscape-mobile:px-2 landscape-mobile:text-[11px]"
+                            >
+                              Again
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              onClick={() => rateCard("hard")}
+                              className="shrink-0 !bg-mondrian-yellow !text-mondrian-black hover:!bg-mondrian-yellow/90 border-0 landscape-mobile:h-7 landscape-mobile:px-2 landscape-mobile:text-[11px]"
+                            >
+                              Hard
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              onClick={() => rateCard("good")}
+                              className="shrink-0 !bg-mondrian-blue !text-white hover:!bg-mondrian-blue/90 border-0 landscape-mobile:h-7 landscape-mobile:px-2 landscape-mobile:text-[11px]"
+                            >
+                              Good
+                            </Button>
+                            <Button
+                              variant="outline"
+                              onClick={() => rateCard("easy")}
+                              className="shrink-0 landscape-mobile:h-7 landscape-mobile:px-2 landscape-mobile:text-[11px]"
+                            >
+                              Easy
+                            </Button>
+                          </div>
+                        )}
+                      </>
+                    }
+                    flipped={showAnswer}
+                    onFlip={() => setShowAnswer((prev) => !prev)}
+                    canFlip={canFlip}
+                  />
+                  {/* Portrait only: midline arrows on the card; tall landscape uses outer row side buttons */}
+                  <div className="hidden portrait:flex absolute inset-0 z-20 items-center justify-between pointer-events-none">
+                    <div className="pointer-events-auto flex w-11 justify-start pl-0.5">
+                      {!isFirst ? (
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          onClick={handlePrev}
+                          className="h-10 w-10 shrink-0 rounded-full border-border/80 bg-background/95 shadow-sm backdrop-blur-sm"
+                          aria-label="Previous card"
+                        >
+                          <ChevronLeft className="size-5" />
+                        </Button>
+                      ) : null}
+                    </div>
+                    <div className="pointer-events-auto flex w-11 justify-end pr-0.5">
+                      {!isLast ? (
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          onClick={handleNext}
+                          className="h-10 w-10 shrink-0 rounded-full border-border/80 bg-background/95 shadow-sm backdrop-blur-sm"
+                          aria-label="Next card"
+                        >
+                          <ChevronRight className="size-5" />
+                        </Button>
+                      ) : null}
+                    </div>
+                  </div>
                 </div>
-                <div className="pointer-events-auto flex w-11 justify-end pr-0.5">
-                  {!isLast ? (
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      onClick={handleNext}
-                      className="h-10 w-10 shrink-0 rounded-full border-border/80 bg-background/95 shadow-sm backdrop-blur-sm"
-                      aria-label="Next card"
-                    >
-                      <ChevronRight className="size-5" />
-                    </Button>
-                  ) : null}
-                </div>
+              </div>
+
+              <div className="hidden landscape-mobile:flex w-9 shrink-0 items-center justify-center self-stretch">
+                {!isLast ? (
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={handleNext}
+                    className="h-9 w-9 shrink-0 rounded-full border-border/80 bg-background shadow-sm"
+                    aria-label="Next card"
+                  >
+                    <ChevronRight className="size-4" />
+                  </Button>
+                ) : (
+                  <span className="inline-block h-9 w-9 shrink-0" aria-hidden />
+                )}
               </div>
             </div>
           </div>
@@ -721,7 +811,7 @@ export default function StudyPage({ params }: StudyPageProps) {
           )}
         </div>
         </div>
-        <div className="shrink-0 max-w-4xl mx-auto w-full px-4 sm:px-6 md:px-8 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 mt-1 border-t border-border/50 flex flex-wrap items-center justify-end gap-2">
+        <div className="shrink-0 max-w-4xl mx-auto w-full px-4 sm:px-6 md:px-8 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 mt-1 border-t border-border/50 flex flex-wrap items-center justify-end gap-2 landscape-mobile:hidden">
           <Link
             href={`/decks/${params.deck_id}`}
             className="inline-flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-sm font-medium text-foreground shadow-sm hover:bg-muted transition-colors"
