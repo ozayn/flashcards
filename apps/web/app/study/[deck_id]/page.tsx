@@ -229,23 +229,23 @@ export default function StudyPage({ params }: StudyPageProps) {
       if (e.code === "Space") {
         e.preventDefault();
         if (mode === "explore" && exploreView === "read") {
-          handleNext();
+          if (currentCardIndex < flashcards.length - 1) handleNext();
         } else if (canFlip) {
           setShowAnswer((prev) => !prev);
         }
       }
       if (e.code === "ArrowRight") {
         e.preventDefault();
-        handleNext();
+        if (currentCardIndex < flashcards.length - 1) handleNext();
       }
       if (e.code === "ArrowLeft") {
         e.preventDefault();
-        handlePrev();
+        if (currentCardIndex > 0) handlePrev();
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [loading, flashcards.length, canFlip, handleNext, handlePrev, mode, exploreView]);
+  }, [loading, flashcards.length, canFlip, handleNext, handlePrev, mode, exploreView, currentCardIndex]);
 
   if (loading) {
     return (
@@ -578,38 +578,62 @@ export default function StudyPage({ params }: StudyPageProps) {
                 )}
             </article>
             <div className="flex items-center justify-center gap-4 mt-8 sm:mt-10 pb-4 landscape-mobile:hidden">
-              <Button variant="outline" size="icon" onClick={handlePrev} disabled={isFirst} className="hidden sm:inline-flex h-10 w-10 lg:h-12 lg:w-12" aria-label="Previous card">
-                <ChevronLeft className="size-5 lg:size-6" />
-              </Button>
-              <span className="text-sm text-muted-foreground tabular-nums text-center">
+              {!isFirst ? (
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={handlePrev}
+                  className="hidden sm:inline-flex h-10 w-10 lg:h-12 lg:w-12 shrink-0"
+                  aria-label="Previous card"
+                >
+                  <ChevronLeft className="size-5 lg:size-6" />
+                </Button>
+              ) : (
+                <span className="hidden sm:inline-block w-10 lg:w-12 shrink-0" aria-hidden />
+              )}
+              <span className="text-sm text-muted-foreground tabular-nums text-center min-w-[4.5rem]">
                 {currentCardIndex + 1} / {flashcards.length}
               </span>
-              <Button variant="outline" size="icon" onClick={handleNext} disabled={isLast} className="hidden sm:inline-flex h-10 w-10 lg:h-12 lg:w-12" aria-label="Next card">
-                <ChevronRight className="size-5 lg:size-6" />
-              </Button>
+              {!isLast ? (
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={handleNext}
+                  className="hidden sm:inline-flex h-10 w-10 lg:h-12 lg:w-12 shrink-0"
+                  aria-label="Next card"
+                >
+                  <ChevronRight className="size-5 lg:size-6" />
+                </Button>
+              ) : (
+                <span className="hidden sm:inline-block w-10 lg:w-12 shrink-0" aria-hidden />
+              )}
             </div>
           </div>
         </div>
       ) : (
       <div className="flex flex-col items-center justify-center min-h-[75vh] flex-1 min-h-0 w-full landscape-mobile:min-h-0 landscape-mobile:mt-0">
-        <div className="flex-1 min-h-0 min-h-[200px] landscape-mobile:min-h-0 flex flex-col landscape:flex-row landscape:items-stretch landscape:min-h-0 justify-center items-center gap-2 landscape-mobile:gap-0 w-full max-w-4xl mx-auto relative overflow-hidden [perspective:1000px]">
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={handlePrev}
-            disabled={isFirst}
-            className="hidden landscape:flex landscape-mobile:!hidden h-10 w-10 shrink-0 order-2 landscape:order-1"
-            aria-label="Previous card"
-          >
-            <ChevronLeft className="size-5" />
-          </Button>
-          <div className="flex justify-center items-center flex-1 min-w-0 w-full order-1 landscape:order-2 px-2">
-            <div
-              onTouchStart={handleTouchStart}
-              onTouchEnd={handleTouchEnd}
-              dir="auto"
-              className="flashcard relative w-full max-w-2xl sm:max-w-3xl aspect-[3/2] landscape-mobile:aspect-auto landscape-mobile:h-[calc(100dvh-5rem)] rounded-2xl shadow-lg overflow-hidden flex flex-col touch-pan-y transition-all duration-200 ease-out hover:-translate-y-1 hover:shadow-xl hover:rotate-[0.3deg] active:translate-y-0 active:shadow-md"
+        <div className="flex-1 min-h-0 min-h-[200px] landscape-mobile:min-h-0 flex flex-col landscape:flex-row landscape:items-center landscape:min-h-0 justify-center items-center gap-2 landscape:gap-3 landscape-mobile:gap-0 w-full max-w-4xl mx-auto relative overflow-hidden [perspective:1000px]">
+          {!isFirst ? (
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={handlePrev}
+              className="hidden landscape:flex landscape-mobile:!hidden h-10 w-10 shrink-0 order-2 landscape:order-1"
+              aria-label="Previous card"
             >
+              <ChevronLeft className="size-5" />
+            </Button>
+          ) : (
+            <span className="hidden landscape:block landscape-mobile:!hidden w-10 shrink-0 order-2 landscape:order-1" aria-hidden />
+          )}
+          <div className="flex justify-center items-center flex-1 min-w-0 w-full order-1 landscape:order-2 px-2 min-h-0">
+            <div className="relative w-full max-w-2xl sm:max-w-3xl mx-auto">
+              <div
+                onTouchStart={handleTouchStart}
+                onTouchEnd={handleTouchEnd}
+                dir="auto"
+                className="flashcard relative w-full aspect-[3/2] landscape-mobile:aspect-auto landscape-mobile:h-[calc(100dvh-5rem)] rounded-2xl shadow-lg overflow-hidden flex flex-col touch-pan-y transition-all duration-200 ease-out hover:-translate-y-1 hover:shadow-xl hover:rotate-[0.3deg] active:translate-y-0 active:shadow-md"
+              >
             <div className="absolute top-6 right-6 text-sm text-muted-foreground z-10 landscape-mobile:top-2 landscape-mobile:right-3 landscape-mobile:text-xs">
               {currentCardIndex + 1} / {flashcards.length}
             </div>
@@ -678,42 +702,52 @@ export default function StudyPage({ params }: StudyPageProps) {
             onFlip={() => setShowAnswer((prev) => !prev)}
             canFlip={canFlip}
           />
+              </div>
+              {/* Portrait / non-landscape: nav on card midline (Explore Cards + Study) */}
+              <div className="landscape:hidden absolute inset-0 flex items-center justify-between pointer-events-none z-20 px-0">
+                <div className="pointer-events-auto flex w-11 justify-start pl-0.5">
+                  {!isFirst ? (
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={handlePrev}
+                      className="h-10 w-10 shrink-0 rounded-full border-border/80 bg-background/95 shadow-sm backdrop-blur-sm"
+                      aria-label="Previous card"
+                    >
+                      <ChevronLeft className="size-5" />
+                    </Button>
+                  ) : null}
+                </div>
+                <div className="pointer-events-auto flex w-11 justify-end pr-0.5">
+                  {!isLast ? (
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={handleNext}
+                      className="h-10 w-10 shrink-0 rounded-full border-border/80 bg-background/95 shadow-sm backdrop-blur-sm"
+                      aria-label="Next card"
+                    >
+                      <ChevronRight className="size-5" />
+                    </Button>
+                  ) : null}
+                </div>
+              </div>
             </div>
           </div>
 
-        <Button
-          variant="outline"
-          size="icon"
-          onClick={handleNext}
-          disabled={isLast}
-          className="hidden landscape:flex landscape-mobile:!hidden h-10 w-10 shrink-0 order-3"
-          aria-label="Next card"
-        >
-          <ChevronRight className="size-5" />
-        </Button>
-      </div>
-
-      <div className="shrink-0 flex justify-center gap-4 mt-2 pb-2 landscape:hidden landscape-mobile:!hidden">
-        <Button
-          variant="outline"
-          size="icon"
-          onClick={handlePrev}
-          disabled={isFirst}
-          className="h-10 w-10 shrink-0 lg:h-12 lg:w-12"
-          aria-label="Previous card"
-        >
-          <ChevronLeft className="size-5 lg:size-6" />
-        </Button>
-        <Button
-          variant="outline"
-          size="icon"
-          onClick={handleNext}
-          disabled={isLast}
-          className="h-10 w-10 shrink-0 lg:h-12 lg:w-12"
-          aria-label="Next card"
-        >
-          <ChevronRight className="size-5 lg:size-6" />
-        </Button>
+          {!isLast ? (
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={handleNext}
+              className="hidden landscape:flex landscape-mobile:!hidden h-10 w-10 shrink-0 order-3"
+              aria-label="Next card"
+            >
+              <ChevronRight className="size-5" />
+            </Button>
+          ) : (
+            <span className="hidden landscape:block landscape-mobile:!hidden w-10 shrink-0 order-3" aria-hidden />
+          )}
       </div>
       </div>
       )}

@@ -72,12 +72,12 @@ export function FlashcardModal({
       }
       if (e.key === "ArrowLeft") {
         e.preventDefault();
-        goPrev();
+        if (currentIndex > 0) goPrev();
         return;
       }
       if (e.key === "ArrowRight") {
         e.preventDefault();
-        goNext();
+        if (currentIndex < cards.length - 1) goNext();
         return;
       }
       if (e.key === " " && viewMode === "flashcard") {
@@ -89,7 +89,7 @@ export function FlashcardModal({
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isOpen, onClose, goPrev, goNext, viewMode]);
+  }, [isOpen, onClose, goPrev, goNext, viewMode, currentIndex, cards.length]);
 
   // Prevent body scroll when modal is open
   useEffect(() => {
@@ -116,34 +116,12 @@ export function FlashcardModal({
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between shrink-0 px-4 py-3 border-b border-border">
-          <div className="flex items-center gap-2">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={goPrev}
-              disabled={!hasPrev}
-              aria-label="Previous card"
-              className="text-muted-foreground hover:text-foreground disabled:opacity-40"
-            >
-              <ChevronLeft className="size-5" />
-            </Button>
-            <span className="text-sm text-muted-foreground tabular-nums">
-              {currentIndex + 1} / {cards.length}
-            </span>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={goNext}
-              disabled={!hasNext}
-              aria-label="Next card"
-              className="text-muted-foreground hover:text-foreground disabled:opacity-40"
-            >
-              <ChevronRight className="size-5" />
-            </Button>
-          </div>
+        <div className="flex items-center justify-between shrink-0 px-4 py-3 border-b border-border gap-3">
+          <span className="text-sm text-muted-foreground tabular-nums shrink-0">
+            {currentIndex + 1} / {cards.length}
+          </span>
 
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1 min-w-0 justify-end">
             <div className="flex rounded-lg border border-border p-0.5 bg-muted/30">
               <button
                 type="button"
@@ -192,49 +170,171 @@ export function FlashcardModal({
           </div>
         </div>
 
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto p-4 min-h-0">
-          {viewMode === "details" ? (
-            <div className="space-y-4">
-              <div>
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1.5">
-                  Question
-                </p>
-                <p dir="auto" className="text-base font-medium leading-relaxed text-foreground">
-                  {card.question}
-                </p>
+        {/* Body: details = scroll + edge nav; flashcard = arrows aligned to card midline */}
+        {viewMode === "details" ? (
+          <div className="relative flex flex-1 min-h-0">
+            <div className="flex flex-1 min-h-0 w-full min-w-0">
+              <div className="hidden sm:flex w-11 md:w-12 shrink-0 items-center justify-center pl-1 md:pl-2">
+                {hasPrev ? (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={goPrev}
+                    aria-label="Previous card"
+                    className="size-10 md:size-11 text-muted-foreground hover:text-foreground hover:bg-muted/80 shrink-0 rounded-full"
+                  >
+                    <ChevronLeft className="size-5 md:size-6" />
+                  </Button>
+                ) : null}
               </div>
-              <div>
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1.5">
-                  Answer
-                </p>
-                <div dir="auto" className="text-base leading-relaxed text-foreground">
-                  <FormattedText text={card.answer_short} className="text-inherit" />
+              <div className="flex-1 min-h-0 overflow-y-auto min-w-0 px-11 py-4 sm:px-4 sm:py-4">
+                <div className="space-y-4 max-w-2xl mx-auto w-full">
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1.5">
+                      Question
+                    </p>
+                    <p dir="auto" className="text-base font-medium leading-relaxed text-foreground">
+                      {card.question}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1.5">
+                      Answer
+                    </p>
+                    <div dir="auto" className="text-base leading-relaxed text-foreground">
+                      <FormattedText text={card.answer_short} className="text-inherit" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div className="hidden sm:flex w-11 md:w-12 shrink-0 items-center justify-center pr-1 md:pr-2">
+                {hasNext ? (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={goNext}
+                    aria-label="Next card"
+                    className="size-10 md:size-11 text-muted-foreground hover:text-foreground hover:bg-muted/80 shrink-0 rounded-full"
+                  >
+                    <ChevronRight className="size-5 md:size-6" />
+                  </Button>
+                ) : null}
+              </div>
+            </div>
+            <div className="sm:hidden pointer-events-none absolute inset-0 flex items-center justify-between px-0.5 z-20">
+              <div className="pointer-events-auto flex w-11 justify-start">
+                {hasPrev ? (
+                  <Button
+                    variant="secondary"
+                    size="icon"
+                    onClick={goPrev}
+                    aria-label="Previous card"
+                    className="size-10 rounded-full border border-border/60 bg-background/95 text-muted-foreground shadow-sm backdrop-blur-sm hover:bg-background"
+                  >
+                    <ChevronLeft className="size-5" />
+                  </Button>
+                ) : null}
+              </div>
+              <div className="pointer-events-auto flex w-11 justify-end">
+                {hasNext ? (
+                  <Button
+                    variant="secondary"
+                    size="icon"
+                    onClick={goNext}
+                    aria-label="Next card"
+                    className="size-10 rounded-full border border-border/60 bg-background/95 text-muted-foreground shadow-sm backdrop-blur-sm hover:bg-background"
+                  >
+                    <ChevronRight className="size-5" />
+                  </Button>
+                ) : null}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="flex flex-1 min-h-0 flex-col min-w-0 p-4 sm:p-5">
+            <div className="flex flex-1 min-h-0 w-full max-w-5xl mx-auto items-center justify-center">
+              <div className="flex w-full items-center justify-center gap-2 sm:gap-3 md:gap-4 min-h-0 min-w-0">
+                <div className="hidden sm:flex w-11 md:w-12 shrink-0 items-center justify-center">
+                  {hasPrev ? (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={goPrev}
+                      aria-label="Previous card"
+                      className="size-10 md:size-11 text-muted-foreground hover:text-foreground hover:bg-muted/80 shrink-0 rounded-full"
+                    >
+                      <ChevronLeft className="size-5 md:size-6" />
+                    </Button>
+                  ) : (
+                    <span className="inline-block w-10 md:w-11 shrink-0" aria-hidden />
+                  )}
+                </div>
+                <div className="relative w-full min-w-0 max-w-2xl sm:max-w-3xl flex justify-center">
+                  <FlashcardFlip
+                    key={card.id}
+                    question={
+                      <span className="text-2xl sm:text-3xl lg:text-4xl font-medium leading-snug sm:leading-relaxed text-foreground">
+                        {card.question}
+                      </span>
+                    }
+                    answer={
+                      <FormattedText
+                        text={card.answer_short}
+                        className="whitespace-pre-line text-xl sm:text-2xl lg:text-[1.75rem] leading-relaxed text-foreground"
+                      />
+                    }
+                    className="w-full"
+                    flipped={flipState}
+                    onFlip={() => setFlipState((f) => !f)}
+                  />
+                  <div className="sm:hidden absolute inset-0 flex items-center justify-between pointer-events-none z-20 px-0">
+                    <div className="pointer-events-auto flex w-11 justify-start pl-0.5">
+                      {hasPrev ? (
+                        <Button
+                          variant="secondary"
+                          size="icon"
+                          onClick={goPrev}
+                          aria-label="Previous card"
+                          className="size-10 rounded-full border border-border/60 bg-background/95 text-muted-foreground shadow-sm backdrop-blur-sm hover:bg-background"
+                        >
+                          <ChevronLeft className="size-5" />
+                        </Button>
+                      ) : null}
+                    </div>
+                    <div className="pointer-events-auto flex w-11 justify-end pr-0.5">
+                      {hasNext ? (
+                        <Button
+                          variant="secondary"
+                          size="icon"
+                          onClick={goNext}
+                          aria-label="Next card"
+                          className="size-10 rounded-full border border-border/60 bg-background/95 text-muted-foreground shadow-sm backdrop-blur-sm hover:bg-background"
+                        >
+                          <ChevronRight className="size-5" />
+                        </Button>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+                <div className="hidden sm:flex w-11 md:w-12 shrink-0 items-center justify-center">
+                  {hasNext ? (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={goNext}
+                      aria-label="Next card"
+                      className="size-10 md:size-11 text-muted-foreground hover:text-foreground hover:bg-muted/80 shrink-0 rounded-full"
+                    >
+                      <ChevronRight className="size-5 md:size-6" />
+                    </Button>
+                  ) : (
+                    <span className="inline-block w-10 md:w-11 shrink-0" aria-hidden />
+                  )}
                 </div>
               </div>
             </div>
-          ) : (
-            <div className="flex items-center justify-center min-h-[280px] py-4">
-              <FlashcardFlip
-                key={card.id}
-                question={
-                  <span className="text-2xl sm:text-3xl lg:text-4xl font-medium leading-snug sm:leading-relaxed text-foreground">
-                    {card.question}
-                  </span>
-                }
-                answer={
-                  <FormattedText
-                    text={card.answer_short}
-                    className="whitespace-pre-line text-xl sm:text-2xl lg:text-[1.75rem] leading-relaxed text-foreground"
-                  />
-                }
-                className="w-full"
-                flipped={flipState}
-                onFlip={() => setFlipState((f) => !f)}
-              />
-            </div>
-          )}
-        </div>
+          </div>
+        )}
       </div>
     </div>
   );
