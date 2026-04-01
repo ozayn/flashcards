@@ -437,14 +437,7 @@ export default function StudyPage({ params }: StudyPageProps) {
           </div>
         </div>
       )}
-      <Link
-        href={`/decks/${params.deck_id}`}
-        className="fixed bottom-8 right-[max(0.5rem,calc(50vw-min(50vw,18rem)))] z-50 inline-flex items-center gap-2 rounded-full bg-background/95 backdrop-blur border border-border shadow-lg px-4 py-2 text-sm font-medium hover:bg-muted transition-colors landscape-mobile:bottom-2 landscape-mobile:right-2 landscape-mobile:px-2.5 landscape-mobile:py-1 landscape-mobile:text-xs landscape-mobile:gap-1.5"
-      >
-        <X className="size-4 landscape-mobile:size-3" />
-        Exit
-      </Link>
-      <div className="pt-4 sm:pt-6 landscape-mobile:pt-2 shrink-0 w-full">
+      <div className="pt-3 sm:pt-4 landscape-mobile:pt-2 shrink-0 w-full">
         <div className="max-w-4xl mx-auto w-full px-4 sm:px-6 md:px-8 space-y-2 landscape-mobile:space-y-1">
           <div className="flex items-center justify-between">
             <Link
@@ -492,15 +485,6 @@ export default function StudyPage({ params }: StudyPageProps) {
                   )}
                 </div>
               </div>
-              {isDev && (
-                <button
-                  type="button"
-                  onClick={() => setResetConfirmOpen(true)}
-                  className="text-xs px-2 py-1 rounded border border-red-400 text-red-500 hover:bg-red-50 dark:border-red-600 dark:text-red-400 dark:hover:bg-red-950/50 transition-colors"
-                >
-                  Reset
-                </button>
-              )}
             </div>
           </div>
           <div className="flex items-center gap-3 flex-wrap landscape-mobile:gap-2">
@@ -611,8 +595,9 @@ export default function StudyPage({ params }: StudyPageProps) {
           </div>
         </div>
       ) : (
-      <div className="flex flex-col items-center justify-center min-h-[75vh] flex-1 min-h-0 w-full landscape-mobile:min-h-0 landscape-mobile:mt-0">
-        <div className="flex-1 min-h-0 min-h-[200px] landscape-mobile:min-h-0 flex flex-col landscape:flex-row landscape:items-center landscape:min-h-0 justify-center items-center gap-2 landscape:gap-3 landscape-mobile:gap-0 w-full max-w-4xl mx-auto relative overflow-hidden [perspective:1000px]">
+      <div className="flex flex-col flex-1 min-h-0 w-full min-w-0">
+        <div className="flex flex-1 min-h-0 flex flex-col justify-center items-stretch max-w-4xl mx-auto w-full px-4 sm:px-6 md:px-8 py-2 sm:py-3 min-h-0">
+        <div className="flex flex-1 min-h-0 min-h-[160px] landscape-mobile:min-h-0 flex flex-col landscape:flex-row landscape:items-center landscape:min-h-0 justify-center items-center gap-2 landscape:gap-3 landscape-mobile:gap-0 w-full relative overflow-hidden [perspective:1000px]">
           {!isFirst ? (
             <Button
               variant="outline"
@@ -748,7 +733,26 @@ export default function StudyPage({ params }: StudyPageProps) {
           ) : (
             <span className="hidden landscape:block landscape-mobile:!hidden w-10 shrink-0 order-3" aria-hidden />
           )}
-      </div>
+        </div>
+        </div>
+        <div className="shrink-0 max-w-4xl mx-auto w-full px-4 sm:px-6 md:px-8 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 mt-1 border-t border-border/50 flex flex-wrap items-center justify-end gap-2">
+          <Link
+            href={`/decks/${params.deck_id}`}
+            className="inline-flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-sm font-medium text-foreground shadow-sm hover:bg-muted transition-colors"
+          >
+            <X className="size-4 shrink-0" />
+            Exit
+          </Link>
+          {isDev && (
+            <button
+              type="button"
+              onClick={() => setResetConfirmOpen(true)}
+              className="text-xs text-muted-foreground hover:text-foreground px-2 py-1.5 rounded-md hover:bg-muted/70 transition-colors"
+            >
+              Reset
+            </button>
+          )}
+        </div>
       </div>
       )}
     </main>
