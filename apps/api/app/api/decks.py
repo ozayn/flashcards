@@ -239,6 +239,9 @@ async def update_deck(
     if data.archived is not None:
         deck.archived = data.archived
 
+    if data.is_public is not None:
+        deck.is_public = data.is_public
+
     if "category_id" in (data.model_dump(exclude_unset=True) or {}):
         new_cat_id = data.category_id if data.category_id else None
         if new_cat_id:

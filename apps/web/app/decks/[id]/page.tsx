@@ -9,6 +9,8 @@ import {
   ChevronRight,
   ChevronUp,
   Download,
+  Eye,
+  EyeOff,
   LayoutGrid,
   List,
   Pencil,
@@ -749,6 +751,25 @@ export default function DeckPage({ params }: DeckPageProps) {
                   className="text-muted-foreground hover:text-foreground h-7 px-2"
                 >
                   {deck.category_id ? "Change category" : "Assign category"}
+                </Button>
+                <span className="text-border">·</span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={async () => {
+                    const next = !deck.is_public;
+                    try {
+                      await updateDeck(deck.id, { is_public: next });
+                      setDeck({ ...deck, is_public: next });
+                    } catch { /* ignore */ }
+                  }}
+                  className="text-muted-foreground hover:text-foreground h-7 px-2"
+                >
+                  {deck.is_public ? (
+                    <><Eye className="size-3.5 mr-1 inline text-emerald-600 dark:text-emerald-400" /> Public</>
+                  ) : (
+                    <><EyeOff className="size-3.5 mr-1 inline" /> Private</>
+                  )}
                 </Button>
               </div>
             )}

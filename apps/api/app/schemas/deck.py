@@ -17,6 +17,7 @@ class DeckUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=255)
     description: Optional[str] = Field(None, max_length=500)
     archived: Optional[bool] = None
+    is_public: Optional[bool] = None
     category_id: Optional[str] = None
 
 

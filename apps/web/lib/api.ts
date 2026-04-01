@@ -274,7 +274,7 @@ export async function moveDeckToCategory(deckId: string, categoryId: string | nu
 
 export async function updateDeck(
   deckId: string,
-  data: { name?: string; description?: string; archived?: boolean; category_id?: string | null }
+  data: { name?: string; description?: string; archived?: boolean; is_public?: boolean; category_id?: string | null }
 ) {
   const res = await fetch(`${API_BASE}/decks/${deckId}`, {
     method: "PATCH",

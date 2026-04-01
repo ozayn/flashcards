@@ -21,7 +21,10 @@ import {
   ChevronDown,
   CircleAlert,
   Eye,
+  EyeOff,
   FolderInput,
+  LayoutGrid,
+  List,
   Loader2,
   MoreVertical,
   Pencil,
@@ -230,11 +233,16 @@ export default function DecksPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [viewMode, setViewMode] = useState<"grouped" | "all">("grouped");
   const [sortMode, setSortMode] = useState<"newest" | "oldest" | "az">("newest");
+  const [deckLayout, setDeckLayout] = useState<"list" | "grid">("list");
 
   useEffect(() => {
     try {
       const stored = localStorage.getItem("flashcards_collapsed_categories");
       if (stored) setCollapsedCategories(new Set(JSON.parse(stored)));
+    } catch {}
+    try {
+      const stored = localStorage.getItem("flashcards_deck_layout");
+      if (stored === "grid" || stored === "list") setDeckLayout(stored);
     } catch {}
   }, []);
 
@@ -341,6 +349,17 @@ export default function DecksPage() {
     try {
       await updateDeck(deckId, { archived: archive });
       setDecks((d) => d.filter((deck) => deck.id !== deckId));
+    } catch {
+      // ignore
+    }
+  }
+
+  async function handleTogglePublic(deckId: string, makePublic: boolean) {
+    try {
+      await updateDeck(deckId, { is_public: makePublic });
+      setDecks((prev) =>
+        prev.map((d) => (d.id === deckId ? { ...d, is_public: makePublic } : d))
+      );
     } catch {
       // ignore
     }
@@ -581,6 +600,86 @@ export default function DecksPage() {
   const showDeckListSkeleton =
     !userResolved || (Boolean(userId) && decksLoading);
 
+  function switchDeckLayout(layout: "list" | "grid") {
+    setDeckLayout(layout);
+    try { localStorage.setItem("flashcards_deck_layout", layout); } catch {}
+  }
+
+  function renderDeckMenu(deck: Deck) {
+    return (
+      <div className={`relative deck-menu-button opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100 max-mobile:opacity-100 ${openDeckMenuId === deck.id ? "!opacity-100" : ""}`}>
+        <Button
+          variant="ghost"
+          size="icon"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            setOpenDeckMenuId((prev) => (prev === deck.id ? null : deck.id));
+          }}
+          className="text-muted-foreground hover:text-foreground"
+          aria-label="Deck actions"
+          aria-expanded={openDeckMenuId === deck.id}
+        >
+          <MoreVertical className="size-4" />
+        </Button>
+        {openDeckMenuId === deck.id && (
+          <div
+            className="absolute right-0 top-full mt-1 z-50 min-w-[180px] rounded-lg border border-border bg-background py-1 shadow-lg"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm hover:bg-muted max-mobile:min-h-[44px] max-mobile:py-3"
+              onClick={() => openMoveModal(deck.id)}
+            >
+              <FolderInput className="size-4 shrink-0" />
+              Move to category
+            </button>
+            <button
+              type="button"
+              className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm hover:bg-muted max-mobile:min-h-[44px] max-mobile:py-3"
+              onClick={() => openRenameDeckModal(deck.id)}
+            >
+              <Pencil className="size-4 shrink-0" />
+              Rename deck
+            </button>
+            <button
+              type="button"
+              className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm hover:bg-muted max-mobile:min-h-[44px] max-mobile:py-3"
+              onClick={() => {
+                setOpenDeckMenuId(null);
+                handleTogglePublic(deck.id, !deck.is_public);
+              }}
+            >
+              {deck.is_public ? <EyeOff className="size-4 shrink-0" /> : <Eye className="size-4 shrink-0" />}
+              {deck.is_public ? "Remove from Library" : "Add to Library"}
+            </button>
+            <button
+              type="button"
+              className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm hover:bg-muted max-mobile:min-h-[44px] max-mobile:py-3"
+              onClick={(e) => {
+                setOpenDeckMenuId(null);
+                handleArchiveDeck(deck.id, !showArchived, e);
+              }}
+            >
+              {showArchived ? <ArchiveRestore className="size-4 shrink-0" /> : <Archive className="size-4 shrink-0" />}
+              {showArchived ? "Unarchive" : "Archive"}
+            </button>
+            <button
+              type="button"
+              className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-destructive hover:bg-destructive/10 max-mobile:min-h-[44px] max-mobile:py-3"
+              onClick={() => openDeleteDeckConfirm(deck.id)}
+            >
+              <Trash2 className="size-4 shrink-0" />
+              Delete deck
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   function renderDeckRow(deck: Deck) {
     return (
       <div
@@ -622,70 +721,70 @@ export default function DecksPage() {
               {viewMode === "all" && deck.category_id && categoryNameMap.has(deck.category_id) && (
                 <> · {categoryNameMap.get(deck.category_id)}</>
               )}
+              {deck.is_public && <> · <span className="text-emerald-600 dark:text-emerald-400">Public</span></>}
             </span>
           </div>
         </div>
         <div className="shrink-0 flex items-center gap-0.5 max-mobile:opacity-60">
-          <div className={`relative deck-menu-button opacity-0 transition-opacity duration-150 group-hover:opacity-100 max-mobile:opacity-100 ${openDeckMenuId === deck.id ? "!opacity-100" : ""}`}>
-            <Button
-              variant="ghost"
-              size="icon"
-              onPointerDown={(e) => e.stopPropagation()}
-              onClick={(e) => {
-                e.stopPropagation();
-                e.preventDefault();
-                setOpenDeckMenuId((prev) => (prev === deck.id ? null : deck.id));
-              }}
-              className="text-muted-foreground hover:text-foreground"
-              aria-label="Deck actions"
-              aria-expanded={openDeckMenuId === deck.id}
-            >
-              <MoreVertical className="size-4" />
-            </Button>
-            {openDeckMenuId === deck.id && (
-              <div
-                className="absolute right-0 top-full mt-1 z-50 min-w-[180px] rounded-lg border border-border bg-background py-1 shadow-lg"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <button
-                  type="button"
-                  className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm hover:bg-muted max-mobile:min-h-[44px] max-mobile:py-3"
-                  onClick={() => openMoveModal(deck.id)}
-                >
-                  <FolderInput className="size-4 shrink-0" />
-                  Move to category
-                </button>
-                <button
-                  type="button"
-                  className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm hover:bg-muted max-mobile:min-h-[44px] max-mobile:py-3"
-                  onClick={() => openRenameDeckModal(deck.id)}
-                >
-                  <Pencil className="size-4 shrink-0" />
-                  Rename deck
-                </button>
-                <button
-                  type="button"
-                  className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm hover:bg-muted max-mobile:min-h-[44px] max-mobile:py-3"
-                  onClick={(e) => {
-                    setOpenDeckMenuId(null);
-                    handleArchiveDeck(deck.id, !showArchived, e);
-                  }}
-                >
-                  {showArchived ? <ArchiveRestore className="size-4 shrink-0" /> : <Archive className="size-4 shrink-0" />}
-                  {showArchived ? "Unarchive" : "Archive"}
-                </button>
-                <button
-                  type="button"
-                  className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-destructive hover:bg-destructive/10 max-mobile:min-h-[44px] max-mobile:py-3"
-                  onClick={() => openDeleteDeckConfirm(deck.id)}
-                >
-                  <Trash2 className="size-4 shrink-0" />
-                  Delete deck
-                </button>
-              </div>
-            )}
+          {renderDeckMenu(deck)}
+        </div>
+      </div>
+    );
+  }
+
+  function renderDeckTile(deck: Deck) {
+    return (
+      <div
+        role="link"
+        tabIndex={0}
+        onClick={() => router.push(`/decks/${deck.id}`)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            router.push(`/decks/${deck.id}`);
+          }
+        }}
+        className="group relative rounded-xl border border-border bg-background p-4 flex flex-col gap-2 hover:bg-muted/30 transition-colors cursor-pointer max-mobile:p-3.5"
+      >
+        <div className="flex items-start justify-between gap-2 min-w-0">
+          <h3 className="font-semibold text-sm leading-snug line-clamp-2 min-w-0">
+            {deck.name}
+          </h3>
+          <div className="shrink-0">
+            {renderDeckMenu(deck)}
           </div>
         </div>
+        {deck.description && (
+          <p className="text-xs text-muted-foreground leading-relaxed line-clamp-2">{deck.description}</p>
+        )}
+        <div className="flex items-center gap-2 mt-auto pt-1 text-xs text-muted-foreground">
+          <span>{deck.card_count ?? 0} {(deck.card_count ?? 0) === 1 ? "card" : "cards"}</span>
+          {viewMode === "all" && deck.category_id && categoryNameMap.has(deck.category_id) && (
+            <> · <span>{categoryNameMap.get(deck.category_id)}</span></>
+          )}
+          {deck.is_public && <> · <span className="text-emerald-600 dark:text-emerald-400">Public</span></>}
+        </div>
+      </div>
+    );
+  }
+
+  function renderDecks(deckList: Deck[], wrapper?: (deck: Deck, content: React.ReactNode) => React.ReactNode) {
+    if (deckLayout === "grid") {
+      return (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {deckList.map((deck) => {
+            const tile = <div key={deck.id}>{renderDeckTile(deck)}</div>;
+            return wrapper ? <div key={deck.id}>{wrapper(deck, renderDeckTile(deck))}</div> : tile;
+          })}
+        </div>
+      );
+    }
+    return (
+      <div className="space-y-1.5">
+        {deckList.map((deck) => {
+          const row = <div key={deck.id}>{renderDeckRow(deck)}</div>;
+          return wrapper ? <div key={deck.id}>{wrapper(deck, renderDeckRow(deck))}</div> : row;
+        })}
       </div>
     );
   }
@@ -971,26 +1070,46 @@ export default function DecksPage() {
             />
           </div>
           <div className="flex items-center justify-between gap-3">
-            <div className="inline-flex rounded-lg border border-border/50 bg-muted/30 p-0.5">
-              {(
-                [
-                  { value: "grouped" as const, label: "Grouped" },
-                  { value: "all" as const, label: "All" },
-                ] as const
-              ).map(({ value, label }) => (
+            <div className="flex items-center gap-2">
+              <div className="inline-flex rounded-lg border border-border/50 bg-muted/30 p-0.5">
+                {(
+                  [
+                    { value: "grouped" as const, label: "Grouped" },
+                    { value: "all" as const, label: "All" },
+                  ] as const
+                ).map(({ value, label }) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setViewMode(value)}
+                    className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
+                      viewMode === value
+                        ? "bg-background text-foreground shadow-sm ring-1 ring-border/60"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <div className="inline-flex rounded-lg border border-border/50 bg-muted/30 p-0.5">
                 <button
-                  key={value}
                   type="button"
-                  onClick={() => setViewMode(value)}
-                  className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
-                    viewMode === value
-                      ? "bg-background text-foreground shadow-sm ring-1 ring-border/60"
-                      : "text-muted-foreground hover:text-foreground"
-                  }`}
+                  onClick={() => switchDeckLayout("list")}
+                  className={`rounded-md p-1 transition-colors ${deckLayout === "list" ? "bg-background text-foreground shadow-sm ring-1 ring-border/60" : "text-muted-foreground hover:text-foreground"}`}
+                  aria-label="List view"
                 >
-                  {label}
+                  <List className="size-3.5" />
                 </button>
-              ))}
+                <button
+                  type="button"
+                  onClick={() => switchDeckLayout("grid")}
+                  className={`rounded-md p-1 transition-colors ${deckLayout === "grid" ? "bg-background text-foreground shadow-sm ring-1 ring-border/60" : "text-muted-foreground hover:text-foreground"}`}
+                  aria-label="Grid view"
+                >
+                  <LayoutGrid className="size-3.5" />
+                </button>
+              </div>
             </div>
             <div className="flex items-center gap-3">
               {viewMode === "all" && (
@@ -1048,11 +1167,7 @@ export default function DecksPage() {
               <p className="text-muted-foreground">No decks match &ldquo;{searchQuery.trim()}&rdquo;</p>
             </div>
           ) : viewMode === "all" ? (
-            <div className="space-y-1.5">
-              {sortedFlatDecks.map((deck) => (
-                <div key={deck.id}>{renderDeckRow(deck)}</div>
-              ))}
-            </div>
+            renderDecks(sortedFlatDecks)
           ) : (
             <DndContext
               sensors={sensors}
@@ -1206,14 +1321,14 @@ export default function DecksPage() {
                       </div>
                     )}
                   </div>
-                  {!collapsedCategories.has(group.categoryId) && <div className="space-y-1.5 pl-6">
-                    {group.decks.map((deck) => (
+                  {!collapsedCategories.has(group.categoryId) && <div className="pl-6">
+                    {renderDecks(group.decks, (deck, content) => (
                       <DraggableDeckRow
                         key={deck.id}
                         deck={deck}
                         isDragging={activeDragId === deck.id}
                       >
-                        {renderDeckRow(deck)}
+                        {content}
                       </DraggableDeckRow>
                     ))}
                   </div>}
