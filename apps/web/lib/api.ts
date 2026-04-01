@@ -155,6 +155,7 @@ export async function createDeck(data: {
   source_url?: string | null;
   source_topic?: string | null;
   source_text?: string | null;
+  source_segments?: string | null;
 }) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 15000);
@@ -166,6 +167,7 @@ export async function createDeck(data: {
     if (data.source_topic === undefined) delete body.source_topic;
     if (data.source_url === undefined) delete body.source_url;
     if (data.source_text === undefined) delete body.source_text;
+    if (data.source_segments === undefined) delete body.source_segments;
     const res = await fetch(`${API_BASE}/decks`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -207,6 +209,13 @@ export function normalizeYouTubeUrl(url: string): string {
   return url.trim();
 }
 
+export function isYouTubePlaylistUrl(url: string): boolean {
+  const t = url.trim();
+  if (/youtube\.com\/playlist\b/i.test(t)) return true;
+  if (/[?&]list=/i.test(t) && /youtube\.com|youtu\.be/i.test(t)) return true;
+  return false;
+}
+
 export class TranscriptFetchError extends Error {
   title: string | null;
   constructor(message: string, title: string | null = null) {
@@ -219,6 +228,7 @@ export async function fetchYouTubeTranscript(url: string): Promise<{
   video_id: string;
   title: string | null;
   transcript: string;
+  segments: { text: string; start: number }[];
   language: string | null;
   char_count: number;
 }> {
@@ -498,6 +508,27 @@ export async function generateFlashcards(data: {
   if (!res.ok) throw new Error("Failed to generate flashcards");
 
   return res.json();
+}
+
+export async function generateFlashcardsBackground(data: {
+  deck_id: string;
+  topic?: string;
+  text?: string;
+  num_cards?: number;
+  language?: string;
+}) {
+  const res = await fetch(`${API_BASE}/generate-flashcards/background`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      ...data,
+      num_cards: data.num_cards ?? 10,
+      language: data.language ?? "en",
+    }),
+  });
+
+  if (!res.ok) throw new Error("Failed to start generation");
+  return res.json() as Promise<{ deck_id: string; status: string }>;
 }
 
 export async function submitReview(

@@ -10,7 +10,8 @@ from sqlalchemy import and_, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.models import Category, Deck, Flashcard, Review
+from app.models import Category, Deck, Flashcard, Review, User
+from app.models.enums import UserRole
 from app.schemas.deck import DeckCreate, DeckMoveRequest, DeckResponse, DeckUpdate
 from app.schemas.flashcard import FlashcardResponse
 
@@ -240,6 +241,11 @@ async def update_deck(
         deck.archived = data.archived
 
     if data.is_public is not None:
+        user_result = await db.execute(select(User.role).where(User.id == deck.user_id))
+        user_row = user_result.first()
+        is_admin = user_row and user_row[0] in (UserRole.admin, UserRole.admin.value)
+        if not is_admin:
+            raise HTTPException(status_code=403, detail="Only admin users can change deck visibility.")
         deck.is_public = data.is_public
 
     if "category_id" in (data.model_dump(exclude_unset=True) or {}):
@@ -357,6 +363,7 @@ async def create_deck(
         source_url=payload.source_url,
         source_topic=payload.source_topic,
         source_text=payload.source_text,
+        source_segments=payload.source_segments,
     )
     db.add(deck)
     await db.flush()
@@ -372,20 +379,35 @@ def _slugify(text: str, max_len: int = 60) -> str:
     return text[:max_len].rstrip("-") or "transcript"
 
 
+def _format_timestamp(seconds: float) -> str:
+    """Format seconds as [HH:MM:SS] or [MM:SS]."""
+    total = int(seconds)
+    h, remainder = divmod(total, 3600)
+    m, s = divmod(remainder, 60)
+    if h > 0:
+        return f"[{h:d}:{m:02d}:{s:02d}]"
+    return f"[{m:02d}:{s:02d}]"
+
+
+def _get_transcript_deck(deck) -> None:
+    """Validate that a deck is eligible for transcript download."""
+    if deck.source_type != "youtube":
+        raise HTTPException(status_code=400, detail="Transcript download is only available for YouTube decks.")
+    if not deck.source_text or not deck.source_text.strip():
+        raise HTTPException(status_code=404, detail="No transcript stored for this deck.")
+
+
 @router.get("/{deck_id}/transcript")
 async def download_transcript(
     deck_id: str,
     db: AsyncSession = Depends(get_db),
 ):
-    """Download the stored transcript for a YouTube-sourced deck as a .txt file."""
+    """Download the stored plain transcript as a .txt file."""
     result = await db.execute(select(Deck).where(Deck.id == deck_id))
     deck = result.scalar_one_or_none()
     if not deck:
         raise HTTPException(status_code=404, detail="Deck not found")
-    if deck.source_type != "youtube":
-        raise HTTPException(status_code=400, detail="Transcript download is only available for YouTube decks.")
-    if not deck.source_text or not deck.source_text.strip():
-        raise HTTPException(status_code=404, detail="No transcript stored for this deck.")
+    _get_transcript_deck(deck)
 
     title = deck.source_topic or deck.name or "YouTube Video"
     url = deck.source_url or ""
@@ -397,6 +419,48 @@ async def download_transcript(
     body += deck.source_text
 
     filename = _slugify(title) + "-transcript.txt"
+
+    return PlainTextResponse(
+        content=body,
+        media_type="text/plain; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/{deck_id}/transcript/timestamped")
+async def download_transcript_timestamped(
+    deck_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Download the stored transcript with timestamps as a .txt file."""
+    result = await db.execute(select(Deck).where(Deck.id == deck_id))
+    deck = result.scalar_one_or_none()
+    if not deck:
+        raise HTTPException(status_code=404, detail="Deck not found")
+    _get_transcript_deck(deck)
+
+    if not deck.source_segments or not deck.source_segments.strip():
+        raise HTTPException(status_code=404, detail="No timestamped data available for this deck.")
+
+    import json as _json
+    try:
+        segments = _json.loads(deck.source_segments)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=404, detail="No timestamped data available for this deck.")
+
+    title = deck.source_topic or deck.name or "YouTube Video"
+    url = deck.source_url or ""
+
+    body = f"Title: {title}\n"
+    if url:
+        body += f"Source URL: {url}\n"
+    body += "\nTranscript (with timestamps):\n\n"
+
+    for seg in segments:
+        ts = _format_timestamp(seg.get("start", 0))
+        body += f"{ts} {seg.get('text', '')}\n"
+
+    filename = _slugify(title) + "-transcript-timestamped.txt"
 
     return PlainTextResponse(
         content=body,

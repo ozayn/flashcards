@@ -17,6 +17,18 @@ from app.llm.cost_tracker import log_llm_usage, log_usage_unavailable
 
 logger = logging.getLogger(__name__)
 
+_JSON_SYSTEM_PROMPT = "You are a helpful assistant. Return only valid JSON, no other text."
+
+
+def _llm_response_preview(text: str, max_len: int = 500) -> str:
+    if not text:
+        return "(empty)"
+    t = text.strip().replace("\r", " ")
+    if len(t) > max_len:
+        return f"{t[:max_len]}… (total_len={len(text)})"
+    return f"{t} (len={len(text)})"
+
+
 MAX_RATE_LIMIT_RETRIES = 2
 DEFAULT_RETRY_WAIT = 5.0
 MAX_RETRY_WAIT = 30.0
@@ -61,7 +73,7 @@ def _generate_groq(prompt: str, temperature: float, max_tokens: int) -> str:
     kwargs = {
         "model": model,
         "messages": [
-            {"role": "system", "content": "You are a helpful assistant. Return only valid JSON, no other text."},
+            {"role": "system", "content": _JSON_SYSTEM_PROMPT},
             {"role": "user", "content": prompt},
         ],
         "temperature": temperature,
@@ -101,7 +113,7 @@ def _generate_openrouter(prompt: str, temperature: float, max_tokens: int) -> st
     payload = {
         "model": model,
         "messages": [
-            {"role": "system", "content": "You are a helpful assistant. Return only valid JSON, no other text."},
+            {"role": "system", "content": _JSON_SYSTEM_PROMPT},
             {"role": "user", "content": prompt},
         ],
         "temperature": temperature,
@@ -140,56 +152,205 @@ def _generate_openrouter(prompt: str, temperature: float, max_tokens: int) -> st
 
 
 def _generate_gemini(prompt: str, temperature: float, max_tokens: int) -> str:
+    from app.llm.json_truncation import analyze_llm_json_response, finish_reason_is_max_tokens
+
     api_key = (os.getenv("GEMINI_API_KEY") or "").strip()
     if not api_key:
         raise ValueError("GEMINI_API_KEY not configured")
     model = (os.getenv("GEMINI_MODEL") or "").strip() or DEFAULT_MODELS["gemini"]
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-    payload = {
+    json_mode = (os.getenv("GEMINI_JSON_OUTPUT", "1") or "1").strip() not in ("0", "false", "no")
+    cap = max(512, int(os.getenv("GEMINI_MAX_OUTPUT_TOKENS_CAP", "8192")))
+    retry_floor = max(1024, int(os.getenv("GEMINI_TRUNCATION_RETRY_MIN_TOKENS", "4096")))
+    use_triple_nl_stop = (os.getenv("GEMINI_USE_TRIPLE_NEWLINE_STOP", "0") or "0").strip() in (
+        "1",
+        "true",
+        "yes",
+    )
+
+    def generation_config(mtok: int, with_json_mime: bool) -> dict:
+        mtok_clamped = min(max(1, mtok), cap)
+        cfg: dict = {
+            "temperature": temperature,
+            "maxOutputTokens": mtok_clamped,
+        }
+        # Default OFF: "\n\n\n" often appears in pretty-printed JSON (blank lines between cards) and
+        # cuts the response mid-object (~hundreds of chars). Groq uses this stop; Gemini JSON must not.
+        if use_triple_nl_stop:
+            cfg["stopSequences"] = ["\n\n\n"]
+        if with_json_mime and json_mode:
+            cfg["responseMimeType"] = "application/json"
+        return cfg
+
+    def post_payload(payload: dict) -> dict:
+        resp = requests.post(
+            url,
+            headers={"Content-Type": "application/json"},
+            json=payload,
+            params={"key": api_key},
+            timeout=120,
+        )
+        if not resp.ok:
+            if json_mode and resp.status_code == 400:
+                logger.warning(
+                    "Gemini returned 400 with JSON MIME mode; retrying without responseMimeType. snippet=%s",
+                    (resp.text or "")[:300],
+                )
+                gc = generation_config(min(max_tokens, cap), False)
+                payload["generationConfig"] = gc
+                resp = requests.post(
+                    url,
+                    headers={"Content-Type": "application/json"},
+                    json=payload,
+                    params={"key": api_key},
+                    timeout=120,
+                )
+            if not resp.ok:
+                raise RuntimeError(f"Gemini API error: {resp.text}")
+        return resp.json()
+
+    def parse_response(data: dict) -> tuple[str, str | None, dict]:
+        candidates = data.get("candidates") or []
+        if not candidates:
+            fb = data.get("promptFeedback") or data.get("error")
+            logger.warning("Gemini returned no candidates: %s", fb or data)
+            raise ValueError("Empty response from Gemini")
+        cand0 = candidates[0]
+        finish = cand0.get("finishReason") or cand0.get("finish_reason")
+        content = cand0.get("content") or {}
+        parts = content.get("parts") or []
+        if not parts:
+            raise ValueError("Empty response from Gemini")
+        text = "".join((p.get("text") or "") for p in parts).strip()
+        if not text:
+            raise ValueError("Empty response from Gemini")
+        usage = data.get("usageMetadata") or {}
+        return text, str(finish) if finish is not None else None, usage
+
+    payload_base = {
+        "systemInstruction": {"parts": [{"text": _JSON_SYSTEM_PROMPT}]},
         "contents": [
             {
+                "role": "user",
                 "parts": [{"text": prompt}],
             }
         ],
-        "generationConfig": {
-            "temperature": temperature,
-            "maxOutputTokens": max_tokens,
-            "stopSequences": ["\n\n\n"],
-        },
     }
-    resp = requests.post(
-        url,
-        headers={"Content-Type": "application/json"},
-        json=payload,
-        params={"key": api_key},
-        timeout=120,
-    )
-    if not resp.ok:
-        raise RuntimeError(f"Gemini API error: {resp.text}")
-    data = resp.json()
-    candidates = data.get("candidates") or []
-    if not candidates:
-        raise ValueError("Empty response from Gemini")
-    content = candidates[0].get("content") or {}
-    parts = content.get("parts") or []
-    if not parts:
-        raise ValueError("Empty response from Gemini")
-    text = (parts[0].get("text") or "").strip()
-    if not text:
-        raise ValueError("Empty response from Gemini")
+
+    budget1 = min(max_tokens, cap)
+    payload = {
+        **payload_base,
+        "generationConfig": generation_config(budget1, True),
+    }
+    data = post_payload(payload)
+    text, finish, usage = parse_response(data)
+
     try:
-        usage = data.get("usageMetadata") or {}
-        if usage:
-            inp = usage.get("promptTokenCount") or 0
-            out = usage.get("candidatesTokenCount") or 0
-            if inp or out:
-                log_llm_usage("gemini", model, inp, out)
-            else:
-                log_usage_unavailable("gemini")
+        inp = usage.get("promptTokenCount") or 0
+        out = usage.get("candidatesTokenCount") or 0
+        if inp or out:
+            log_llm_usage("gemini", model, inp, out)
         else:
             log_usage_unavailable("gemini")
     except Exception:
         pass
+
+    trunc, trunc_reason = analyze_llm_json_response(text)
+    max_tok_hit = finish_reason_is_max_tokens(finish)
+    first_json_ok = False
+    try:
+        json.loads(text.strip())
+        first_json_ok = True
+    except json.JSONDecodeError:
+        pass
+    fu = str(finish).upper() if finish else ""
+    if max_tok_hit:
+        logger.warning(
+            "Gemini finishReason indicates output limit (%s). response_chars=%d maxOutputTokens=%d "
+            "candidateTokens=%s trunc_analysis=%s/%s",
+            finish,
+            len(text),
+            budget1,
+            usage.get("candidatesTokenCount"),
+            trunc,
+            trunc_reason,
+        )
+    elif fu and fu not in ("STOP", "FINISHREASON_STOP", "STOP_REASON_STOP"):
+        logger.warning(
+            "Gemini finishReason=%s (may affect JSON). response_chars=%d trunc_analysis=%s/%s",
+            finish,
+            len(text),
+            trunc,
+            trunc_reason,
+        )
+    else:
+        logger.info(
+            "Gemini finishReason=%s response_chars=%d maxOutputTokens=%d candidateTokens=%s trunc_analysis=%s/%s",
+            finish,
+            len(text),
+            budget1,
+            usage.get("candidatesTokenCount"),
+            trunc,
+            trunc_reason,
+        )
+
+    retry_worthy = json_mode and not first_json_ok and (max_tok_hit or trunc)
+    if retry_worthy:
+        # Never shrink output budget on retry (retry_floor could be below budget1).
+        budget2 = min(max(budget1 * 2, retry_floor, budget1 + 512), cap)
+        suffix = (
+            "\n\nYour previous reply may have been cut off. Return ONE complete, valid JSON object only. "
+            "Keep each question and answer_short brief so the full JSON closes; omit answer_detailed or use null."
+        )
+        payload_retry = {
+            "systemInstruction": {"parts": [{"text": _JSON_SYSTEM_PROMPT}]},
+            "contents": [
+                {
+                    "role": "user",
+                    "parts": [{"text": prompt + suffix}],
+                }
+            ],
+            "generationConfig": generation_config(budget2, True),
+        }
+        logger.warning(
+            "Gemini truncation retry: max_tok_finish=%s likely_truncated=%s reason=%s "
+            "first_chars=%d first_budget=%d retry_maxOutputTokens=%d",
+            max_tok_hit,
+            trunc,
+            trunc_reason,
+            len(text),
+            budget1,
+            budget2,
+        )
+        try:
+            data2 = post_payload(payload_retry)
+            text2, finish2, usage2 = parse_response(data2)
+            try:
+                inp2 = usage2.get("promptTokenCount") or 0
+                out2 = usage2.get("candidatesTokenCount") or 0
+                if inp2 or out2:
+                    log_llm_usage("gemini", model, inp2, out2)
+                else:
+                    log_usage_unavailable("gemini")
+            except Exception:
+                pass
+            trunc2, trunc2_reason = analyze_llm_json_response(text2)
+            max2 = finish_reason_is_max_tokens(finish2)
+            logger.info(
+                "Gemini retry finishReason=%s response_chars=%d maxOutputTokens=%d candidateTokens=%s "
+                "trunc_analysis=%s/%s max_tok_finish=%s",
+                finish2,
+                len(text2),
+                budget2,
+                usage2.get("candidatesTokenCount"),
+                trunc2,
+                trunc2_reason,
+                max2,
+            )
+            return text2
+        except Exception as e:
+            logger.warning("Gemini truncation retry failed, using first response: %s", e)
+
     return text
 
 
@@ -203,7 +364,7 @@ def _generate_openai(prompt: str, temperature: float, max_tokens: int) -> str:
     kwargs = {
         "model": model,
         "messages": [
-            {"role": "system", "content": "You are a helpful assistant. Return only valid JSON, no other text."},
+            {"role": "system", "content": _JSON_SYSTEM_PROMPT},
             {"role": "user", "content": prompt},
         ],
         "temperature": temperature,
@@ -298,9 +459,9 @@ def _get_default_temperature() -> float:
 
 
 def _get_default_max_tokens() -> int:
-    """Return max output tokens (min 1200 to avoid JSON truncation). Default 1500."""
-    val = int(os.getenv("LLM_MAX_TOKENS", "1500"))
-    return max(1200, val)
+    """Return max output tokens (floor 1500; default 2048) to reduce multi-card JSON truncation."""
+    val = int(os.getenv("LLM_MAX_TOKENS", "2048"))
+    return max(1500, val)
 
 
 def _is_valid_json_for_cache(text: str) -> bool:
@@ -346,8 +507,9 @@ def generate_completion(
     max_tok = max_tokens if max_tokens is not None else _get_default_max_tokens()
     order = _get_provider_order()
     last_error = None
+    logger.info("LLM provider order (fallback chain): %s", order)
 
-    for provider in order:
+    for pi, provider in enumerate(order):
         fn = _PROVIDER_FNS.get(provider)
         if not fn:
             continue
@@ -358,13 +520,29 @@ def generate_completion(
         while True:
             try:
                 response_text = fn(prompt, temp, max_tok)
-                if _is_valid_json_for_cache(response_text):
+                cache_ok = _is_valid_json_for_cache(response_text)
+                logger.info(
+                    "LLM ok provider=%s model=%s max_output_tokens=%d response_bytes=%d cache_json_ok=%s",
+                    provider,
+                    model,
+                    max_tok,
+                    len(response_text or ""),
+                    cache_ok,
+                )
+                if cache_ok:
                     try:
                         save_cached_response(prompt, response_text)
                     except Exception as e:
                         logger.warning("LLM cache save failed: %s", e)
                 else:
-                    logger.info("Skipping cache: response did not parse as valid JSON")
+                    prev_len = 3200 if provider == "gemini" else 1200
+                    logger.warning(
+                        "LLM response not strict JSON for cache (generation may still parse). "
+                        "provider=%s raw_len=%d preview=%s",
+                        provider,
+                        len(response_text or ""),
+                        _llm_response_preview(response_text or "", prev_len),
+                    )
                 logger.info("LLM provider used: %s", provider)
                 return response_text
             except Exception as e:
@@ -380,9 +558,12 @@ def generate_completion(
 
                 last_error = e
                 if _is_rate_limit_error(e):
+                    nxt = [p for p in order[pi + 1 :] if p in _PROVIDER_FNS]
                     logger.warning(
-                        "Rate limit on %s after %d retries, falling back",
-                        provider, MAX_RATE_LIMIT_RETRIES,
+                        "Rate limit on %s after %d retries; next provider(s): %s",
+                        provider,
+                        MAX_RATE_LIMIT_RETRIES,
+                        nxt or "(none)",
                     )
                 else:
                     logger.warning("LLM provider failed: %s — %s", provider, e)

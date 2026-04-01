@@ -85,10 +85,16 @@ class TranscriptRequest(BaseModel):
     url: str = Field(..., min_length=5, description="YouTube video URL")
 
 
+class TranscriptSegment(BaseModel):
+    text: str
+    start: float
+
+
 class TranscriptResponse(BaseModel):
     video_id: str
     title: Optional[str] = None
     transcript: str
+    segments: list[TranscriptSegment] = []
     language: Optional[str] = None
     char_count: int
 
@@ -137,12 +143,17 @@ async def get_transcript(payload: TranscriptRequest):
             },
         )
 
+    segments: list[TranscriptSegment] = []
     try:
-        parts = [snippet.text for snippet in transcript_list.snippets]
+        parts = []
+        for snippet in transcript_list.snippets:
+            parts.append(snippet.text)
+            segments.append(TranscriptSegment(text=snippet.text, start=snippet.start))
         text = " ".join(parts)
     except Exception:
         parts = [str(entry) for entry in transcript_list]
         text = " ".join(parts)
+        segments = []
 
     lang = None
     try:
@@ -160,6 +171,7 @@ async def get_transcript(payload: TranscriptRequest):
         video_id=video_id,
         title=title,
         transcript=text,
+        segments=segments,
         language=lang,
         char_count=len(text),
     )

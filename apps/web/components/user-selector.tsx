@@ -1,11 +1,13 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
+import { useRouter } from "next/navigation";
 import { ChevronDown, Plus } from "lucide-react";
 import { getUsers, createUser, waitForApiReadiness, apiUrl } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 const STORAGE_KEY = "flashcard_user_id";
+const ROLE_STORAGE_KEY = "flashcard_user_role";
 
 export type User = {
   id: string;
@@ -17,6 +19,7 @@ export type User = {
 };
 
 export function UserSelector() {
+  const router = useRouter();
   const [users, setUsers] = useState<User[]>([]);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -55,6 +58,10 @@ export function UserSelector() {
         if (!validStored || !stored) {
           localStorage.setItem(STORAGE_KEY, userId);
         }
+        const matchedUser = userList.find((u: User) => u.id === userId);
+        if (matchedUser) {
+          localStorage.setItem(ROLE_STORAGE_KEY, matchedUser.role);
+        }
       }
     } catch {
       setUsers([]);
@@ -90,13 +97,19 @@ export function UserSelector() {
   }, [open, users.length, showAddForm]);
 
   const handleSelect = (userId: string) => {
+    const changed = userId !== selectedUserId;
     setSelectedUserId(userId);
     localStorage.setItem(STORAGE_KEY, userId);
+    const matchedUser = users.find((u) => u.id === userId);
+    if (matchedUser) localStorage.setItem(ROLE_STORAGE_KEY, matchedUser.role);
     setOpen(false);
     setShowAddForm(false);
     window.dispatchEvent(
       new CustomEvent("flashcard_user_changed", { detail: { userId } })
     );
+    if (changed) {
+      router.push("/decks");
+    }
   };
 
   const handleAddUser = async (e: React.FormEvent) => {
@@ -292,4 +305,52 @@ export function UserSelector() {
 export function getStoredUserId(): string | null {
   if (typeof window === "undefined") return null;
   return localStorage.getItem(STORAGE_KEY);
+}
+
+export function isStoredUserAdmin(): boolean {
+  if (typeof window === "undefined") return false;
+  return localStorage.getItem(ROLE_STORAGE_KEY) === "admin";
+}
+
+export const MAX_CARDS_ADMIN = 50;
+export const MAX_CARDS_USER = 25;
+
+export function getCardCountOptions(admin?: boolean): number[] {
+  const isAdmin = admin ?? isStoredUserAdmin();
+  const max = isAdmin ? MAX_CARDS_ADMIN : MAX_CARDS_USER;
+  return [5, 10, 15, 20, 25, 30, 40, 50].filter((n) => n <= max);
+}
+
+/**
+ * Card-count dropdown options for generation UIs. First paint matches SSR (non-admin list);
+ * after mount, syncs from localStorage so admins see full range without hydration mismatch.
+ */
+export function useCardCountOptions(): number[] {
+  const [opts, setOpts] = useState<number[]>(() => getCardCountOptions(false));
+  useEffect(() => {
+    function sync() {
+      setOpts(getCardCountOptions());
+    }
+    sync();
+    window.addEventListener("flashcard_user_changed", sync);
+    return () => window.removeEventListener("flashcard_user_changed", sync);
+  }, []);
+  return opts;
+}
+
+/**
+ * Whether the selected user is admin (from localStorage). Always false until mount
+ * so server HTML matches the client’s first paint.
+ */
+export function useClientIsAdmin(): boolean {
+  const [admin, setAdmin] = useState(false);
+  useEffect(() => {
+    function sync() {
+      setAdmin(isStoredUserAdmin());
+    }
+    sync();
+    window.addEventListener("flashcard_user_changed", sync);
+    return () => window.removeEventListener("flashcard_user_changed", sync);
+  }, []);
+  return admin;
 }

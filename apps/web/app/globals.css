@@ -10,6 +10,20 @@
   }
 }
 
+/* Deck detail page — indeterminate loading bar */
+@keyframes deck-load-indeterminate {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(350%);
+  }
+}
+
+.deck-load-indeterminate-fill {
+  animation: deck-load-indeterminate 1.15s ease-in-out infinite;
+}
+
 /* Flashcard flip animation */
 .flashcard {
   perspective: 1200px;

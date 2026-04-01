@@ -8,47 +8,43 @@ export default function LandingPage() {
   return (
     <div data-landing className="min-h-screen bg-background text-foreground">
       <main className="max-w-3xl mx-auto px-6 md:px-8">
-        <section className="pt-24 pb-12 md:pt-32 md:pb-16 text-center">
+        <section className="pt-24 pb-10 md:pt-32 md:pb-14 text-center">
           <h1 className="text-4xl md:text-5xl font-semibold tracking-tight leading-tight">
             Turn anything into flashcards.
           </h1>
           <p className="mt-4 text-lg text-muted-foreground max-w-md mx-auto">
             Enter a topic, or paste a YouTube or Wikipedia link.
           </p>
-          <div className="mt-10">
+          <div className="mt-8">
             <GenerateInput
               placeholder="Topic, YouTube link, Wikipedia URL…"
               suggestions={[
                 "Roman gods",
                 "Quantum mechanics",
-                "Spanish vocabulary",
                 "The French Revolution",
               ]}
             />
           </div>
-        </section>
-
-        <section className="py-10 border-t border-border/40 text-center">
-          <p className="text-sm text-muted-foreground">
-            Or{" "}
-            <Link href="/create-deck" className="text-foreground font-medium hover:underline">
-              create a deck manually
+          <p className="mt-6 text-xs text-muted-foreground/70">
+            <Link href="/create-deck" className="hover:text-muted-foreground transition-colors">
+              Create manually
             </Link>
             {" · "}
-            <Link href="/decks" className="text-foreground font-medium hover:underline">
-              browse your decks
+            <Link href="/decks" className="hover:text-muted-foreground transition-colors">
+              My decks
             </Link>
           </p>
         </section>
 
-        <footer className="py-10 border-t border-border/40">
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-muted-foreground">
-            <Link href="/" className="flex items-center gap-2">
+        <footer className="py-8 border-t border-border/30">
+          <div className="flex items-center justify-between text-xs text-muted-foreground/60">
+            <Link href="/" className="flex items-center gap-1.5 hover:text-muted-foreground transition-colors">
               <Logo size="sm" />
               <span className="font-medium">MemoNext</span>
             </Link>
-            <div className="flex items-center gap-6">
-              <Link href="/about" className="hover:text-foreground transition-colors">About</Link>
+            <div className="flex items-center gap-4">
+              <Link href="/terms" className="hover:text-muted-foreground transition-colors">Terms</Link>
+              <Link href="/privacy" className="hover:text-muted-foreground transition-colors">Privacy</Link>
             </div>
           </div>
         </footer>

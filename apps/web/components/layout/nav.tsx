@@ -85,25 +85,26 @@ export function Nav() {
 
         {/* Right: Theme + Settings + User (app) or CTA links (landing) */}
         <div className="hidden md:flex items-center gap-4">
-          {isLanding && landingRightLinks.map((link) => (
-            link.primary ? (
-              <Link key={link.href} href={link.href}>
-                <Button size="sm" className="rounded-lg">
-                  {link.label}
-                </Button>
-              </Link>
-            ) : (
-              <Link
-                key={link.href}
-                href={link.href}
-                className="text-sm text-muted-foreground hover:text-foreground transition-colors"
-              >
-                {link.label}
-              </Link>
-            )
-          ))}
           <ThemeToggle />
-          {!isLanding && (
+          {isLanding ? (
+            landingRightLinks.map((link) => (
+              link.primary ? (
+                <Link key={link.href} href={link.href}>
+                  <Button size="sm" className="rounded-lg">
+                    {link.label}
+                  </Button>
+                </Link>
+              ) : (
+                <Link
+                  key={link.href}
+                  href={link.href}
+                  className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  {link.label}
+                </Link>
+              )
+            ))
+          ) : (
             <>
               <UserSettings />
               <UserSelector />

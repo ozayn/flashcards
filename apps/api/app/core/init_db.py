@@ -141,6 +141,11 @@ async def init_db() -> None:
                 else "ALTER TABLE decks ADD COLUMN is_public BOOLEAN DEFAULT false",
                 pg_if_not_exists="ALTER TABLE decks ADD COLUMN IF NOT EXISTS is_public BOOLEAN DEFAULT false"
             )
+            _add_column_if_missing(
+                sync_conn, "decks", "source_segments",
+                "ALTER TABLE decks ADD COLUMN source_segments TEXT",
+                pg_if_not_exists="ALTER TABLE decks ADD COLUMN IF NOT EXISTS source_segments TEXT"
+            )
         await conn.run_sync(_migrate_decks)
     logger.info("Applied decks column migrations")
 

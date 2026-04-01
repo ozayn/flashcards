@@ -30,6 +30,7 @@ class Deck(Base):
     source_title: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
     source_topic: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
     source_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    source_segments: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     generation_status: Mapped[str] = mapped_column(
         String(32), default=GenerationStatus.completed.value, nullable=False
     )

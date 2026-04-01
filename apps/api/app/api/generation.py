@@ -1,3 +1,5 @@
+import asyncio
+import contextvars
 import json
 import logging
 import re
@@ -9,10 +11,11 @@ from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.database import get_db
+from app.core.database import get_db, AsyncSessionLocal
+from app.llm.json_truncation import analyze_llm_json_response
 from app.llm.router import generate_completion, _get_default_max_tokens, RateLimitError
-from app.models import Deck, Flashcard
-from app.models.enums import GenerationStatus, SourceType
+from app.models import Deck, Flashcard, User
+from app.models.enums import GenerationStatus, SourceType, UserRole
 from app.schemas.flashcard import DIFFICULTY_TO_INT
 from app.utils.topic_analysis import (
     build_language_rule,
@@ -23,6 +26,70 @@ from app.utils.topic_analysis import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Set during generate_flashcards so JSON-parse failures can log deck_id without threading it everywhere.
+generation_log_deck_id: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
+    "generation_log_deck_id", default=None
+)
+
+
+def _gen_log_prefix() -> str:
+    d = generation_log_deck_id.get()
+    return f"[deck_id={d}] " if d else ""
+
+
+def _preview_for_log(text: str, max_len: int = 600) -> str:
+    if not text:
+        return "(empty)"
+    t = text.strip().replace("\r", " ")
+    if len(t) > max_len:
+        return f"{t[:max_len]}… (len={len(text)})"
+    return f"{t} (len={len(text)})"
+
+
+def _diagnostic_raw_preview(text: str, head: int = 4500, tail: int = 350) -> str:
+    """Long preview for JSON isolate/parse failures: start, optional tail, raw byte length."""
+    if not text:
+        return "(empty)"
+    n = len(text)
+    t = text.replace("\r", " ")
+    if n <= head + tail + 80:
+        return f"{t} (raw_len={n})"
+    return (
+        f"{t[:head]}… [+{n - head - tail} chars omitted] …{t[-tail:]} (raw_len={n})"
+    )
+
+
+def _normalize_json_response_text(s: str) -> str:
+    """Normalize common LLM quirks: BOM, curly/smart quotes that break strict JSON."""
+    s = s.replace("\ufeff", "")
+    trans = str.maketrans(
+        {
+            "\u201c": '"',
+            "\u201d": '"',
+            "\u00ab": '"',
+            "\u00bb": '"',
+            "\u2018": "'",
+            "\u2019": "'",
+        }
+    )
+    return s.translate(trans)
+
+
+def _strip_problematic_json_controls(s: str) -> str:
+    """Remove NUL and most C0 controls except tab/LF/CR (often appear in pasted/Gemini output)."""
+    out: list[str] = []
+    for c in s:
+        o = ord(c)
+        if o == 0:
+            continue
+        if o in (9, 10, 13):
+            out.append(c)
+            continue
+        if 32 <= o <= 0x10FFFF and not (0xD800 <= o <= 0xDFFF):
+            out.append(c)
+    return "".join(out)
+
 
 router = APIRouter(prefix="/generate-flashcards", tags=["generation"])
 
@@ -54,7 +121,29 @@ class GenerateFlashcardsResponse(BaseModel):
     created: int
 
 
+class BackgroundGenerationResponse(BaseModel):
+    deck_id: str
+    status: str
+
+
+# Keep in sync with apps/web/lib/generation-text.ts (GENERATION_TEXT_MAX_CHARS).
 TEXT_MAX_LENGTH = 50000
+
+MAX_CARDS_ADMIN = 50
+MAX_CARDS_USER = 25
+
+
+async def _get_max_cards_for_deck(deck_id: str, db: AsyncSession) -> int:
+    """Return the max allowed card count based on the deck owner's role."""
+    result = await db.execute(select(Deck.user_id).where(Deck.id == deck_id))
+    row = result.first()
+    if not row:
+        return MAX_CARDS_USER
+    user_result = await db.execute(select(User.role).where(User.id == row[0]))
+    user_row = user_result.first()
+    if user_row and user_row[0] in (UserRole.admin, UserRole.admin.value):
+        return MAX_CARDS_ADMIN
+    return MAX_CARDS_USER
 
 # TODO: Add rate limiting for generation endpoints (per user/IP, return 429 if exceeded).
 # Placeholder for future integration with shared FastAPI middleware.
@@ -437,7 +526,7 @@ Rules:
 
 
 def _extract_balanced_json(text: str) -> str | None:
-    """Extract the first complete top-level JSON object using balanced bracket matching."""
+    """Extract the first complete top-level JSON object using balanced {} and [] matching."""
     start = text.find("{")
     if start == -1:
         return None
@@ -463,13 +552,16 @@ def _extract_balanced_json(text: str) -> str | None:
             in_string = True
             i += 1
             continue
-        if char == "{":
-            stack.append("{")
-        elif char == "}":
-            if stack:
-                stack.pop()
-                if not stack:
-                    return text[start : i + 1]
+        if char in "{[":
+            stack.append(char)
+        elif char in "}]":
+            if not stack:
+                return None
+            open_char = stack.pop()
+            if (open_char, char) not in (("{", "}"), ("[", "]")):
+                return None
+            if not stack:
+                return text[start : i + 1]
         i += 1
     return None
 
@@ -519,12 +611,29 @@ def _strip_llm_metadata(raw: str) -> str:
     return raw.strip()
 
 
+_JSON_OBJECT_START_PATTERNS = (
+    r'\{\s*"flashcards"\s*:',
+    r'\{\s*"cards"\s*:',
+    r'\{\s*"concepts"\s*:',
+)
+
+
+def _find_json_object_start(raw: str) -> int | None:
+    """Index of opening brace for flashcards/cards/concepts object (allows newlines after `{`)."""
+    best: int | None = None
+    for pat in _JSON_OBJECT_START_PATTERNS:
+        m = re.search(pat, raw)
+        if m:
+            pos = m.start()
+            if best is None or pos < best:
+                best = pos
+    return best
+
+
 def _try_repair_truncated_json(raw: str) -> str | None:
     """Attempt to repair truncated JSON (e.g. missing ]} at end)."""
-    idx = raw.find('{"flashcards"')
-    if idx < 0:
-        idx = raw.find('{"cards"')
-    if idx < 0:
+    idx = _find_json_object_start(raw)
+    if idx is None:
         return None
     chunk = raw[idx:].strip()
     if not chunk or chunk[-1] in "}]":
@@ -559,22 +668,63 @@ def _try_repair_truncated_json(raw: str) -> str | None:
 
 def _isolate_json_chunk(raw: str) -> str | None:
     """Extract JSON from raw LLM response, isolating it from logs/metadata/extra text."""
-    raw = _strip_llm_metadata(raw.strip())
-    # Try markdown code block first
-    match = re.search(r"```(?:json)?\s*([\s\S]*?)```", raw)
-    if match:
-        chunk = match.group(1).strip()
-        if chunk:
-            return chunk
-    # Try balanced object extraction
+    raw = _normalize_json_response_text(raw).strip()
+    raw = _strip_llm_metadata(raw)
+
+    def _try_fenced_blocks(text: str) -> str | None:
+        # All ```json ... ``` blocks (longest first — often the real payload)
+        blocks = re.findall(r"```(?:json|JSON)?\s*([\s\S]*?)```", text)
+        for chunk in sorted((b.strip() for b in blocks if b.strip()), key=len, reverse=True):
+            if chunk.startswith("{") or chunk.startswith("["):
+                return chunk
+        # Unclosed fence: model stopped before closing ```
+        open_m = re.search(r"```(?:json|JSON)?\s*([\s\S]+)$", text)
+        if open_m:
+            chunk = open_m.group(1).strip()
+            if chunk.startswith("{") or chunk.startswith("["):
+                return chunk
+        return None
+
+    chunk = _try_fenced_blocks(raw)
+    if chunk:
+        return chunk
+
+    # Fast path: response is (mostly) a single JSON object with flashcards/cards/concepts up front
+    st = raw.strip()
+    if st.startswith("{") and re.search(
+        r'"(?:flashcards|cards|concepts)"\s*:',
+        st[:4000],
+    ):
+        bal = _extract_balanced_json(st)
+        if bal:
+            return bal
+        repaired = _try_repair_truncated_json(st)
+        if repaired:
+            return repaired
+        # Let downstream json_repair / truncation handling see the full body
+        return st
+
+    # Anchor on flashcards/cards/concepts (handles leading prose before JSON)
+    for pattern in (
+        r'\{\s*"flashcards"\s*:',
+        r'\{\s*"cards"\s*:',
+        r'\{\s*"concepts"\s*:',
+    ):
+        m = re.search(pattern, raw)
+        if m:
+            chunk = _extract_balanced_json(raw[m.start() :])
+            if chunk:
+                return chunk
+            repaired = _try_repair_truncated_json(raw[m.start() :])
+            if repaired:
+                return repaired
+
     chunk = _extract_balanced_json(raw)
     if chunk:
         return chunk
-    # Try balanced array extraction
     chunk = _extract_balanced_array(raw)
     if chunk:
         return chunk
-    # Fallback: try to repair truncated JSON
     return _try_repair_truncated_json(raw)
 
 
@@ -691,28 +841,73 @@ def _repair_json_latex_escapes(text: str) -> str:
     return re.sub(r'\\(?!["\\/bfnrt]|u[0-9a-fA-F]{4})', r"\\\\", text)
 
 
+def _json_loads_with_repairs(chunk: str, raw_fallback: str | None = None) -> dict | list | None:
+    """Parse JSON with trailing-comma fix, json_repair, and optional truncation repair from chunk/raw."""
+
+    def attempt(s: str) -> dict | list | None:
+        s = _strip_problematic_json_controls(s)
+        s = _repair_json_latex_escapes(s)
+        try:
+            return json.loads(s)
+        except json.JSONDecodeError:
+            pass
+        fixed = re.sub(r",\s*([}\]])", r"\1", s)
+        try:
+            return json.loads(fixed)
+        except json.JSONDecodeError:
+            pass
+        try:
+            from json_repair import repair_json
+
+            return json.loads(repair_json(s))
+        except Exception:
+            return None
+
+    parsed = attempt(chunk)
+    if parsed is not None:
+        return parsed
+    repaired = _try_repair_truncated_json(chunk)
+    if repaired:
+        parsed = attempt(repaired)
+        if parsed is not None:
+            return parsed
+    if raw_fallback:
+        repaired2 = _try_repair_truncated_json(raw_fallback)
+        if repaired2:
+            parsed = attempt(repaired2)
+            if parsed is not None:
+                return parsed
+    return None
+
+
 def _parse_json_object(text: str) -> dict:
     """Parse arbitrary JSON object from LLM response. No flashcard schema validation.
     Used for grounding verifier output like {"kept": [...]}."""
     raw = text.strip()
     json_chunk = _isolate_json_chunk(raw)
     if not json_chunk:
+        logger.warning(
+            "%sparse_json_object: no JSON chunk. raw_len=%d preview=%s",
+            _gen_log_prefix(),
+            len(raw),
+            _diagnostic_raw_preview(raw),
+        )
         raise ValueError("No valid JSON found")
-    if not _is_balanced_json(json_chunk):
-        raise ValueError("LLM response appears truncated")
-    json_chunk = _repair_json_latex_escapes(json_chunk)
-    try:
-        data = json.loads(json_chunk)
-    except json.JSONDecodeError:
-        fixed = re.sub(r",\s*([}\]])", r"\1", json_chunk)
-        try:
-            data = json.loads(fixed)
-        except json.JSONDecodeError:
-            try:
-                from json_repair import repair_json
-                data = json.loads(repair_json(json_chunk))
-            except Exception:
-                raise ValueError("Failed to parse JSON")
+    data = _json_loads_with_repairs(json_chunk, raw)
+    if data is None:
+        likely_trunc, trunc_reason = analyze_llm_json_response(json_chunk)
+        logger.warning(
+            "%sparse_json_object: parse failed after repairs. likely_truncated=%s trunc_reason=%s "
+            "balanced=%s raw_len=%d isolated_len=%d preview=%s",
+            _gen_log_prefix(),
+            likely_trunc,
+            trunc_reason,
+            _is_balanced_json(json_chunk),
+            len(raw),
+            len(json_chunk),
+            _diagnostic_raw_preview(raw),
+        )
+        raise ValueError("Failed to parse JSON")
     if not isinstance(data, dict):
         raise ValueError("Expected JSON object")
     return data
@@ -721,34 +916,36 @@ def _parse_json_object(text: str) -> dict:
 def _extract_json(text: str) -> dict:
     """Extract JSON from LLM response. Isolate, parse, validate."""
     raw = text.strip()
+    prefix = _gen_log_prefix()
 
     json_chunk = _isolate_json_chunk(raw)
     if not json_chunk:
-        logger.debug("RAW LLM RESPONSE: %s", raw[:500])
+        logger.warning(
+            "%sJSON extract failed at stage=isolate (no chunk). raw_len=%d preview=%s",
+            prefix,
+            len(raw),
+            _diagnostic_raw_preview(raw),
+        )
         raise ValueError("No valid JSON found")
 
-    if not _is_balanced_json(json_chunk):
-        logger.debug("RAW LLM RESPONSE: %s", raw[:500])
-        raise ValueError("LLM response appears truncated")
+    logger.debug("%sJSON isolated chunk preview: %s", prefix, json_chunk[:400])
 
-    logger.debug("RAW BEFORE PARSE: %s", json_chunk[:500])
-
-    # Repair invalid LaTeX escapes (e.g. \sum -> \\sum) so JSON parses
-    json_chunk = _repair_json_latex_escapes(json_chunk)
-
-    try:
-        data = json.loads(json_chunk)
-    except Exception:
-        fixed = re.sub(r",\s*([}\]])", r"\1", json_chunk)
-        try:
-            data = json.loads(fixed)
-        except Exception:
-            try:
-                from json_repair import repair_json
-                data = json.loads(repair_json(json_chunk))
-            except Exception:
-                logger.debug("RAW LLM RESPONSE: %s", raw[:500])
-                raise ValueError("Failed to parse JSON")
+    data = _json_loads_with_repairs(json_chunk, raw)
+    if data is None:
+        likely_trunc, trunc_reason = analyze_llm_json_response(json_chunk)
+        logger.warning(
+            "%sJSON extract failed at stage=parse after repairs. likely_truncated=%s trunc_reason=%s "
+            "balanced=%s raw_len=%d isolated_len=%d raw_preview=%s isolated_preview=%s",
+            prefix,
+            likely_trunc,
+            trunc_reason,
+            _is_balanced_json(json_chunk),
+            len(raw),
+            len(json_chunk),
+            _diagnostic_raw_preview(raw),
+            _diagnostic_raw_preview(json_chunk, head=1200, tail=400),
+        )
+        raise ValueError("Failed to parse JSON")
 
     if isinstance(data, list):
         result = {"flashcards": data}
@@ -758,14 +955,30 @@ def _extract_json(text: str) -> dict:
         elif "cards" in data and isinstance(data["cards"], list):
             result = {"flashcards": data["cards"]}
         else:
-            logger.debug("RAW LLM RESPONSE: %s", raw[:500])
+            logger.warning(
+                "%sJSON extract failed at stage=schema_shape (no flashcards/cards). raw_len=%d preview=%s",
+                prefix,
+                len(raw),
+                _diagnostic_raw_preview(raw),
+            )
             raise ValueError("Invalid JSON structure")
     else:
-        logger.debug("RAW LLM RESPONSE: %s", raw[:500])
+        logger.warning(
+            "%sJSON extract failed at stage=root_type (not list/dict). raw_len=%d preview=%s",
+            prefix,
+            len(raw),
+            _diagnostic_raw_preview(raw),
+        )
         raise ValueError("Invalid JSON structure")
 
     if not _validate_flashcards_schema(result):
-        logger.debug("RAW LLM RESPONSE: %s", raw[:500])
+        logger.warning(
+            "%sJSON extract failed at stage=flashcards_schema. keys=%s raw_len=%d preview=%s",
+            prefix,
+            list(result.keys()) if isinstance(result, dict) else type(result),
+            len(raw),
+            _diagnostic_raw_preview(raw),
+        )
         raise ValueError("Invalid flashcards schema")
 
     cards = result.get("flashcards", [])
@@ -777,22 +990,11 @@ def _extract_json(text: str) -> dict:
 
 def _extract_json_simple(text: str) -> dict:
     """Minimal JSON extraction for simple (non-formula) topics."""
-    json_chunk = _isolate_json_chunk(text.strip())
+    raw = text.strip()
+    json_chunk = _isolate_json_chunk(raw)
     if not json_chunk:
         return {}
-    json_chunk = _repair_json_latex_escapes(json_chunk)
-    try:
-        data = json.loads(json_chunk)
-    except json.JSONDecodeError:
-        fixed = re.sub(r",\s*([}\]])", r"\1", json_chunk)
-        try:
-            data = json.loads(fixed)
-        except json.JSONDecodeError:
-            try:
-                from json_repair import repair_json
-                data = json.loads(repair_json(json_chunk))
-            except Exception:
-                return {}
+    data = _json_loads_with_repairs(json_chunk, raw)
     if data is None:
         return {}
     if isinstance(data, list):
@@ -1120,8 +1322,67 @@ def _sample_text_for_prompt(text: str, max_chars: int = 12000) -> str:
         + "\n\n[... transcript continues ...]\n\n"
         + section_b.strip()
         + "\n\n[... transcript continues ...]\n\n"
-        + section_c.strip()
+        +         section_c.strip()
     )
+
+
+def _extract_concepts_json(response_text: str) -> dict:
+    """Parse concept-extraction LLM output ({"concepts": [...]}) without flashcards schema validation."""
+    raw = response_text.strip()
+    prefix = _gen_log_prefix()
+    json_chunk = _isolate_json_chunk(raw)
+    if not json_chunk:
+        logger.warning(
+            "%sconcepts JSON: isolate failed (no chunk). raw_len=%d preview=%s",
+            prefix,
+            len(raw),
+            _diagnostic_raw_preview(raw),
+        )
+        raise ValueError("No valid JSON found")
+    data = _json_loads_with_repairs(json_chunk, raw)
+    if data is None:
+        likely_trunc, trunc_reason = analyze_llm_json_response(json_chunk)
+        logger.warning(
+            "%sconcepts JSON: parse failed after repairs. likely_truncated=%s trunc_reason=%s "
+            "balanced=%s raw_len=%d isolated_len=%d preview=%s",
+            prefix,
+            likely_trunc,
+            trunc_reason,
+            _is_balanced_json(json_chunk),
+            len(raw),
+            len(json_chunk),
+            _diagnostic_raw_preview(raw),
+        )
+        raise ValueError("Failed to parse JSON")
+    if not isinstance(data, dict):
+        logger.warning(
+            "%sconcepts JSON: root not an object. type=%s raw_len=%d preview=%s",
+            prefix,
+            type(data).__name__,
+            len(raw),
+            _diagnostic_raw_preview(raw),
+        )
+        raise ValueError("Invalid JSON structure")
+    concepts = data.get("concepts")
+    if not isinstance(concepts, list):
+        logger.warning(
+            "%sconcepts JSON: stage=concepts_schema (concepts not a list). keys=%s raw_len=%d preview=%s",
+            prefix,
+            list(data.keys()),
+            len(raw),
+            _preview_for_log(raw, max_len=900),
+        )
+        raise ValueError("Invalid concepts schema")
+    if not all(isinstance(c, str) for c in concepts):
+        logger.warning(
+            "%sconcepts JSON: stage=concepts_schema (non-string entries). keys=%s raw_len=%d preview=%s",
+            prefix,
+            list(data.keys()),
+            len(raw),
+            _preview_for_log(raw, max_len=900),
+        )
+        raise ValueError("Invalid concepts schema")
+    return data
 
 
 def _extract_concepts(
@@ -1243,10 +1504,8 @@ Rules:
         return []
 
     try:
-        parsed = _extract_json(response_text)
-        concepts = parsed.get("concepts", [])
-        if isinstance(concepts, list) and all(isinstance(c, str) for c in concepts):
-            return concepts[:num_cards]
+        parsed = _extract_concepts_json(response_text)
+        return list(parsed["concepts"])[:num_cards]
     except (ValueError, json.JSONDecodeError, TypeError):
         pass
     return []
@@ -2780,6 +3039,67 @@ RELAXED_TEXT_GROUNDING_RULES = """GROUNDING PREFERENCES (text-based generation):
 - Prefer questions that test understanding of what THIS specific text says, not general domain knowledge."""
 
 
+async def _run_generation_background(payload: GenerateFlashcardsRequest) -> None:
+    """Run flashcard generation in a background task with its own DB session.
+
+    The generate_flashcards handler uses db.flush() for all status updates
+    (generating → completed / failed) and never commits — the commit is
+    normally done by the get_db dependency.  We always commit at the end
+    so the final status (completed or failed) is persisted.
+    """
+    deck_id_str = str(payload.deck_id)
+    async with AsyncSessionLocal() as db:
+        try:
+            await generate_flashcards(payload, db)
+            logger.info("[bg-gen] Completed for deck %s", deck_id_str)
+        except Exception as exc:
+            logger.error("[bg-gen] Failed for deck %s: %s", deck_id_str, exc)
+        finally:
+            try:
+                await db.commit()
+            except Exception:
+                await db.rollback()
+
+
+@router.post("/background", response_model=BackgroundGenerationResponse, status_code=202)
+async def generate_flashcards_background(
+    payload: GenerateFlashcardsRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Start flashcard generation in the background. Returns immediately."""
+    deck_id_str = str(payload.deck_id)
+    result = await db.execute(select(Deck).where(Deck.id == deck_id_str))
+    deck = result.scalar_one_or_none()
+    if not deck:
+        raise HTTPException(status_code=404, detail="Deck not found")
+
+    max_cards = await _get_max_cards_for_deck(deck_id_str, db)
+    if payload.num_cards > max_cards:
+        raise HTTPException(
+            status_code=403,
+            detail=f"The maximum number of cards for this account is {max_cards}.",
+        )
+
+    text_input: Optional[str] = None
+    if payload.text:
+        cleaned = clean_user_text(payload.text)
+        if not cleaned:
+            raise HTTPException(status_code=400, detail="Text cannot be empty")
+        if len(cleaned) > TEXT_MAX_LENGTH:
+            raise HTTPException(status_code=400, detail=f"Text exceeds maximum length ({TEXT_MAX_LENGTH} characters)")
+        text_input = cleaned
+
+    if deck.source_type in (None, SourceType.topic, SourceType.text):
+        deck.source_type = SourceType.text if text_input else SourceType.topic
+    deck.generated_by_ai = True
+    deck.generation_status = GenerationStatus.generating.value
+    await db.flush()
+
+    asyncio.create_task(_run_generation_background(payload))
+
+    return BackgroundGenerationResponse(deck_id=deck_id_str, status="generating")
+
+
 @router.post("", response_model=GenerateFlashcardsResponse)
 async def generate_flashcards(
     payload: GenerateFlashcardsRequest,
@@ -2791,6 +3111,13 @@ async def generate_flashcards(
     deck = result.scalar_one_or_none()
     if not deck:
         raise HTTPException(status_code=404, detail="Deck not found")
+
+    max_cards = await _get_max_cards_for_deck(deck_id_str, db)
+    if payload.num_cards > max_cards:
+        raise HTTPException(
+            status_code=403,
+            detail=f"The maximum number of cards for this account is {max_cards}.",
+        )
 
     # Validate and clean text input
     text_input: Optional[str] = None
@@ -2817,6 +3144,7 @@ async def generate_flashcards(
     deck.generation_status = GenerationStatus.generating.value
     await db.flush()
 
+    _gen_log_token = generation_log_deck_id.set(deck_id_str)
     try:
         lang_hint = (payload.language or "").strip().lower()[:2] or None
 
@@ -3329,7 +3657,12 @@ async def generate_flashcards(
                         attempt + 1,
                     )
                     continue
-                logger.error("Generation failed after retry: %s", e)
+                logger.error(
+                    "%sGeneration failed after retry: %s response_preview=%s",
+                    _gen_log_prefix(),
+                    e,
+                    _preview_for_log(response_text or ""),
+                )
                 raise HTTPException(status_code=503, detail=str(e))
             if "flashcards" not in parsed_json or not isinstance(
                 parsed_json.get("flashcards"), list
@@ -3530,3 +3863,5 @@ async def generate_flashcards(
         deck.generation_status = GenerationStatus.failed.value
         await db.flush()
         raise
+    finally:
+        generation_log_deck_id.reset(_gen_log_token)

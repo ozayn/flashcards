@@ -38,7 +38,8 @@ import {
   createCategory,
   duplicateDeck,
 } from "@/lib/api";
-import { getStoredUserId } from "@/components/user-selector";
+import { getStoredUserId, useCardCountOptions, useClientIsAdmin } from "@/components/user-selector";
+import { GENERATION_TEXT_MAX_CHARS } from "@/lib/generation-text";
 import PageContainer from "@/components/layout/page-container";
 import FormattedText from "@/components/FormattedText";
 import { FlashcardModal } from "@/components/FlashcardModal";
@@ -54,6 +55,8 @@ interface Deck {
   source_type?: string | null;
   source_topic?: string | null;
   source_url?: string | null;
+  has_timestamps?: boolean;
+  generation_status?: string;
   archived?: boolean;
   is_public?: boolean;
   category_id?: string | null;
@@ -93,6 +96,27 @@ function slugFromTitle(title: string): string {
 }
 
 const CARD_DIVIDER = "--------------------------------------------------";
+
+/** In-panel copy for Add more cards while a request is in flight (topic / text / import). */
+function addCardsBusyCopy(mode: "topic" | "text" | "import"): {
+  primary: string;
+  secondary?: string;
+} {
+  switch (mode) {
+    case "text":
+      return {
+        primary: "Processing text and generating flashcards…",
+        secondary: "Longer notes or transcripts can take a minute.",
+      };
+    case "topic":
+      return {
+        primary: "Generating flashcards…",
+        secondary: "This may take a minute.",
+      };
+    case "import":
+      return { primary: "Importing cards…" };
+  }
+}
 
 /** Collapse runs of blank lines; trim ends */
 function collapseBlankLines(s: string): string {
@@ -286,14 +310,16 @@ export default function DeckPage({ params }: DeckPageProps) {
   const [importResult, setImportResult] = useState<{ created: number; skipped: number } | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const genTextFileInputRef = useRef<HTMLInputElement>(null);
+  const [genTextUploadStatus, setGenTextUploadStatus] = useState<string | null>(null);
   const [useNameAsTopic, setUseNameAsTopic] = useState(false);
   const [cardCount, setCardCount] = useState(10);
+  const cardCountOptions = useCardCountOptions();
+  const isAdminClient = useClientIsAdmin();
   const [cardView, setCardView] = useState<"list" | "grid">("grid");
   const [cardsExpanded, setCardsExpanded] = useState(false);
   const [cardSearch, setCardSearch] = useState("");
   const [cardSort, setCardSort] = useState<"newest" | "oldest" | "az">("newest");
-  const GEN_TEXT_MAX_LENGTH = 10000;
-  const CARD_COUNT_OPTIONS = [5, 10, 20, 30, 40, 50] as const;
 
   type SortOption = typeof cardSort;
   const SORT_OPTIONS: { value: SortOption; label: string }[] = [
@@ -387,6 +413,24 @@ export default function DeckPage({ params }: DeckPageProps) {
     return () => { cancelled = true; };
   }, [params.id]);
 
+  const isGenerating = deck?.generation_status === "generating";
+  const isFailed = deck?.generation_status === "failed";
+
+  useEffect(() => {
+    if (!isGenerating) return;
+    const interval = setInterval(async () => {
+      try {
+        const [deckData, flashcardsData] = await Promise.all([
+          getDeck(params.id),
+          getFlashcards(params.id),
+        ]);
+        setDeck(deckData);
+        setFlashcards(Array.isArray(flashcardsData) ? flashcardsData : []);
+      } catch { /* ignore polling errors */ }
+    }, 4000);
+    return () => clearInterval(interval);
+  }, [isGenerating, params.id]);
+
   useEffect(() => {
     if (deck) {
       setTitle(deck.name ?? "");
@@ -394,7 +438,64 @@ export default function DeckPage({ params }: DeckPageProps) {
     }
   }, [deck]);
 
+  useEffect(() => {
+    if (genMode !== "text") setGenTextUploadStatus(null);
+  }, [genMode]);
+
+  useEffect(() => {
+    setCardCount((c) => {
+      const max = cardCountOptions[cardCountOptions.length - 1];
+      if (max === undefined) return c;
+      return c > max ? max : c;
+    });
+  }, [cardCountOptions]);
+
   const importQAPairs = genMode === "import" ? parseQAPairs(importText.trim()) : null;
+
+  const generationPanelBusy = useMemo(
+    () => (generating ? addCardsBusyCopy(genMode) : null),
+    [generating, genMode],
+  );
+
+  function handleGenTextFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const input = e.target;
+    const file = input.files?.[0];
+    input.value = "";
+    setGenTextUploadStatus(null);
+    if (!file) return;
+
+    const nameLower = file.name.toLowerCase();
+    if (!nameLower.endsWith(".txt")) {
+      setGenTextUploadStatus("Only .txt files are supported.");
+      return;
+    }
+    const mimeOk =
+      file.type === "text/plain" ||
+      file.type === "" ||
+      file.type === "application/octet-stream";
+    if (!mimeOk) {
+      setGenTextUploadStatus("That file type is not supported. Please use a plain .txt file.");
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const raw = typeof reader.result === "string" ? reader.result : "";
+      if (raw.length > GENERATION_TEXT_MAX_CHARS) {
+        setGenText(raw.slice(0, GENERATION_TEXT_MAX_CHARS));
+        setGenTextUploadStatus(
+          `Loaded ${file.name} — trimmed to ${GENERATION_TEXT_MAX_CHARS.toLocaleString()} characters (limit).`,
+        );
+      } else {
+        setGenText(raw);
+        setGenTextUploadStatus(`Loaded ${file.name}.`);
+      }
+    };
+    reader.onerror = () => {
+      setGenTextUploadStatus("Could not read the file.");
+    };
+    reader.readAsText(file);
+  }
 
   async function handleGenerate() {
     if (!deck || generating) return;
@@ -414,6 +515,7 @@ export default function DeckPage({ params }: DeckPageProps) {
       }
       setGenTopic("");
       setGenText("");
+      setGenTextUploadStatus(null);
       const data = await getFlashcards(params.id);
       setFlashcards(Array.isArray(data) ? data : []);
     } catch {
@@ -598,7 +700,47 @@ export default function DeckPage({ params }: DeckPageProps) {
   if (loading) {
     return (
       <PageContainer>
-        <p className="text-muted-foreground">Loading deck...</p>
+        <div className="flex items-center justify-between gap-3">
+          <div className="h-7 w-20 max-w-[30%] rounded-md bg-muted/80 animate-pulse" aria-hidden />
+          <div className="h-9 w-9 shrink-0 rounded-md bg-muted/80 animate-pulse" aria-hidden />
+        </div>
+
+        <Card className="mt-4">
+          <div className="px-4 pt-4 pb-5 space-y-5">
+            <div className="space-y-2 max-w-sm">
+              <p className="text-sm text-muted-foreground">Loading deck…</p>
+              <div
+                className="h-1 w-full max-w-xs overflow-hidden rounded-full bg-muted/90 dark:bg-muted/50"
+                role="progressbar"
+                aria-label="Loading"
+                aria-busy="true"
+              >
+                <div className="h-full w-[38%] rounded-full bg-primary/35 deck-load-indeterminate-fill" />
+              </div>
+            </div>
+
+            <div className="space-y-3 pt-1">
+              <div className="h-8 w-[min(100%,20rem)] rounded-md bg-muted animate-pulse" aria-hidden />
+              <div className="h-4 w-48 max-w-[70%] rounded-md bg-muted/70 animate-pulse" aria-hidden />
+            </div>
+
+            <div className="flex flex-wrap gap-2 pt-1">
+              <div className="h-10 w-[5.5rem] rounded-lg bg-muted/80 animate-pulse" aria-hidden />
+              <div className="h-10 w-[5.5rem] rounded-lg bg-muted/80 animate-pulse" aria-hidden />
+            </div>
+
+            <div className="space-y-3 pt-2">
+              <div className="rounded-xl border border-border/60 bg-muted/20 dark:bg-muted/10 px-4 py-3.5 space-y-2">
+                <div className="h-4 w-[88%] rounded bg-muted/90 animate-pulse" aria-hidden />
+                <div className="h-4 w-[55%] rounded bg-muted/60 animate-pulse" aria-hidden />
+              </div>
+              <div className="rounded-xl border border-border/60 bg-muted/20 dark:bg-muted/10 px-4 py-3.5 space-y-2">
+                <div className="h-4 w-[92%] rounded bg-muted/90 animate-pulse" aria-hidden />
+                <div className="h-4 w-[40%] rounded bg-muted/60 animate-pulse" aria-hidden />
+              </div>
+            </div>
+          </div>
+        </Card>
       </PageContainer>
     );
   }
@@ -710,17 +852,31 @@ export default function DeckPage({ params }: DeckPageProps) {
                     }
                     setEditingDescription(false);
                   }}
-                  className="border rounded px-2 py-1 w-full min-h-[80px] text-sm text-neutral-500 mb-3"
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape") {
+                      setEditingDescription(false);
+                    }
+                  }}
+                  className="border rounded px-2 py-1 w-full min-h-[60px] text-sm text-muted-foreground mt-1"
                   autoFocus
                 />
-              ) : (
+              ) : description ? (
                 <p
-                  className={`text-sm text-neutral-500 mb-3 dark:text-neutral-400 ${isReadOnly ? "" : "cursor-pointer"}`}
+                  className={`text-sm text-muted-foreground mt-1 line-clamp-2 ${isReadOnly ? "" : "cursor-pointer hover:text-foreground"}`}
                   onClick={() => !isReadOnly && setEditingDescription(true)}
+                  title={description}
                 >
-                  {description || "Add description…"}
+                  {description}
                 </p>
-              )}
+              ) : !isReadOnly ? (
+                <button
+                  type="button"
+                  onClick={() => setEditingDescription(true)}
+                  className="text-xs text-muted-foreground/60 hover:text-muted-foreground mt-1"
+                >
+                  + Add description
+                </button>
+              ) : null}
             </div>
             {isReadOnly ? (
               <div className="flex items-center gap-2 mb-4">
@@ -752,25 +908,29 @@ export default function DeckPage({ params }: DeckPageProps) {
                 >
                   {deck.category_id ? "Change category" : "Assign category"}
                 </Button>
-                <span className="text-border">·</span>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={async () => {
-                    const next = !deck.is_public;
-                    try {
-                      await updateDeck(deck.id, { is_public: next });
-                      setDeck({ ...deck, is_public: next });
-                    } catch { /* ignore */ }
-                  }}
-                  className="text-muted-foreground hover:text-foreground h-7 px-2"
-                >
-                  {deck.is_public ? (
-                    <><Eye className="size-3.5 mr-1 inline text-emerald-600 dark:text-emerald-400" /> Public</>
-                  ) : (
-                    <><EyeOff className="size-3.5 mr-1 inline" /> Private</>
-                  )}
-                </Button>
+                {isAdminClient && (
+                  <>
+                    <span className="text-border">·</span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={async () => {
+                        const next = !deck.is_public;
+                        try {
+                          await updateDeck(deck.id, { is_public: next });
+                          setDeck({ ...deck, is_public: next });
+                        } catch { /* ignore */ }
+                      }}
+                      className="text-muted-foreground hover:text-foreground h-7 px-2"
+                    >
+                      {deck.is_public ? (
+                        <><Eye className="size-3.5 mr-1 inline text-emerald-600 dark:text-emerald-400" /> Public</>
+                      ) : (
+                        <><EyeOff className="size-3.5 mr-1 inline" /> Private</>
+                      )}
+                    </Button>
+                  </>
+                )}
               </div>
             )}
             {deck.source_type === "youtube" && deck.source_url ? (
@@ -781,14 +941,23 @@ export default function DeckPage({ params }: DeckPageProps) {
                     {deck.source_topic?.trim() || deck.source_url}
                   </a>
                 </p>
-                <p>
+                <p className="flex flex-wrap gap-x-3 gap-y-1">
                   <a
                     href={`/api/proxy/decks/${deck.id}/transcript`}
                     download
                     className="text-muted-foreground hover:text-foreground underline underline-offset-2 transition-colors"
                   >
-                    Download transcript (.txt)
+                    Transcript
                   </a>
+                  {deck.has_timestamps && (
+                    <a
+                      href={`/api/proxy/decks/${deck.id}/transcript/timestamped`}
+                      download
+                      className="text-muted-foreground hover:text-foreground underline underline-offset-2 transition-colors"
+                    >
+                      Timestamps
+                    </a>
+                  )}
                 </p>
               </div>
             ) : deck.source_type === "wikipedia" && deck.source_url ? (
@@ -897,18 +1066,31 @@ export default function DeckPage({ params }: DeckPageProps) {
               </div>
             )}
             <div className="flex flex-wrap gap-2">
-              <Link
-                href={`/study/${deck.id}`}
-                className="inline-flex h-10 items-center justify-center rounded-lg bg-neutral-900 text-white hover:bg-neutral-800 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200 px-4 text-sm font-medium max-mobile:min-h-[44px]"
-              >
-                Explore
-              </Link>
-              <Link
-                href={`/study/${deck.id}?mode=study`}
-                className="inline-flex h-10 items-center justify-center rounded-lg border border-border hover:bg-muted px-4 text-sm font-medium max-mobile:min-h-[44px]"
-              >
-                Review
-              </Link>
+              {flashcards.length > 0 ? (
+                <>
+                  <Link
+                    href={`/study/${deck.id}`}
+                    className="inline-flex h-10 items-center justify-center rounded-lg bg-neutral-900 text-white hover:bg-neutral-800 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200 px-4 text-sm font-medium max-mobile:min-h-[44px]"
+                  >
+                    Explore
+                  </Link>
+                  <Link
+                    href={`/study/${deck.id}?mode=study`}
+                    className="inline-flex h-10 items-center justify-center rounded-lg border border-border hover:bg-muted px-4 text-sm font-medium max-mobile:min-h-[44px]"
+                  >
+                    Review
+                  </Link>
+                </>
+              ) : (
+                <>
+                  <span className="inline-flex h-10 items-center justify-center rounded-lg bg-neutral-900/40 text-white/60 dark:bg-neutral-100/40 dark:text-neutral-900/60 px-4 text-sm font-medium cursor-not-allowed max-mobile:min-h-[44px]">
+                    Explore
+                  </span>
+                  <span className="inline-flex h-10 items-center justify-center rounded-lg border border-border/50 text-muted-foreground/60 px-4 text-sm font-medium cursor-not-allowed max-mobile:min-h-[44px]">
+                    Review
+                  </span>
+                </>
+              )}
               <Button
                 variant="ghost"
                 size="icon"
@@ -1040,7 +1222,7 @@ export default function DeckPage({ params }: DeckPageProps) {
                         onChange={(e) => setCardCount(Number(e.target.value))}
                         className="h-9 min-w-[4.5rem] rounded-md border border-input bg-background px-2.5 py-1 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                       >
-                        {CARD_COUNT_OPTIONS.map((n) => (
+                        {cardCountOptions.map((n) => (
                           <option key={n} value={n}>{n}</option>
                         ))}
                       </select>
@@ -1059,17 +1241,46 @@ export default function DeckPage({ params }: DeckPageProps) {
                         name="genText"
                         placeholder="Paste notes, lecture content, or any text to generate flashcards from…"
                         value={genText}
-                        onChange={(e) => setGenText(e.target.value)}
-                        maxLength={GEN_TEXT_MAX_LENGTH}
+                        onChange={(e) => {
+                          setGenText(e.target.value);
+                          if (genTextUploadStatus) setGenTextUploadStatus(null);
+                        }}
+                        maxLength={GENERATION_TEXT_MAX_CHARS}
                         className="w-full min-h-[120px] rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                       />
-                      <div className="flex justify-between items-center">
-                        <span className="text-xs text-muted-foreground">
-                          {genText.length} / {GEN_TEXT_MAX_LENGTH} characters
-                        </span>
-                        {genText.length >= GEN_TEXT_MAX_LENGTH && (
-                          <span className="text-xs text-destructive">Text is too long</span>
-                        )}
+                      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                          <input
+                            ref={genTextFileInputRef}
+                            id="gen-text-upload"
+                            type="file"
+                            accept=".txt,text/plain"
+                            onChange={handleGenTextFileUpload}
+                            className="sr-only"
+                          />
+                          <label
+                            htmlFor="gen-text-upload"
+                            className="inline-flex cursor-pointer items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+                          >
+                            <Upload className="size-3.5 shrink-0" />
+                            Upload .txt
+                          </label>
+                          {genTextUploadStatus && (
+                            <span
+                              className={`text-xs ${genTextUploadStatus.startsWith("Only ") || genTextUploadStatus.startsWith("That ") || genTextUploadStatus.startsWith("Could ") ? "text-destructive" : "text-muted-foreground"}`}
+                            >
+                              {genTextUploadStatus}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 sm:ml-auto">
+                          <span className="text-xs text-muted-foreground">
+                            {genText.length} / {GENERATION_TEXT_MAX_CHARS.toLocaleString()} characters
+                          </span>
+                          {genText.length >= GENERATION_TEXT_MAX_CHARS && (
+                            <span className="text-xs text-destructive">Text is too long</span>
+                          )}
+                        </div>
                       </div>
                     </div>
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
@@ -1082,7 +1293,7 @@ export default function DeckPage({ params }: DeckPageProps) {
                         onChange={(e) => setCardCount(Number(e.target.value))}
                         className="h-9 min-w-[4.5rem] rounded-md border border-input bg-background px-2.5 py-1 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                       >
-                        {CARD_COUNT_OPTIONS.map((n) => (
+                        {cardCountOptions.map((n) => (
                           <option key={n} value={n}>{n}</option>
                         ))}
                       </select>
@@ -1153,6 +1364,36 @@ export default function DeckPage({ params }: DeckPageProps) {
                   </div>
                 )}
 
+                {generationPanelBusy && (
+                  <div
+                    className="space-y-2 rounded-md border border-border/50 bg-muted/25 px-3 py-2.5 max-mobile:py-2"
+                    aria-live="polite"
+                    aria-busy="true"
+                  >
+                    <div
+                      className="h-1 w-full overflow-hidden rounded-full bg-muted/90 dark:bg-muted/50"
+                      role="progressbar"
+                      aria-label={
+                        genMode === "import"
+                          ? "Import in progress"
+                          : "Flashcard generation in progress"
+                      }
+                    >
+                      <div className="h-full w-[38%] rounded-full bg-primary/40 deck-load-indeterminate-fill" />
+                    </div>
+                    <div className="space-y-0.5">
+                      <p className="text-sm text-foreground/90 leading-snug">
+                        {generationPanelBusy.primary}
+                      </p>
+                      {generationPanelBusy.secondary ? (
+                        <p className="text-xs text-muted-foreground leading-snug">
+                          {generationPanelBusy.secondary}
+                        </p>
+                      ) : null}
+                    </div>
+                  </div>
+                )}
+
                 <div className="flex flex-wrap items-center gap-3">
                   {genMode === "import" ? (
                     <Button
@@ -1162,7 +1403,7 @@ export default function DeckPage({ params }: DeckPageProps) {
                       className="w-full sm:w-auto"
                     >
                       {generating
-                        ? "Importing..."
+                        ? "Importing…"
                         : importQAPairs && importQAPairs.length > 0
                           ? `Import ${importQAPairs.length} Card${importQAPairs.length === 1 ? "" : "s"}`
                           : "Import Cards"}
@@ -1171,10 +1412,10 @@ export default function DeckPage({ params }: DeckPageProps) {
                     <Button
                       type="button"
                       onClick={handleGenerate}
-                      disabled={generating || (genMode === "text" && genText.length > GEN_TEXT_MAX_LENGTH)}
+                      disabled={generating || (genMode === "text" && genText.length > GENERATION_TEXT_MAX_CHARS)}
                       className="w-full sm:w-auto"
                     >
-                      {generating ? "Generating..." : "Generate Cards"}
+                      {generating ? "Please wait…" : "Generate Cards"}
                     </Button>
                   )}
                   <Link
@@ -1262,8 +1503,39 @@ export default function DeckPage({ params }: DeckPageProps) {
               )}
             </div>
           )}
-          {flashcards.length === 0 ? (
+          {isGenerating && (
+            <div className="rounded-xl border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/40 p-4 mb-4 space-y-2.5">
+              <div
+                className="h-1 w-full max-w-md overflow-hidden rounded-full bg-blue-200/80 dark:bg-blue-900/60"
+                role="progressbar"
+                aria-label="Background generation in progress"
+              >
+                <div className="h-full w-[38%] rounded-full bg-blue-500/50 dark:bg-blue-400/45 deck-load-indeterminate-fill" />
+              </div>
+              <div className="flex items-start gap-3">
+                <svg className="size-5 text-blue-500 animate-spin shrink-0 mt-0.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" aria-hidden><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+                <div>
+                  <p className="font-medium text-blue-900 dark:text-blue-100 text-sm">Generating flashcards…</p>
+                  <p className="text-blue-700 dark:text-blue-300 text-xs mt-0.5 leading-snug">
+                    This may take a minute for longer content. You can leave and come back later.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+          {isFailed && flashcards.length === 0 && (
+            <div className="rounded-xl border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/40 p-4 mb-4 flex items-start gap-3">
+              <svg className="size-5 text-red-500 shrink-0 mt-0.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" /></svg>
+              <div>
+                <p className="font-medium text-red-900 dark:text-red-100 text-sm">Generation failed</p>
+                <p className="text-red-700 dark:text-red-300 text-xs mt-0.5">Something went wrong. You can try again using the &ldquo;Add more cards&rdquo; panel above.</p>
+              </div>
+            </div>
+          )}
+          {flashcards.length === 0 && !isGenerating && !isFailed ? (
             <p className="text-muted-foreground text-sm">No flashcards yet.</p>
+          ) : flashcards.length === 0 ? (
+            null
           ) : processedCards.length === 0 ? (
             <p className="text-muted-foreground text-sm">No cards match your search.</p>
           ) : cardView === "list" ? (

@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, computed_field, field_validator
 
 from app.models.enums import SourceType
 
@@ -33,6 +33,7 @@ class DeckCreate(BaseModel):
     source_url: Optional[str] = Field(None, max_length=2048)
     source_topic: Optional[str] = Field(None, max_length=512, description="Topic used for AI generation (Topic mode)")
     source_text: Optional[str] = None
+    source_segments: Optional[str] = None
     count: Optional[int] = Field(default=10, ge=1, le=50, description="Number of flashcards to generate (1–50)")
 
 
@@ -46,6 +47,7 @@ class DeckResponse(BaseModel):
     source_title: Optional[str] = None
     source_topic: Optional[str] = None
     source_text: Optional[str] = None
+    source_segments: Optional[str] = Field(None, exclude=True)
     generation_status: str = "completed"
     generated_by_ai: bool = False
     archived: bool = False
@@ -61,3 +63,8 @@ class DeckResponse(BaseModel):
     @classmethod
     def coerce_source_type(cls, v: Any) -> Optional[str]:
         return _coerce_enum_to_str(v)
+
+    @computed_field
+    @property
+    def has_timestamps(self) -> bool:
+        return bool(self.source_segments and self.source_segments.strip())

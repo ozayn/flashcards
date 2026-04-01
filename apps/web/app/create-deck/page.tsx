@@ -5,12 +5,11 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { getUsers, createDeck, generateFlashcards, importFlashcards, parseQAPairs, fetchYouTubeTranscript, fetchWebpageContent, normalizeYouTubeUrl, TranscriptFetchError } from "@/lib/api";
-import { getStoredUserId } from "@/components/user-selector";
+import { getUsers, createDeck, generateFlashcardsBackground, importFlashcards, parseQAPairs, fetchYouTubeTranscript, fetchWebpageContent, normalizeYouTubeUrl, isYouTubePlaylistUrl, TranscriptFetchError } from "@/lib/api";
+import { getStoredUserId, useCardCountOptions } from "@/components/user-selector";
+import { GENERATION_TEXT_MAX_CHARS } from "@/lib/generation-text";
 import { Upload } from "lucide-react";
 import PageContainer from "@/components/layout/page-container";
-
-const CARD_COUNT_OPTIONS = [5, 10, 20, 30, 40, 50] as const;
 
 type GenerationMode = "topic" | "text" | "youtube" | "url" | "import";
 
@@ -34,6 +33,7 @@ function CreateDeckForm() {
   const [emptyDeckMode, setEmptyDeckMode] = useState(false);
   const [useNameAsTopic, setUseNameAsTopic] = useState(false);
   const [cardCount, setCardCount] = useState(10);
+  const cardCountOptions = useCardCountOptions();
   const [loading, setLoading] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
@@ -46,6 +46,7 @@ function CreateDeckForm() {
   const [importFiles, setImportFiles] = useState<{ name: string; pairCount: number; error?: string }[]>([]);
   const [importError, setImportError] = useState<string | null>(null);
   const importFileRef = useRef<HTMLInputElement>(null);
+  const [textUploadStatus, setTextUploadStatus] = useState<string | null>(null);
 
   useEffect(() => {
     const modeParam = searchParams.get("mode");
@@ -65,6 +66,18 @@ function CreateDeckForm() {
       setGenerationMode("youtube");
     }
   }, [searchParams]);
+
+  useEffect(() => {
+    if (generationMode !== "text") setTextUploadStatus(null);
+  }, [generationMode]);
+
+  useEffect(() => {
+    setCardCount((c) => {
+      const max = cardCountOptions[cardCountOptions.length - 1];
+      if (max === undefined) return c;
+      return c > max ? max : c;
+    });
+  }, [cardCountOptions]);
 
   const nameTrimmed = name.trim();
   const topicTrimmed = topic.trim();
@@ -153,6 +166,46 @@ function CreateDeckForm() {
     });
   }
 
+  function handleTextTabFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const input = e.target;
+    const file = input.files?.[0];
+    input.value = "";
+    setTextUploadStatus(null);
+    if (!file) return;
+
+    const nameLower = file.name.toLowerCase();
+    if (!nameLower.endsWith(".txt")) {
+      setTextUploadStatus("Only .txt files are supported.");
+      return;
+    }
+    const mimeOk =
+      file.type === "text/plain" ||
+      file.type === "" ||
+      file.type === "application/octet-stream";
+    if (!mimeOk) {
+      setTextUploadStatus("That file type is not supported. Please use a plain .txt file.");
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const raw = typeof reader.result === "string" ? reader.result : "";
+      if (raw.length > GENERATION_TEXT_MAX_CHARS) {
+        setText(raw.slice(0, GENERATION_TEXT_MAX_CHARS));
+        setTextUploadStatus(
+          `Loaded ${file.name} — trimmed to ${GENERATION_TEXT_MAX_CHARS.toLocaleString()} characters (limit).`,
+        );
+      } else {
+        setText(raw);
+        setTextUploadStatus(`Loaded ${file.name}.`);
+      }
+    };
+    reader.onerror = () => {
+      setTextUploadStatus("Could not read the file.");
+    };
+    reader.readAsText(file);
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
@@ -179,6 +232,10 @@ function CreateDeckForm() {
     } else if (generationMode === "youtube") {
       if (!youtubeUrlTrimmed) {
         setFormError("Paste a YouTube link to continue.");
+        return;
+      }
+      if (isYouTubePlaylistUrl(youtubeUrlTrimmed)) {
+        setFormError("YouTube playlists aren\u2019t supported yet. Please paste a single video link.");
         return;
       }
     } else if (generationMode === "topic") {
@@ -271,21 +328,16 @@ function CreateDeckForm() {
           source_url: cleanYtUrl,
           source_text: transcript.transcript,
           source_topic: videoTitle,
+          source_segments: transcript.segments?.length ? JSON.stringify(transcript.segments) : undefined,
         });
         const deckId = (deck as { id: string }).id;
 
-        setLoadingMessage("Generating flashcards… this may take a minute");
-        try {
-          await generateFlashcards({
-            deck_id: deckId,
-            text: transcript.transcript.slice(0, 50000),
-            num_cards: cardCount,
-            language: transcript.language || "en",
-          });
-        } catch {
-          router.push(`/decks/${deckId}`);
-          return;
-        }
+        await generateFlashcardsBackground({
+          deck_id: deckId,
+          text: transcript.transcript.slice(0, GENERATION_TEXT_MAX_CHARS),
+          num_cards: cardCount,
+          language: transcript.language || "en",
+        }).catch(() => {});
 
         router.push(`/decks/${deckId}`);
         return;
@@ -317,17 +369,11 @@ function CreateDeckForm() {
         });
         const deckId = (deck as { id: string }).id;
 
-        setLoadingMessage("Generating flashcards… this may take a minute");
-        try {
-          await generateFlashcards({
-            deck_id: deckId,
-            text: article.text.slice(0, 50000),
-            num_cards: cardCount,
-          });
-        } catch {
-          router.push(`/decks/${deckId}`);
-          return;
-        }
+        await generateFlashcardsBackground({
+          deck_id: deckId,
+          text: article.text.slice(0, GENERATION_TEXT_MAX_CHARS),
+          num_cards: cardCount,
+        }).catch(() => {});
 
         router.push(`/decks/${deckId}`);
         return;
@@ -357,31 +403,19 @@ function CreateDeckForm() {
       const deckId = (deck as { id: string }).id;
 
       if (generationMode === "text" && textTrimmed) {
-        setLoadingMessage("Generating flashcards… this may take a minute");
-        try {
-          await generateFlashcards({
-            deck_id: deckId,
-            text: textTrimmed,
-            num_cards: cardCount,
-            language: "en",
-          });
-        } catch {
-          router.push(`/decks/${deckId}`);
-          return;
-        }
+        await generateFlashcardsBackground({
+          deck_id: deckId,
+          text: textTrimmed,
+          num_cards: cardCount,
+          language: "en",
+        }).catch(() => {});
       } else if (generationMode === "topic" && effectiveTopic) {
-        setLoadingMessage("Generating flashcards… this may take a minute");
-        try {
-          await generateFlashcards({
-            deck_id: deckId,
-            topic: effectiveTopic,
-            num_cards: cardCount,
-            language: "en",
-          });
-        } catch {
-          router.push(`/decks/${deckId}`);
-          return;
-        }
+        await generateFlashcardsBackground({
+          deck_id: deckId,
+          topic: effectiveTopic,
+          num_cards: cardCount,
+          language: "en",
+        }).catch(() => {});
       }
 
       router.push(`/decks/${deckId}`);
@@ -549,7 +583,7 @@ function CreateDeckForm() {
                           disabled={loading}
                           className="h-9 min-w-[4.5rem] rounded-md border border-input bg-background px-2.5 py-1 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                         >
-                          {CARD_COUNT_OPTIONS.map((n) => (
+                          {cardCountOptions.map((n) => (
                             <option key={n} value={n}>
                               {n}
                             </option>
@@ -591,20 +625,49 @@ function CreateDeckForm() {
                           id="text"
                           placeholder={ytFallbackUrl ? "Paste the YouTube transcript here…" : "Paste notes, lecture content, or any text to generate flashcards from…"}
                           value={text}
-                          onChange={(e) => setText(e.target.value)}
-                          maxLength={50000}
+                          onChange={(e) => {
+                            setText(e.target.value);
+                            if (textUploadStatus) setTextUploadStatus(null);
+                          }}
+                          maxLength={GENERATION_TEXT_MAX_CHARS}
                           disabled={loading}
                           className="w-full min-h-[160px] max-mobile:min-h-[120px] rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                         />
-                        <div className="flex justify-between items-center">
-                          <span className="text-xs text-muted-foreground">
-                            {text.length} / 50000 characters
-                          </span>
-                          {text.length >= 50000 && (
-                            <span className="text-xs text-destructive">
-                              Text is too long
+                        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                            <input
+                              id="create-deck-text-upload"
+                              type="file"
+                              accept=".txt,text/plain"
+                              onChange={handleTextTabFileUpload}
+                              disabled={loading}
+                              className="sr-only"
+                            />
+                            <label
+                              htmlFor="create-deck-text-upload"
+                              className={`inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground ${loading ? "pointer-events-none opacity-50" : "cursor-pointer"}`}
+                            >
+                              <Upload className="size-3.5 shrink-0" />
+                              Upload .txt
+                            </label>
+                            {textUploadStatus && (
+                              <span
+                                className={`text-xs ${textUploadStatus.startsWith("Only ") || textUploadStatus.startsWith("That ") || textUploadStatus.startsWith("Could ") ? "text-destructive" : "text-muted-foreground"}`}
+                              >
+                                {textUploadStatus}
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2 sm:ml-auto">
+                            <span className="text-xs text-muted-foreground">
+                              {text.length} / {GENERATION_TEXT_MAX_CHARS.toLocaleString()} characters
                             </span>
-                          )}
+                            {text.length >= GENERATION_TEXT_MAX_CHARS && (
+                              <span className="text-xs text-destructive">
+                                Text is too long
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </div>
                       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
@@ -621,7 +684,7 @@ function CreateDeckForm() {
                           disabled={loading}
                           className="h-9 min-w-[4.5rem] rounded-md border border-input bg-background px-2.5 py-1 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                         >
-                          {CARD_COUNT_OPTIONS.map((n) => (
+                          {cardCountOptions.map((n) => (
                             <option key={n} value={n}>
                               {n}
                             </option>
@@ -664,7 +727,7 @@ function CreateDeckForm() {
                           disabled={loading}
                           className="h-9 min-w-[4.5rem] rounded-md border border-input bg-background px-2.5 py-1 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                         >
-                          {CARD_COUNT_OPTIONS.map((n) => (
+                          {cardCountOptions.map((n) => (
                             <option key={n} value={n}>
                               {n}
                             </option>
@@ -707,7 +770,7 @@ function CreateDeckForm() {
                           disabled={loading}
                           className="h-9 min-w-[4.5rem] rounded-md border border-input bg-background px-2.5 py-1 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                         >
-                          {CARD_COUNT_OPTIONS.map((n) => (
+                          {cardCountOptions.map((n) => (
                             <option key={n} value={n}>
                               {n}
                             </option>

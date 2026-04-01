@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { createDeck, generateFlashcards, fetchYouTubeTranscript, fetchWebpageContent, normalizeYouTubeUrl, TranscriptFetchError, getUsers } from "@/lib/api";
+import { createDeck, generateFlashcardsBackground, fetchYouTubeTranscript, fetchWebpageContent, normalizeYouTubeUrl, isYouTubePlaylistUrl, TranscriptFetchError, getUsers } from "@/lib/api";
 import { getStoredUserId } from "@/components/user-selector";
 
 const YT_REGEX = /(?:youtube\.com\/watch\?.*v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/shorts\/)/i;
@@ -63,6 +63,11 @@ export function GenerateInput({
       }
 
       if (isYT) {
+        if (isYouTubePlaylistUrl(trimmed)) {
+          setError("YouTube playlists aren\u2019t supported yet. Please paste a single video link.");
+          setLoading(false);
+          return;
+        }
         const cleanYtUrl = normalizeYouTubeUrl(trimmed);
         setLoadingMessage("Fetching transcript…");
         let transcript: Awaited<ReturnType<typeof fetchYouTubeTranscript>>;
@@ -86,21 +91,16 @@ export function GenerateInput({
           source_url: cleanYtUrl,
           source_text: transcript.transcript,
           source_topic: videoTitle,
+          source_segments: transcript.segments?.length ? JSON.stringify(transcript.segments) : undefined,
         });
         const deckId = (deck as { id: string }).id;
 
-        setLoadingMessage("Generating flashcards… this may take a minute");
-        try {
-          await generateFlashcards({
-            deck_id: deckId,
-            text: transcript.transcript.slice(0, 50000),
-            num_cards: 10,
-            language: transcript.language || "en",
-          });
-        } catch {
-          router.push(`/decks/${deckId}`);
-          return;
-        }
+        await generateFlashcardsBackground({
+          deck_id: deckId,
+          text: transcript.transcript.slice(0, 50000),
+          num_cards: 10,
+          language: transcript.language || "en",
+        }).catch(() => {});
 
         router.push(`/decks/${deckId}`);
       } else if (isWiki) {
@@ -128,20 +128,19 @@ export function GenerateInput({
         });
         const deckId = (deck as { id: string }).id;
 
-        setLoadingMessage("Generating flashcards… this may take a minute");
-        try {
-          await generateFlashcards({
-            deck_id: deckId,
-            text: article.text.slice(0, 50000),
-            num_cards: 10,
-          });
-        } catch {
-          router.push(`/decks/${deckId}`);
-          return;
-        }
+        await generateFlashcardsBackground({
+          deck_id: deckId,
+          text: article.text.slice(0, 50000),
+          num_cards: 10,
+        }).catch(() => {});
 
         router.push(`/decks/${deckId}`);
       } else {
+        if (isYouTubePlaylistUrl(trimmed)) {
+          setError("YouTube playlists aren\u2019t supported yet. Please paste a single video link.");
+          setLoading(false);
+          return;
+        }
         if (looksLikeUrl(trimmed)) {
           setError("That looks like a URL. Only YouTube and Wikipedia links are supported for now.");
           setLoading(false);
@@ -156,18 +155,12 @@ export function GenerateInput({
         });
         const deckId = (deck as { id: string }).id;
 
-        setLoadingMessage("Generating flashcards… this may take a minute");
-        try {
-          await generateFlashcards({
-            deck_id: deckId,
-            topic: trimmed,
-            num_cards: 10,
-            language: "en",
-          });
-        } catch {
-          router.push(`/decks/${deckId}`);
-          return;
-        }
+        await generateFlashcardsBackground({
+          deck_id: deckId,
+          topic: trimmed,
+          num_cards: 10,
+          language: "en",
+        }).catch(() => {});
 
         router.push(`/decks/${deckId}`);
       }
@@ -183,7 +176,7 @@ export function GenerateInput({
     : null;
 
   return (
-    <form onSubmit={handleSubmit} className="w-full max-w-xl mx-auto space-y-4">
+    <form onSubmit={handleSubmit} className="w-full max-w-xl mx-auto space-y-3">
       <input
         type="text"
         value={value}

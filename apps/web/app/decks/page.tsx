@@ -39,7 +39,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { getUsers, getDecks, getCategories, updateDeck, createCategory, updateCategory, deleteCategory, deleteDeck, moveDeckToCategory } from "@/lib/api";
-import { getStoredUserId } from "@/components/user-selector";
+import { getStoredUserId, useClientIsAdmin } from "@/components/user-selector";
 import PageContainer from "@/components/layout/page-container";
 
 export type Deck = {
@@ -234,6 +234,7 @@ export default function DecksPage() {
   const [viewMode, setViewMode] = useState<"grouped" | "all">("grouped");
   const [sortMode, setSortMode] = useState<"newest" | "oldest" | "az">("newest");
   const [deckLayout, setDeckLayout] = useState<"list" | "grid">("list");
+  const isAdminClient = useClientIsAdmin();
 
   useEffect(() => {
     try {
@@ -644,17 +645,19 @@ export default function DecksPage() {
               <Pencil className="size-4 shrink-0" />
               Rename deck
             </button>
-            <button
-              type="button"
-              className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm hover:bg-muted max-mobile:min-h-[44px] max-mobile:py-3"
-              onClick={() => {
-                setOpenDeckMenuId(null);
-                handleTogglePublic(deck.id, !deck.is_public);
-              }}
-            >
-              {deck.is_public ? <EyeOff className="size-4 shrink-0" /> : <Eye className="size-4 shrink-0" />}
-              {deck.is_public ? "Remove from Library" : "Add to Library"}
-            </button>
+            {isAdminClient && (
+              <button
+                type="button"
+                className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm hover:bg-muted max-mobile:min-h-[44px] max-mobile:py-3"
+                onClick={() => {
+                  setOpenDeckMenuId(null);
+                  handleTogglePublic(deck.id, !deck.is_public);
+                }}
+              >
+                {deck.is_public ? <EyeOff className="size-4 shrink-0" /> : <Eye className="size-4 shrink-0" />}
+                {deck.is_public ? "Remove from Library" : "Add to Library"}
+              </button>
+            )}
             <button
               type="button"
               className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm hover:bg-muted max-mobile:min-h-[44px] max-mobile:py-3"
