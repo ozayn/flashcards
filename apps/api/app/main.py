@@ -173,3 +173,10 @@ async def startup():
         logging.getLogger("uvicorn.error").warning(
             f"Database setup skipped (connect to PostgreSQL to enable): {e}"
         )
+    try:
+        youtube.run_proxy_egress_verification_at_startup()
+    except Exception:
+        import logging
+        logging.getLogger("uvicorn.error").exception(
+            "YouTube proxy egress verification crashed during startup"
+        )
