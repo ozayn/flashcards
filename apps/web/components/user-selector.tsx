@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
 import { ChevronDown, Plus } from "lucide-react";
 import { getUsers, createUser, waitForApiReadiness, apiUrl } from "@/lib/api";
 import { userIsProductAdmin } from "@/lib/product-admin";
@@ -23,6 +24,7 @@ export type User = {
 
 export function UserSelector() {
   const router = useRouter();
+  const { data: session } = useSession();
   const [users, setUsers] = useState<User[]>([]);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -92,9 +94,37 @@ export function UserSelector() {
     }
   }
 
+  const oauthLinkedUserRef = useRef<string | null>(null);
+
   useEffect(() => {
-    loadUsers();
+    void loadUsers();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- initial user list only
   }, []);
+
+  useEffect(() => {
+    const bid = session?.backendUserId;
+    if (!bid || typeof window === "undefined") {
+      oauthLinkedUserRef.current = null;
+      return;
+    }
+    if (oauthLinkedUserRef.current === bid) return;
+    oauthLinkedUserRef.current = bid;
+
+    const cur = localStorage.getItem(STORAGE_KEY);
+    if (cur !== bid) {
+      localStorage.setItem(STORAGE_KEY, bid);
+      const name = session.user?.name ?? "";
+      const email = session.user?.email ?? "";
+      if (name) localStorage.setItem(NAME_STORAGE_KEY, name);
+      if (email) localStorage.setItem(EMAIL_STORAGE_KEY, email);
+      window.dispatchEvent(
+        new CustomEvent("flashcard_user_changed", { detail: { userId: bid } })
+      );
+    }
+    setSelectedUserId(bid);
+    void loadUsers();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- sync when OAuth session first exposes backendUserId
+  }, [session?.backendUserId, session?.user?.name, session?.user?.email]);
 
   useEffect(() => {
     if (!open && !(users.length === 0 && showAddForm)) return;

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback, useMemo, type MouseEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -621,7 +621,7 @@ export default function DecksPage() {
         {openDeckMenuId === deck.id && (
           <div
             className="absolute right-0 top-full mt-1 z-50 w-max min-w-[17rem] max-w-[calc(100vw-1.5rem)] rounded-lg border border-border bg-background py-1 shadow-lg"
-            onClick={(e) => e.stopPropagation()}
+            onClick={(e: MouseEvent) => e.stopPropagation()}
             role="menu"
           >
             <button
@@ -890,7 +890,7 @@ export default function DecksPage() {
               {pageMenuOpen && (
                 <div
                   className="absolute right-0 top-full z-50 mt-1 min-w-[11rem] rounded-lg border border-border bg-popover py-1 shadow-lg"
-                  onClick={(e) => e.stopPropagation()}
+                  onClick={(e: MouseEvent) => e.stopPropagation()}
                 >
                   <button
                     type="button"
@@ -922,7 +922,7 @@ export default function DecksPage() {
           >
             <div
               className="bg-background rounded-lg shadow-lg p-6 w-full max-w-sm mx-4"
-              onClick={(e) => e.stopPropagation()}
+              onClick={(e: MouseEvent) => e.stopPropagation()}
             >
               <h2 className="text-lg font-semibold mb-4">New Category</h2>
               <form onSubmit={handleCreateCategory} className="space-y-4">
@@ -965,7 +965,7 @@ export default function DecksPage() {
           >
             <div
               className="bg-background rounded-lg shadow-lg p-6 w-full max-w-sm mx-4"
-              onClick={(e) => e.stopPropagation()}
+              onClick={(e: MouseEvent) => e.stopPropagation()}
             >
               <h2 className="text-lg font-semibold mb-4">Rename Category</h2>
               <form onSubmit={handleRenameCategory} className="space-y-4">
@@ -1008,7 +1008,7 @@ export default function DecksPage() {
           >
             <div
               className="bg-background rounded-lg shadow-lg p-6 w-full max-w-sm mx-4"
-              onClick={(e) => e.stopPropagation()}
+              onClick={(e: MouseEvent) => e.stopPropagation()}
             >
               <h2 className="text-lg font-semibold mb-2">Delete this category?</h2>
               <p className="text-sm text-muted-foreground mb-4">
@@ -1043,7 +1043,7 @@ export default function DecksPage() {
           >
             <div
               className="bg-background rounded-lg shadow-lg p-6 w-full max-w-sm mx-4"
-              onClick={(e) => e.stopPropagation()}
+              onClick={(e: MouseEvent) => e.stopPropagation()}
             >
               <h2 className="text-lg font-semibold mb-4">Move Deck to Category</h2>
               <form onSubmit={handleMoveDeck} className="space-y-4">
@@ -1094,7 +1094,7 @@ export default function DecksPage() {
           >
             <div
               className="bg-background rounded-lg shadow-lg p-6 w-full max-w-sm mx-4"
-              onClick={(e) => e.stopPropagation()}
+              onClick={(e: MouseEvent) => e.stopPropagation()}
             >
               <h2 className="text-lg font-semibold mb-4">Rename deck</h2>
               <form onSubmit={handleRenameDeck} className="space-y-4">
@@ -1134,7 +1134,7 @@ export default function DecksPage() {
           >
             <div
               className="bg-background rounded-lg shadow-lg p-6 w-full max-w-sm mx-4"
-              onClick={(e) => e.stopPropagation()}
+              onClick={(e: MouseEvent) => e.stopPropagation()}
             >
               <h2 className="text-lg font-semibold mb-2">Delete this deck?</h2>
               <p className="text-sm text-muted-foreground mb-4">
@@ -1254,7 +1254,7 @@ export default function DecksPage() {
                 {filtersMenuOpen && (
                   <div
                     className="absolute right-0 top-full z-50 mt-1 w-[min(100vw-2rem,16rem)] rounded-lg border border-border bg-popover p-3 shadow-lg space-y-3"
-                    onClick={(e) => e.stopPropagation()}
+                    onClick={(e: MouseEvent) => e.stopPropagation()}
                   >
                     {viewMode === "all" && (
                       <div className="space-y-1">
@@ -1441,7 +1441,7 @@ export default function DecksPage() {
                               <>
                                 <Link
                                   href={`/explore/category/${group.categoryId}`}
-                                  onClick={(e) => e.stopPropagation()}
+                                  onClick={(e: MouseEvent) => e.stopPropagation()}
                                   className="p-1.5 rounded hover:bg-muted/60 transition-colors"
                                   aria-label="Explore this category"
                                   title="Explore cards"
@@ -1450,7 +1450,7 @@ export default function DecksPage() {
                                 </Link>
                                 <Link
                                   href={`/study/category/${group.categoryId}`}
-                                  onClick={(e) => e.stopPropagation()}
+                                  onClick={(e: MouseEvent) => e.stopPropagation()}
                                   className="p-1.5 rounded hover:bg-primary/10 transition-colors"
                                   aria-label="Quiz this category"
                                   title="Quiz category"
@@ -1504,7 +1504,7 @@ export default function DecksPage() {
                             {openCategoryActionsId === group.categoryId && (
                               <div
                                 className="absolute right-0 top-full z-50 mt-0.5 w-max min-w-[15rem] max-w-[calc(100vw-1.5rem)] rounded-lg border border-border bg-popover py-1 shadow-lg"
-                                onClick={(e) => e.stopPropagation()}
+                                onClick={(e: MouseEvent) => e.stopPropagation()}
                                 role="menu"
                               >
                                 {group.decks.length > 0 && (

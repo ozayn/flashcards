@@ -6,6 +6,14 @@ from pydantic import BaseModel, EmailStr, Field, model_validator
 from app.models.enums import Plan, UserRole
 
 
+class GoogleOAuthSyncRequest(BaseModel):
+    """Server-to-server: Next.js syncs Google profile after OAuth (protected by shared secret)."""
+
+    google_sub: str = Field(..., min_length=1, max_length=255)
+    email: Optional[str] = Field(default=None, max_length=255)
+    name: str = Field(default="Google user", min_length=1, max_length=255)
+
+
 class UserCreate(BaseModel):
     email: str = Field(..., min_length=1, max_length=255)
     name: str = Field(..., min_length=1, max_length=255)

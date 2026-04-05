@@ -210,6 +210,34 @@ async def init_db() -> None:
         await conn.run_sync(_migrate_card_style)
     logger.info("Applied card_style column migration")
 
+    async with engine.begin() as conn:
+        def _migrate_google_sub(sync_conn):
+            # SQLite rejects "ADD COLUMN ... UNIQUE" (OperationalError: Cannot add a UNIQUE column).
+            # Add the column plain, then enforce uniqueness with a unique index (multiple NULLs allowed).
+            if _IS_SQLITE:
+                if not _column_exists(sync_conn, "users", "google_sub"):
+                    sync_conn.execute(text("ALTER TABLE users ADD COLUMN google_sub TEXT"))
+                    logger.info("Added google_sub column to users (SQLite)")
+                sync_conn.execute(
+                    text(
+                        "CREATE UNIQUE INDEX IF NOT EXISTS uq_users_google_sub "
+                        "ON users(google_sub)"
+                    )
+                )
+                logger.info("Ensured unique index uq_users_google_sub on users.google_sub (SQLite)")
+            else:
+                _add_column_if_missing(
+                    sync_conn,
+                    "users",
+                    "google_sub",
+                    sql="",
+                    pg_if_not_exists=(
+                        "ALTER TABLE users ADD COLUMN IF NOT EXISTS google_sub VARCHAR(255) UNIQUE"
+                    ),
+                )
+        await conn.run_sync(_migrate_google_sub)
+    logger.info("Applied google_sub column migration")
+
     # Ensure reviewrating enum has all values (PostgreSQL only; SQLite uses CHECK)
     if not _IS_SQLITE:
         async with engine.begin() as conn:

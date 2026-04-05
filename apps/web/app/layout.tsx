@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Script from "next/script";
 import "./globals.css";
 import "katex/dist/katex.min.css";
+import { AuthSessionProvider } from "@/components/auth-session-provider";
 import { ConditionalNav } from "@/components/layout/conditional-nav";
 import { DevErrorHandler } from "@/components/dev-error-handler";
 import { ErrorBoundary } from "@/components/error-boundary";
@@ -16,18 +17,17 @@ export const metadata: Metadata = {
   manifest: "/manifest.json",
   icons: {
     icon: [
-      { url: "/logo/brain_stack_512.png", type: "image/png", sizes: "192x192" },
-      { url: "/logo/brain_stack_512.png", type: "image/png", sizes: "512x512" },
+      { url: "/icons/icon-192.png", type: "image/png", sizes: "192x192" },
+      { url: "/icons/icon-512.png", type: "image/png", sizes: "512x512" },
     ],
     apple: [
-      { url: "/logo/brain_stack_512.png", type: "image/png", sizes: "180x180" },
-      { url: "/logo/brain_stack_512.png", type: "image/png", sizes: "512x512" },
+      { url: "/icons/icon-180.png", type: "image/png", sizes: "180x180" },
     ],
   },
   openGraph: {
     title: "MemoNext",
     description: "Learn anything instantly.",
-    images: ["/logo/brain_stack_512.png"],
+    images: ["/icons/icon-512.png"],
   },
 };
 
@@ -113,16 +113,20 @@ export default function RootLayout({
   return (
     <html lang="en" className="font-sans" suppressHydrationWarning>
       <body className="antialiased bg-background text-foreground min-h-screen min-h-[100dvh] font-sans" suppressHydrationWarning>
-        <Script id="theme-init" strategy="beforeInteractive" dangerouslySetInnerHTML={{ __html: themeScript }} />
+        <Script id="theme-init" strategy="beforeInteractive">
+          {themeScript}
+        </Script>
         <DevErrorHandler />
-        <div className="flex flex-col min-h-screen min-h-[100dvh]">
-          <ConditionalNav />
-          <div className="flex-1 min-h-0 min-h-[calc(100dvh-3.5rem)] max-w-4xl mx-auto w-full px-4 sm:px-6 md:px-8 pt-6 pb-8 [&:has([data-study])]:max-w-none [&:has([data-study])]:px-0 [&:has([data-study])]:pt-0 [&:has([data-study])]:pb-0 [&:has([data-study])]:min-h-[100dvh] [&:has([data-landing])]:max-w-none [&:has([data-landing])]:px-0 [&:has([data-landing])]:pt-0 [&:has([data-landing])]:pb-0 [&:has([data-landing])]:min-h-[100dvh]">
-            <TooltipProvider>
-              <ErrorBoundary>{children}</ErrorBoundary>
-            </TooltipProvider>
+        <AuthSessionProvider>
+          <div className="flex flex-col min-h-screen min-h-[100dvh]">
+            <ConditionalNav />
+            <div className="flex-1 min-h-0 min-h-[calc(100dvh-3.5rem)] max-w-4xl mx-auto w-full px-4 sm:px-6 md:px-8 pt-6 pb-8 [&:has([data-study])]:max-w-none [&:has([data-study])]:px-0 [&:has([data-study])]:pt-0 [&:has([data-study])]:pb-0 [&:has([data-study])]:min-h-[100dvh] [&:has([data-landing])]:max-w-none [&:has([data-landing])]:px-0 [&:has([data-landing])]:pt-0 [&:has([data-landing])]:pb-0 [&:has([data-landing])]:min-h-[100dvh]">
+              <TooltipProvider>
+                <ErrorBoundary>{children}</ErrorBoundary>
+              </TooltipProvider>
+            </div>
           </div>
-        </div>
+        </AuthSessionProvider>
       </body>
     </html>
   );

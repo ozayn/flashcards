@@ -16,6 +16,8 @@ class User(Base):
     id: Mapped[str] = mapped_column(
         UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid4())
     )
+    # Stable Google subject (OpenID "sub"); null for legacy/local users only.
+    google_sub: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True)
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     role: Mapped[UserRole] = mapped_column(
