@@ -4,7 +4,7 @@ import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
-import { ChevronDown, Plus } from "lucide-react";
+import { Plus } from "lucide-react";
 import {
   getUsers,
   createUser,
@@ -16,6 +16,22 @@ import {
 } from "@/lib/api";
 import { userIsProductAdmin } from "@/lib/product-admin";
 import { cn } from "@/lib/utils";
+
+function accountMenuInitials(name?: string | null, email?: string | null): string {
+  const n = (name ?? "").trim();
+  if (n) {
+    const parts = n.split(/\s+/).filter(Boolean);
+    if (parts.length >= 2) {
+      const a = parts[0]![0] ?? "";
+      const b = parts[parts.length - 1]![0] ?? "";
+      return (a + b).toUpperCase();
+    }
+    return n.slice(0, 2).toUpperCase();
+  }
+  const em = (email ?? "").trim();
+  if (em.length > 0) return em[0]!.toUpperCase();
+  return "?";
+}
 
 const STORAGE_KEY = "flashcard_user_id";
 const ROLE_STORAGE_KEY = "flashcard_user_role";
@@ -34,6 +50,7 @@ export type User = {
 export function UserSelector() {
   const router = useRouter();
   const { data: session, status: sessionStatus } = useSession();
+  const isAdmin = useClientIsAdmin();
   const [users, setUsers] = useState<User[]>([]);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -269,16 +286,21 @@ export function UserSelector() {
 
   if (loading) {
     return (
-      <span className="text-muted-foreground text-sm animate-pulse" title="Checking API">
-        Connecting…
-      </span>
+      <div
+        className="size-9 shrink-0 rounded-full bg-muted animate-pulse"
+        aria-hidden
+        title="Checking API"
+      />
     );
   }
 
   if (apiError) {
     return (
-      <span className="text-amber-600 text-sm" title={`API at ${apiUrl}`}>
-        API unavailable
+      <span
+        className="flex size-9 shrink-0 items-center justify-center rounded-full border border-amber-500/40 bg-muted text-xs font-semibold text-amber-700 dark:text-amber-400"
+        title={`API at ${apiUrl}`}
+      >
+        !
       </span>
     );
   }
@@ -288,83 +310,103 @@ export function UserSelector() {
     setShowAddForm(false);
   };
 
-  const accountMenuFooter = (
-    <>
-      <div className="border-t border-border pt-1 pb-1">
+  const menuCardStyleSection =
+    cardSettings ? (
+      <div className="border-t border-border px-3 py-2">
+        <p className="text-xs font-medium text-muted-foreground mb-2">Flashcard style</p>
+        <div className="flex flex-col gap-1">
+          {(["paper", "minimal", "modern", "anki"] as const).map((style) => (
+            <label
+              key={style}
+              className={cn(
+                "flex items-center gap-2 px-2 py-1 rounded-md cursor-pointer text-sm",
+                cardSettings.card_style === style && "bg-accent"
+              )}
+            >
+              <input
+                type="radio"
+                name="card-style-nav"
+                checked={cardSettings.card_style === style}
+                onChange={() => void handleCardStyleChange(style)}
+                className="rounded-full"
+              />
+              {style.charAt(0).toUpperCase() + style.slice(1)}
+            </label>
+          ))}
+        </div>
+      </div>
+    ) : null;
+
+  const menuAccountLinks = (
+    <div className="py-1">
+      <Link
+        href="/profile"
+        className="flex w-full px-3 py-2 text-left text-sm text-popover-foreground hover:bg-accent hover:text-accent-foreground rounded-sm"
+        onClick={closeMenu}
+      >
+        Profile
+      </Link>
+      {isAdmin && (
         <Link
-          href="/profile"
+          href="/admin"
           className="flex w-full px-3 py-2 text-left text-sm text-popover-foreground hover:bg-accent hover:text-accent-foreground rounded-sm"
           onClick={closeMenu}
         >
-          Profile
+          Admin
         </Link>
-        {sessionStatus === "authenticated" && (
-          <button
-            type="button"
-            className="flex w-full px-3 py-2 text-left text-sm text-popover-foreground hover:bg-accent hover:text-accent-foreground rounded-sm"
-            onClick={() => {
-              closeMenu();
-              void signOut({ callbackUrl: "/" });
-            }}
-          >
-            Sign out
-          </button>
-        )}
-      </div>
-      {cardSettings && (
-        <div className="border-t border-border px-3 py-2">
-          <p className="text-xs font-medium text-muted-foreground mb-2">
-            Flashcard style
-          </p>
-          <div className="flex flex-col gap-1">
-            {(["paper", "minimal", "modern", "anki"] as const).map((style) => (
-              <label
-                key={style}
-                className={cn(
-                  "flex items-center gap-2 px-2 py-1 rounded-md cursor-pointer text-sm",
-                  cardSettings.card_style === style && "bg-accent"
-                )}
-              >
-                <input
-                  type="radio"
-                  name="card-style-nav"
-                  checked={cardSettings.card_style === style}
-                  onChange={() => void handleCardStyleChange(style)}
-                  className="rounded-full"
-                />
-                {style.charAt(0).toUpperCase() + style.slice(1)}
-              </label>
-            ))}
-          </div>
-        </div>
       )}
-    </>
+      {sessionStatus === "authenticated" && (
+        <button
+          type="button"
+          className="flex w-full px-3 py-2 text-left text-sm text-popover-foreground hover:bg-accent hover:text-accent-foreground rounded-sm"
+          onClick={() => {
+            closeMenu();
+            void signOut({ callbackUrl: "/" });
+          }}
+        >
+          Sign out
+        </button>
+      )}
+    </div>
   );
 
   if (users.length === 0) {
+    const initialsEmpty = accountMenuInitials(
+      session?.user?.name,
+      session?.user?.email ?? undefined
+    );
     return (
       <div ref={containerRef} className="relative">
         <button
           type="button"
           onClick={() => setOpen(!open)}
-          className="flex h-8 items-center gap-1 rounded-md border border-input bg-background px-2 text-sm text-foreground hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className={cn(
+            "flex size-9 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium text-foreground ring-offset-background transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+            open && "ring-2 ring-ring ring-offset-2"
+          )}
           aria-haspopup="menu"
           aria-expanded={open}
+          aria-label="Account menu"
         >
-          <span>Account</span>
-          <ChevronDown
-            className={cn(
-              "size-4 text-muted-foreground transition-transform",
-              open && "rotate-180"
-            )}
-          />
+          {initialsEmpty}
         </button>
         {open && (
           <div
-            className="absolute right-0 top-full z-50 mt-1 w-56 rounded-md border border-border bg-popover py-1 shadow-lg"
+            className="absolute right-0 top-full z-50 mt-1 w-56 max-w-[calc(100vw-2rem)] rounded-md border border-border bg-popover py-1 shadow-lg"
             role="menu"
           >
-            {accountMenuFooter}
+            {(session?.user?.name || session?.user?.email) && (
+              <div className="px-3 py-2 border-b border-border">
+                {session?.user?.name ? (
+                  <p className="text-sm font-medium truncate">{session.user.name}</p>
+                ) : null}
+                {session?.user?.email ? (
+                  <p className="text-xs text-muted-foreground truncate">{session.user.email}</p>
+                ) : null}
+              </div>
+            )}
+            {menuAccountLinks}
+            {menuCardStyleSection}
             <div className="border-t border-border mt-1 pt-1 px-1">
               {showAddForm ? (
                 <form onSubmit={handleAddUser} className="space-y-2 p-2">
@@ -431,44 +473,65 @@ export function UserSelector() {
   }
 
   const selectedUser = users.find((u) => u.id === selectedUserId);
+  const initials = accountMenuInitials(
+    selectedUser?.name ?? session?.user?.name,
+    selectedUser?.email ?? session?.user?.email ?? undefined
+  );
 
   return (
     <div ref={containerRef} className="relative">
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className="flex h-8 items-center gap-1 rounded-md border border-input bg-background px-2 text-sm text-foreground hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className={cn(
+          "flex size-9 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium text-foreground ring-offset-background transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+          open && "ring-2 ring-ring ring-offset-2"
+        )}
         aria-haspopup="menu"
         aria-expanded={open}
+        aria-label="Account menu"
       >
-        <span className="text-sm max-w-[9rem] truncate">
-          {selectedUser?.name ?? "Account"}
-        </span>
-        <ChevronDown className={cn("size-4 text-muted-foreground transition-transform shrink-0", open && "rotate-180")} />
+        {initials}
       </button>
       {open && (
         <div
           className="absolute right-0 top-full z-50 mt-1 min-w-[11rem] w-56 max-w-[calc(100vw-2rem)] rounded-md border border-border bg-popover py-1 shadow-lg"
           role="menu"
         >
-          <p className="px-3 pt-1.5 pb-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-            Switch user
-          </p>
-          {users.map((user) => (
-            <button
-              key={user.id}
-              type="button"
-              role="menuitem"
-              onClick={() => handleSelect(user.id)}
-              className={cn(
-                "w-full px-3 py-2 text-left text-sm text-popover-foreground hover:bg-accent hover:text-accent-foreground",
-                user.id === selectedUserId && "bg-accent/50 font-medium"
-              )}
-            >
-              {user.name}
-            </button>
-          ))}
+          {(selectedUser?.name || selectedUser?.email || session?.user?.name || session?.user?.email) && (
+            <div className="px-3 py-2 border-b border-border">
+              {(selectedUser?.name || session?.user?.name) ? (
+                <p className="text-sm font-medium truncate">
+                  {selectedUser?.name ?? session?.user?.name}
+                </p>
+              ) : null}
+              {(selectedUser?.email || session?.user?.email) ? (
+                <p className="text-xs text-muted-foreground truncate">
+                  {selectedUser?.email ?? session?.user?.email}
+                </p>
+              ) : null}
+            </div>
+          )}
+          {menuAccountLinks}
+          {menuCardStyleSection}
           <div className="border-t border-border mt-1 pt-1">
+            <p className="px-3 pt-1.5 pb-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+              Switch user
+            </p>
+            {users.map((user) => (
+              <button
+                key={user.id}
+                type="button"
+                role="menuitem"
+                onClick={() => handleSelect(user.id)}
+                className={cn(
+                  "w-full px-3 py-2 text-left text-sm text-popover-foreground hover:bg-accent hover:text-accent-foreground",
+                  user.id === selectedUserId && "bg-accent/50 font-medium"
+                )}
+              >
+                {user.name}
+              </button>
+            ))}
             {showAddForm ? (
               <div className="p-2">
                 <form onSubmit={handleAddUser} className="space-y-2">
@@ -524,7 +587,6 @@ export function UserSelector() {
               </button>
             )}
           </div>
-          {accountMenuFooter}
         </div>
       )}
     </div>

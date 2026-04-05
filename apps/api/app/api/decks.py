@@ -1,3 +1,4 @@
+import json
 import os
 import re
 import unicodedata
@@ -452,11 +453,38 @@ def _format_timestamp(seconds: float) -> str:
     return f"[{m:02d}:{s:02d}]"
 
 
+def _parsed_transcript_segments(raw: Optional[str]) -> Optional[list]:
+    """Return segment list if ``raw`` is non-empty JSON array, else None."""
+    if not raw or not str(raw).strip():
+        return None
+    try:
+        data = json.loads(raw)
+        if isinstance(data, list) and len(data) > 0:
+            return data
+    except (ValueError, TypeError):
+        pass
+    return None
+
+
+def _plain_transcript_for_download(deck) -> str:
+    """
+    Full plain transcript for export. Prefer joining ``source_segments`` (uncapped) so the .txt
+    matches the timestamped download; fall back to ``source_text`` for older decks without segments.
+    Join rule matches ``youtube.py`` (snippet texts joined with spaces).
+    """
+    segs = _parsed_transcript_segments(deck.source_segments)
+    if segs is not None:
+        return " ".join(str(s.get("text") or "") for s in segs)
+    return (deck.source_text or "").strip()
+
+
 def _get_transcript_deck(deck) -> None:
     """Validate that a deck is eligible for transcript download."""
     if deck.source_type != "youtube":
         raise HTTPException(status_code=400, detail="Transcript download is only available for YouTube decks.")
-    if not deck.source_text or not deck.source_text.strip():
+    has_text = bool(deck.source_text and deck.source_text.strip())
+    has_segments = _parsed_transcript_segments(deck.source_segments) is not None
+    if not has_text and not has_segments:
         raise HTTPException(status_code=404, detail="No transcript stored for this deck.")
 
 
@@ -481,7 +509,7 @@ async def download_transcript(
     if url:
         body += f"Source URL: {url}\n"
     body += "\nTranscript:\n\n"
-    body += deck.source_text
+    body += _plain_transcript_for_download(deck)
 
     filename = _slugify(title) + "-transcript.txt"
 
@@ -509,9 +537,8 @@ async def download_transcript_timestamped(
     if not deck.source_segments or not deck.source_segments.strip():
         raise HTTPException(status_code=404, detail="No timestamped data available for this deck.")
 
-    import json as _json
     try:
-        segments = _json.loads(deck.source_segments)
+        segments = json.loads(deck.source_segments)
     except (ValueError, TypeError):
         raise HTTPException(status_code=404, detail="No timestamped data available for this deck.")
 

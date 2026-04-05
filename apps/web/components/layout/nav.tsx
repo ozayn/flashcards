@@ -15,8 +15,8 @@ type NavLink = { href: string; label: string; primary?: boolean; matchPrefixes?:
 const appNavLinks: NavLink[] = [
   { href: "/decks", label: "My Decks", matchPrefixes: ["/decks", "/categories"] },
   { href: "/library", label: "Library", matchPrefixes: ["/library"] },
-  { href: "/study", label: "Practice", matchPrefixes: ["/study", "/explore"] },
   { href: "/create-deck", label: "Create Deck" },
+  { href: "/study", label: "Practice", matchPrefixes: ["/study", "/explore"] },
 ];
 
 function isNavActive(link: NavLink, pathname: string): boolean {
@@ -43,7 +43,10 @@ export function Nav() {
   const authed = status === "authenticated";
   const isLanding = pathname === "/";
   const isStudyOrExplore = (pathname?.startsWith("/study/") || pathname?.startsWith("/explore/")) ?? false;
-  const navLinks = isLanding ? landingNavLinks : appNavLinks;
+  /** Signed-in users on the landing page use the same primary nav as the rest of the app. */
+  const useAppPrimaryNav = !isLanding || authed;
+  const desktopCenterLinks = useAppPrimaryNav ? appNavLinks : landingCenterLinks;
+  const mobileNavLinks = useAppPrimaryNav ? appNavLinks : landingNavLinks;
 
   return (
     <nav
@@ -62,7 +65,7 @@ export function Nav() {
 
         {/* Center: Desktop nav (hidden on mobile) */}
         <div className="hidden md:flex items-center gap-6">
-          {(isLanding ? landingCenterLinks : navLinks).map((link) => (
+          {desktopCenterLinks.map((link) => (
             link.primary ? (
               <Link key={link.href} href={link.href}>
                 <Button size="sm" className="rounded-lg">
@@ -86,48 +89,37 @@ export function Nav() {
         </div>
 
         {/* Right: Theme + account (app or landing when signed in) or CTAs */}
-        <div className="hidden md:flex items-center gap-3">
+        <div className="hidden md:flex items-center gap-2 sm:gap-3">
           <ThemeToggle />
-          {isLanding ? (
-            authed ? (
-              <>
-                <UserSelector />
-                <Link href="/create-deck">
+          {isLanding && !authed ? (
+            landingRightLinks.map((link) =>
+              link.primary ? (
+                <Link key={link.href} href={link.href}>
                   <Button size="sm" className="rounded-lg">
-                    Get Started
+                    {link.label}
                   </Button>
                 </Link>
-              </>
-            ) : (
-              landingRightLinks.map((link) => (
-                link.primary ? (
-                  <Link key={link.href} href={link.href}>
-                    <Button size="sm" className="rounded-lg">
-                      {link.label}
-                    </Button>
-                  </Link>
-                ) : (
-                  <Link
-                    key={link.href}
-                    href={link.href}
-                    className="text-sm text-muted-foreground hover:text-foreground transition-colors"
-                  >
-                    {link.label}
-                  </Link>
-                )
-              ))
+              ) : (
+                <Link
+                  key={link.href}
+                  href={link.href}
+                  className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  {link.label}
+                </Link>
+              )
             )
           ) : (
             <>
               {!authed && (
                 <Link
                   href="/signin"
-                  className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+                  className="text-sm text-muted-foreground hover:text-foreground transition-colors px-1"
                 >
                   Sign in
                 </Link>
               )}
-              <UserSelector />
+              {authed && <UserSelector />}
             </>
           )}
         </div>
@@ -137,11 +129,12 @@ export function Nav() {
           {!authed && (
             <Link
               href="/signin"
-              className="text-sm font-medium text-muted-foreground hover:text-foreground px-2 py-1.5 -mr-0.5 rounded-md shrink-0"
+              className="text-sm font-medium text-muted-foreground hover:text-foreground px-2 py-1.5 rounded-md shrink-0"
             >
               Sign in
             </Link>
           )}
+          {authed && <UserSelector />}
           <Button
             variant="ghost"
             size="icon"
@@ -158,9 +151,9 @@ export function Nav() {
         <div className="md:hidden border-t border-border/80 bg-background">
           <div className="max-w-4xl mx-auto px-4 sm:px-6 py-3">
             <div className="flex flex-col gap-1">
-              {navLinks.map((link) => {
-                /* Landing: Sign in is in the desktop right column or the mobile top bar */
-                if (isLanding && link.href === "/signin") {
+              {mobileNavLinks.map((link) => {
+                /* Landing signed out: Sign in is in the top bar */
+                if (isLanding && !authed && link.href === "/signin") {
                   return null;
                 }
                 return (
@@ -189,11 +182,6 @@ export function Nav() {
                 );
               })}
             </div>
-            {(authed && isLanding) || !isLanding ? (
-              <div className="pt-3 mt-3 border-t border-border/60">
-                <UserSelector />
-              </div>
-            ) : null}
           </div>
         </div>
       )}

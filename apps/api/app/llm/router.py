@@ -1,6 +1,6 @@
 """
 LLM provider router with fallback.
-Primary: Groq → Gemini → OpenRouter → OpenAI
+Primary: Groq (multiple API keys in order) → Gemini → OpenRouter → OpenAI
 """
 from __future__ import annotations
 
@@ -43,6 +43,120 @@ DEFAULT_MODELS = {
 }
 
 
+def _groq_api_keys_ordered() -> list[str]:
+    """
+    Groq keys: GROQ_API_KEY first (if set), then comma-separated GROQ_API_KEYS entries.
+    Trim, drop empties, dedupe while preserving order.
+    """
+    seen: set[str] = set()
+    out: list[str] = []
+    primary = (os.getenv("GROQ_API_KEY") or "").strip()
+    if primary:
+        seen.add(primary)
+        out.append(primary)
+    raw = os.getenv("GROQ_API_KEYS") or ""
+    for part in raw.split(","):
+        k = part.strip()
+        if not k or k in seen:
+            continue
+        seen.add(k)
+        out.append(k)
+    return out
+
+
+def _groq_http_status(exc: BaseException) -> int | None:
+    """Best-effort HTTP status from Groq / httpx / nested exception chain."""
+    visited: set[int] = set()
+    cur: BaseException | None = exc
+    while cur is not None and id(cur) not in visited:
+        visited.add(id(cur))
+        sc = getattr(cur, "status_code", None)
+        if isinstance(sc, int):
+            return sc
+        resp = getattr(cur, "response", None)
+        if resp is not None:
+            rsc = getattr(resp, "status_code", None)
+            if isinstance(rsc, int):
+                return rsc
+        cur = cur.__cause__ or cur.__context__
+    return None
+
+
+def _groq_error_category(exc: Exception) -> str:
+    """Short label for logs (no secrets)."""
+    st = _groq_http_status(exc)
+    if st == 429:
+        return "rate_limit"
+    if st is not None and st >= 500:
+        return f"http_{st}"
+    if st is not None:
+        return f"http_{st}"
+    if isinstance(exc, ValueError):
+        return "response_validation"
+    msg = str(exc).lower()
+    if "rate" in msg and "limit" in msg:
+        return "rate_limit"
+    if "quota" in msg:
+        return "quota"
+    if "timeout" in msg:
+        return "timeout"
+    return type(exc).__name__
+
+
+def _groq_error_allows_next_key(exc: Exception) -> bool:
+    """
+    True if trying another Groq API key may help (rate limits, quota, transient upstream, bad key slot).
+    False for request/content/model issues where rotating keys will not fix the call.
+    """
+    if isinstance(exc, ValueError):
+        return False
+
+    status = _groq_http_status(exc)
+    if status is not None:
+        if status == 429:
+            return True
+        if status >= 500:
+            return True
+        if status == 408:
+            return True
+        if status in (401, 403):
+            return True
+        if status in (400, 404, 413, 422):
+            return False
+        if 400 <= status < 500:
+            return False
+        return False
+
+    msg = str(exc).lower()
+    if "413" in msg or "payload too large" in msg or "request entity too large" in msg:
+        return False
+    if "invalid json" in msg or "json decode" in msg:
+        return False
+
+    if any(
+        k in msg
+        for k in (
+            "rate limit",
+            "429",
+            "quota",
+            "too many requests",
+            "tokens per minute",
+            " tpm",
+            "capacity",
+            "overloaded",
+            "temporarily unavailable",
+            "unavailable",
+            "connection reset",
+            "econnreset",
+            "timeout",
+            "timed out",
+        )
+    ):
+        return True
+
+    return False
+
+
 def _get_provider_order() -> list[str]:
     """Return provider order. If LLM_PROVIDER is set, try that first. OpenAI is opt-in via OPENAI_ENABLED."""
     base = list(PROVIDER_ORDER)
@@ -62,10 +176,9 @@ def _get_provider_order() -> list[str]:
     return [preferred] + order
 
 
-def _generate_groq(prompt: str, temperature: float, max_tokens: int) -> str:
-    api_key = (os.getenv("GROQ_API_KEY") or "").strip()
-    if not api_key:
-        raise ValueError("GROQ_API_KEY not configured")
+def _generate_groq_with_key(
+    prompt: str, temperature: float, max_tokens: int, api_key: str
+) -> str:
     model = (os.getenv("GROQ_MODEL") or "").strip() or DEFAULT_MODELS["groq"]
     client = groq_client(api_key)
     kwargs = {
@@ -100,6 +213,34 @@ def _generate_groq(prompt: str, temperature: float, max_tokens: int) -> str:
     except Exception:
         pass
     return text
+
+
+def _generate_groq(prompt: str, temperature: float, max_tokens: int) -> str:
+    keys = _groq_api_keys_ordered()
+    if not keys:
+        raise ValueError("GROQ_API_KEY not configured")
+    n = len(keys)
+    for idx, api_key in enumerate(keys):
+        logger.info("LLM Groq: trying API key %d of %d", idx + 1, n)
+        try:
+            return _generate_groq_with_key(prompt, temperature, max_tokens, api_key)
+        except Exception as e:
+            allow_next = _groq_error_allows_next_key(e)
+            if idx + 1 < n and allow_next:
+                logger.warning(
+                    "LLM Groq: key %d of %d failed (%s); trying next Groq key",
+                    idx + 1,
+                    n,
+                    _groq_error_category(e),
+                )
+                continue
+            if idx + 1 >= n and allow_next:
+                logger.warning(
+                    "LLM Groq: all %d key(s) exhausted (%s); falling back to next LLM provider",
+                    n,
+                    _groq_error_category(e),
+                )
+            raise
 
 
 def _generate_openrouter(prompt: str, temperature: float, max_tokens: int) -> str:
