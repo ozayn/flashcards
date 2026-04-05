@@ -1,13 +1,17 @@
 from typing import List
 
 from fastapi import APIRouter, Depends, Header, HTTPException
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.admin_page_token import verify_admin_page_token
 from app.core.database import get_db
-from app.models import User
-from app.schemas.user import UserAdminUpdate, UserResponse
+from app.models import Deck, User
+from app.schemas.user import (
+    UserAdminUpdate,
+    UserDeletePreviewResponse,
+    UserResponse,
+)
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -28,6 +32,46 @@ async def admin_list_users(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(User).order_by(User.created_at))
     users = result.scalars().all()
     return [UserResponse.model_validate(u) for u in users]
+
+
+@router.get(
+    "/users/{user_id}/delete-preview",
+    response_model=UserDeletePreviewResponse,
+    dependencies=[Depends(require_admin_page_session)],
+)
+async def admin_user_delete_preview(user_id: str, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    cnt = await db.execute(
+        select(func.count()).select_from(Deck).where(Deck.user_id == user_id)
+    )
+    deck_count = int(cnt.scalar_one() or 0)
+    return UserDeletePreviewResponse(
+        id=user.id,
+        name=user.name,
+        email=user.email,
+        deck_count=deck_count,
+    )
+
+
+@router.delete(
+    "/users/{user_id}",
+    status_code=204,
+    dependencies=[Depends(require_admin_page_session)],
+)
+async def admin_delete_user(user_id: str, db: AsyncSession = Depends(get_db)):
+    """
+    Permanently delete the user. Database FKs use ON DELETE CASCADE for decks
+    (and flashcards under those decks), categories, and reviews tied to this user.
+    """
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    await db.delete(user)
+    await db.flush()
 
 
 @router.patch(

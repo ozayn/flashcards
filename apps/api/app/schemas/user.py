@@ -49,3 +49,12 @@ class UserAdminUpdate(BaseModel):
         if self.name is None and self.email is None:
             raise ValueError("At least one of name or email must be provided")
         return self
+
+
+class UserDeletePreviewResponse(BaseModel):
+    """Admin-only: user identity and owned deck count before delete."""
+
+    id: str
+    name: str
+    email: str
+    deck_count: int

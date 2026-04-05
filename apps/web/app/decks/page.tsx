@@ -620,56 +620,72 @@ export default function DecksPage() {
         </Button>
         {openDeckMenuId === deck.id && (
           <div
-            className="absolute right-0 top-full mt-1 z-50 min-w-[180px] rounded-lg border border-border bg-background py-1 shadow-lg"
+            className="absolute right-0 top-full mt-1 z-50 w-max min-w-[17rem] max-w-[calc(100vw-1.5rem)] rounded-lg border border-border bg-background py-1 shadow-lg"
             onClick={(e) => e.stopPropagation()}
+            role="menu"
           >
             <button
               type="button"
-              className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm hover:bg-muted max-mobile:min-h-[44px] max-mobile:py-3"
+              role="menuitem"
+              className="flex w-full items-center justify-start gap-2.5 whitespace-nowrap px-3 py-2.5 text-left text-sm hover:bg-muted focus-visible:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background max-mobile:min-h-[44px] max-mobile:py-3"
               onClick={() => openMoveModal(deck.id)}
             >
-              <FolderInput className="size-4 shrink-0" />
-              Move to category
+              <FolderInput className="size-4 shrink-0" aria-hidden />
+              <span>Move to category</span>
             </button>
             <button
               type="button"
-              className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm hover:bg-muted max-mobile:min-h-[44px] max-mobile:py-3"
+              role="menuitem"
+              className="flex w-full items-center justify-start gap-2.5 whitespace-nowrap px-3 py-2.5 text-left text-sm hover:bg-muted focus-visible:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background max-mobile:min-h-[44px] max-mobile:py-3"
               onClick={() => openRenameDeckModal(deck.id)}
             >
-              <Pencil className="size-4 shrink-0" />
-              Rename deck
+              <Pencil className="size-4 shrink-0" aria-hidden />
+              <span>Rename deck</span>
             </button>
             {isAdminClient && (
               <button
                 type="button"
-                className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm hover:bg-muted max-mobile:min-h-[44px] max-mobile:py-3"
+                role="menuitem"
+                className="flex w-full items-center justify-start gap-2.5 whitespace-nowrap px-3 py-2.5 text-left text-sm hover:bg-muted focus-visible:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background max-mobile:min-h-[44px] max-mobile:py-3"
                 onClick={() => {
                   setOpenDeckMenuId(null);
                   handleTogglePublic(deck.id, !deck.is_public);
                 }}
               >
-                {deck.is_public ? <EyeOff className="size-4 shrink-0" /> : <Eye className="size-4 shrink-0" />}
-                {deck.is_public ? "Remove from Library" : "Add to Library"}
+                {deck.is_public ? (
+                  <EyeOff className="size-4 shrink-0" aria-hidden />
+                ) : (
+                  <Eye className="size-4 shrink-0" aria-hidden />
+                )}
+                <span>
+                  {deck.is_public ? "Remove from Library" : "Add to Library"}
+                </span>
               </button>
             )}
             <button
               type="button"
-              className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm hover:bg-muted max-mobile:min-h-[44px] max-mobile:py-3"
+              role="menuitem"
+              className="flex w-full items-center justify-start gap-2.5 whitespace-nowrap px-3 py-2.5 text-left text-sm hover:bg-muted focus-visible:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background max-mobile:min-h-[44px] max-mobile:py-3"
               onClick={(e) => {
                 setOpenDeckMenuId(null);
                 handleArchiveDeck(deck.id, !showArchived, e);
               }}
             >
-              {showArchived ? <ArchiveRestore className="size-4 shrink-0" /> : <Archive className="size-4 shrink-0" />}
-              {showArchived ? "Unarchive" : "Archive"}
+              {showArchived ? (
+                <ArchiveRestore className="size-4 shrink-0" aria-hidden />
+              ) : (
+                <Archive className="size-4 shrink-0" aria-hidden />
+              )}
+              <span>{showArchived ? "Unarchive" : "Archive"}</span>
             </button>
             <button
               type="button"
-              className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-destructive hover:bg-destructive/10 max-mobile:min-h-[44px] max-mobile:py-3"
+              role="menuitem"
+              className="flex w-full items-center justify-start gap-2.5 whitespace-nowrap px-3 py-2.5 text-left text-sm text-destructive hover:bg-destructive/10 focus-visible:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/60 focus-visible:ring-offset-2 focus-visible:ring-offset-background max-mobile:min-h-[44px] max-mobile:py-3"
               onClick={() => openDeleteDeckConfirm(deck.id)}
             >
-              <Trash2 className="size-4 shrink-0" />
-              Delete deck
+              <Trash2 className="size-4 shrink-0" aria-hidden />
+              <span>Delete deck</span>
             </button>
           </div>
         )}
@@ -1487,50 +1503,55 @@ export default function DecksPage() {
                             </Button>
                             {openCategoryActionsId === group.categoryId && (
                               <div
-                                className="absolute right-0 top-full z-50 mt-0.5 min-w-[11rem] rounded-lg border border-border bg-popover py-1 shadow-lg"
+                                className="absolute right-0 top-full z-50 mt-0.5 w-max min-w-[15rem] max-w-[calc(100vw-1.5rem)] rounded-lg border border-border bg-popover py-1 shadow-lg"
                                 onClick={(e) => e.stopPropagation()}
+                                role="menu"
                               >
                                 {group.decks.length > 0 && (
                                   <>
                                     <Link
                                       href={`/explore/category/${group.categoryId}`}
-                                      className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm hover:bg-muted min-h-[44px]"
+                                      role="menuitem"
+                                      className="flex w-full items-center justify-start gap-2.5 whitespace-nowrap px-3 py-2.5 text-left text-sm hover:bg-muted focus-visible:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background min-h-[44px]"
                                       onClick={() => setOpenCategoryActionsId(null)}
                                     >
-                                      <Eye className="size-4 shrink-0" />
-                                      Explore category
+                                      <Eye className="size-4 shrink-0" aria-hidden />
+                                      <span>Explore category</span>
                                     </Link>
                                     <Link
                                       href={`/study/category/${group.categoryId}`}
-                                      className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm hover:bg-muted min-h-[44px]"
+                                      role="menuitem"
+                                      className="flex w-full items-center justify-start gap-2.5 whitespace-nowrap px-3 py-2.5 text-left text-sm hover:bg-muted focus-visible:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background min-h-[44px]"
                                       onClick={() => setOpenCategoryActionsId(null)}
                                     >
-                                      <BookOpen className="size-4 shrink-0" />
-                                      Quiz category
+                                      <BookOpen className="size-4 shrink-0" aria-hidden />
+                                      <span>Quiz category</span>
                                     </Link>
                                   </>
                                 )}
                                 <button
                                   type="button"
-                                  className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm hover:bg-muted min-h-[44px]"
+                                  role="menuitem"
+                                  className="flex w-full items-center justify-start gap-2.5 whitespace-nowrap px-3 py-2.5 text-left text-sm hover:bg-muted focus-visible:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background min-h-[44px]"
                                   onClick={() => {
                                     setOpenCategoryActionsId(null);
                                     openRenameModal(group.categoryId, group.categoryName);
                                   }}
                                 >
-                                  <Pencil className="size-4 shrink-0" />
-                                  Rename category
+                                  <Pencil className="size-4 shrink-0" aria-hidden />
+                                  <span>Rename category</span>
                                 </button>
                                 <button
                                   type="button"
-                                  className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-destructive hover:bg-destructive/10 min-h-[44px]"
+                                  role="menuitem"
+                                  className="flex w-full items-center justify-start gap-2.5 whitespace-nowrap px-3 py-2.5 text-left text-sm text-destructive hover:bg-destructive/10 focus-visible:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/60 focus-visible:ring-offset-2 focus-visible:ring-offset-background min-h-[44px]"
                                   onClick={() => {
                                     setOpenCategoryActionsId(null);
                                     setDeleteConfirmId(group.categoryId);
                                   }}
                                 >
-                                  <Trash2 className="size-4 shrink-0" />
-                                  Delete category
+                                  <Trash2 className="size-4 shrink-0" aria-hidden />
+                                  <span>Delete category</span>
                                 </button>
                               </div>
                             )}

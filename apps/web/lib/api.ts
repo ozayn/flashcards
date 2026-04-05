@@ -130,6 +130,51 @@ export async function patchAdminUser(
   return res.json();
 }
 
+export type AdminUserDeletePreview = {
+  id: string;
+  name: string;
+  email: string;
+  deck_count: number;
+};
+
+export async function getAdminUserDeletePreview(
+  adminPageToken: string,
+  userId: string
+): Promise<AdminUserDeletePreview> {
+  const res = await fetch(
+    `${API_BASE}/admin/users/${userId}/delete-preview`,
+    {
+      cache: "no-store",
+      headers: { "X-Admin-Page-Token": adminPageToken },
+    }
+  );
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    const detail = err.detail;
+    throw new Error(
+      typeof detail === "string" ? detail : "Failed to load delete preview"
+    );
+  }
+  return res.json();
+}
+
+export async function deleteAdminUser(
+  adminPageToken: string,
+  userId: string
+): Promise<void> {
+  const res = await fetch(`${API_BASE}/admin/users/${userId}`, {
+    method: "DELETE",
+    headers: { "X-Admin-Page-Token": adminPageToken },
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    const detail = err.detail;
+    throw new Error(
+      typeof detail === "string" ? detail : "Failed to delete user"
+    );
+  }
+}
+
 export async function createUser(data: {
   email: string;
   name: string;
