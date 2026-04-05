@@ -1,14 +1,25 @@
 import { SignInForm } from "./sign-in-form";
+import {
+  getGoogleSignInEnvPresence,
+  isGoogleSignInEnabledOnServer,
+  logGoogleSignInEnvDiagnosticsIfEnabled,
+  missingRequiredGoogleSignInEnvKeys,
+} from "@/lib/google-signin-env";
 
-function isGoogleAuthConfigured(): boolean {
-  return (
-    !!process.env.GOOGLE_CLIENT_ID?.trim() &&
-    !!process.env.GOOGLE_CLIENT_SECRET?.trim() &&
-    !!process.env.NEXTAUTH_SECRET?.trim() &&
-    !!process.env.MEMO_OAUTH_SYNC_SECRET?.trim()
-  );
-}
+/** Read OAuth-related env on each request (not at build time). See google-signin-env.ts. */
+export const dynamic = "force-dynamic";
 
 export default function SignInPage() {
-  return <SignInForm googleConfigured={isGoogleAuthConfigured()} />;
+  logGoogleSignInEnvDiagnosticsIfEnabled();
+  const presence = getGoogleSignInEnvPresence();
+  const googleConfigured = isGoogleSignInEnabledOnServer();
+  const missingRequiredKeys = missingRequiredGoogleSignInEnvKeys(presence);
+
+  return (
+    <SignInForm
+      googleConfigured={googleConfigured}
+      missingRequiredKeys={missingRequiredKeys}
+      nextAuthUrlPresent={presence.NEXTAUTH_URL}
+    />
+  );
 }

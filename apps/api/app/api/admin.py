@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 
 from datetime import datetime
 
@@ -38,6 +38,40 @@ class BulkLegacyTransferResponse(BaseModel):
     deck_ids: List[str]
 
 
+def _normalize_category_name(s: str) -> str:
+    """Trim, lowercase, collapse spaces — same rule as /categories duplicate detection."""
+    return " ".join(s.strip().lower().split())
+
+
+async def _destination_category_for_transferred_deck(
+    db: AsyncSession,
+    admin_user: User,
+    source_category: Category,
+) -> tuple[Optional[str], Optional[datetime]]:
+    """
+    Pick or create an admin-owned category matching the source category name.
+    Returns (category_id, category_assigned_at) or (None, None) for uncategorized.
+    """
+    raw = (source_category.name or "").strip()
+    if not raw:
+        return None, None
+
+    norm = _normalize_category_name(source_category.name)
+    owned = await db.execute(
+        select(Category).where(Category.user_id == admin_user.id)
+    )
+    for existing in owned.scalars().all():
+        if _normalize_category_name(existing.name) == norm:
+            return existing.id, datetime.utcnow()
+
+    stored = raw[:100] if len(raw) > 100 else raw
+    new_cat = Category(name=stored, user_id=admin_user.id)
+    db.add(new_cat)
+    await db.flush()
+    await db.refresh(new_cat)
+    return new_cat.id, datetime.utcnow()
+
+
 async def _transfer_legacy_deck_to_admin_user(
     db: AsyncSession,
     deck: Deck,
@@ -45,8 +79,8 @@ async def _transfer_legacy_deck_to_admin_user(
 ) -> DeckResponse:
     """
     Move one deck from its current owner into admin_user's account.
-    Clears reviews on the deck's cards; remaps category by name when possible.
-    Caller must enforce legacy owner and admin google_sub.
+    Clears reviews on the deck's cards; maps category by normalized name, creating
+    a new admin-owned category when needed. Caller must enforce legacy owner and admin google_sub.
     """
     fc_result = await db.execute(
         select(Flashcard.id).where(Flashcard.deck_id == deck.id)
@@ -62,20 +96,17 @@ async def _transfer_legacy_deck_to_admin_user(
             select(Category).where(Category.id == deck.category_id)
         )
         cat = cat_result.scalar_one_or_none()
-        if cat and cat.user_id != admin_user.id:
-            match_result = await db.execute(
-                select(Category).where(
-                    Category.user_id == admin_user.id,
-                    Category.name == cat.name,
-                )
+        if not cat:
+            deck.category_id = None
+            deck.category_assigned_at = None
+        elif cat.user_id == admin_user.id:
+            deck.category_assigned_at = datetime.utcnow()
+        else:
+            target_id, assigned_at = await _destination_category_for_transferred_deck(
+                db, admin_user, cat
             )
-            match_cat = match_result.scalar_one_or_none()
-            if match_cat:
-                deck.category_id = match_cat.id
-                deck.category_assigned_at = datetime.utcnow()
-            else:
-                deck.category_id = None
-                deck.category_assigned_at = None
+            deck.category_id = target_id
+            deck.category_assigned_at = assigned_at
 
     deck.user_id = admin_user.id
     deck.is_public = False

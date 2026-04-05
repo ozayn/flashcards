@@ -18,7 +18,15 @@ function signInErrorMessage(error: string | null): string | null {
   return null;
 }
 
-function SignInFormInner({ googleConfigured }: { googleConfigured: boolean }) {
+function SignInFormInner({
+  googleConfigured,
+  missingRequiredKeys,
+  nextAuthUrlPresent,
+}: {
+  googleConfigured: boolean;
+  missingRequiredKeys: string[];
+  nextAuthUrlPresent: boolean;
+}) {
   const params = useSearchParams();
   const oauthError = params.get("error");
   const oauthMessage = signInErrorMessage(oauthError);
@@ -108,11 +116,27 @@ function SignInFormInner({ googleConfigured }: { googleConfigured: boolean }) {
           </Button>
 
           {!googleConfigured && (
-            <p className="text-xs text-center text-muted-foreground">
-              Google sign-in is not configured (missing environment variables on
-              the web server).
-            </p>
+            <div className="text-xs text-center text-muted-foreground space-y-1.5">
+              <p>
+                Google sign-in needs required variables on the{" "}
+                <span className="font-medium text-foreground/80">web</span> service at{" "}
+                <span className="font-medium text-foreground/80">runtime</span>. After
+                changing env, redeploy or restart the web app.
+              </p>
+              {missingRequiredKeys.length > 0 ? (
+                <p className="font-mono text-[11px] sm:text-xs text-foreground/90 break-words">
+                  Missing or empty: {missingRequiredKeys.join(", ")}
+                </p>
+              ) : null}
+            </div>
           )}
+          {googleConfigured && !nextAuthUrlPresent ? (
+            <p className="text-xs text-center text-amber-800/90 dark:text-amber-400/85">
+              NEXTAUTH_URL is not set. Set it to your public site origin (e.g.{" "}
+              <span className="whitespace-nowrap">https://your-domain.com</span>) so OAuth
+              callbacks work, unless your host injects it automatically.
+            </p>
+          ) : null}
 
           <Button
             variant="outline"
@@ -163,7 +187,15 @@ function SignInFormInner({ googleConfigured }: { googleConfigured: boolean }) {
   );
 }
 
-export function SignInForm({ googleConfigured }: { googleConfigured: boolean }) {
+export function SignInForm({
+  googleConfigured,
+  missingRequiredKeys,
+  nextAuthUrlPresent,
+}: {
+  googleConfigured: boolean;
+  missingRequiredKeys: string[];
+  nextAuthUrlPresent: boolean;
+}) {
   return (
     <Suspense
       fallback={
@@ -173,7 +205,11 @@ export function SignInForm({ googleConfigured }: { googleConfigured: boolean }) 
         </div>
       }
     >
-      <SignInFormInner googleConfigured={googleConfigured} />
+      <SignInFormInner
+        googleConfigured={googleConfigured}
+        missingRequiredKeys={missingRequiredKeys}
+        nextAuthUrlPresent={nextAuthUrlPresent}
+      />
     </Suspense>
   );
 }
