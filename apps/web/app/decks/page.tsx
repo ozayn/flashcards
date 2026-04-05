@@ -1,6 +1,13 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo, type MouseEvent } from "react";
+import {
+  useEffect,
+  useState,
+  useCallback,
+  useMemo,
+  type KeyboardEvent,
+  type MouseEvent,
+} from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -193,10 +200,12 @@ function DraggableDeckRow({
   deck,
   children,
   isDragging,
+  className,
 }: {
   deck: Deck;
   children: React.ReactNode;
   isDragging: boolean;
+  className?: string;
 }) {
   const { attributes, listeners, setNodeRef } = useDraggable({ id: deck.id });
   return (
@@ -204,7 +213,7 @@ function DraggableDeckRow({
       ref={setNodeRef}
       {...listeners}
       {...attributes}
-      className={`touch-none ${isDragging ? "opacity-50 cursor-grabbing" : "cursor-grab"}`}
+      className={`touch-none ${isDragging ? "opacity-50 cursor-grabbing" : "cursor-grab"} ${className ?? ""}`}
     >
       {children}
     </div>
@@ -885,27 +894,30 @@ export default function DecksPage() {
         : null;
 
     const metaRow = (
-      <div className="flex min-w-0 flex-wrap items-center gap-x-1 gap-y-0.5 text-muted-foreground text-[10px] leading-tight sm:text-[11px]">
+      <div className="flex min-w-0 flex-nowrap items-center gap-x-1 overflow-hidden text-muted-foreground text-[10px] leading-tight sm:text-[11px]">
         <span className="shrink-0 tabular-nums">
           {deck.card_count ?? 0} {(deck.card_count ?? 0) === 1 ? "card" : "cards"}
         </span>
         <DeckGenerationBadge status={deck.generation_status} />
         {categoryLabel && (
           <>
-            <span className="text-muted-foreground/40" aria-hidden>
+            <span className="shrink-0 text-muted-foreground/40" aria-hidden>
               ·
             </span>
-            <span className="min-w-0 truncate max-w-full" title={categoryLabel}>
+            <span className="min-w-0 flex-1 truncate" title={categoryLabel}>
               {categoryLabel}
             </span>
           </>
         )}
         {dateShort && (
           <>
-            <span className="text-muted-foreground/40" aria-hidden>
+            <span className="shrink-0 text-muted-foreground/40" aria-hidden>
               ·
             </span>
-            <span className="truncate text-muted-foreground/80" title={dateShort}>
+            <span
+              className="shrink-0 truncate text-muted-foreground/80 max-w-[42%]"
+              title={dateShort}
+            >
               {dateShort}
             </span>
           </>
@@ -924,25 +936,31 @@ export default function DecksPage() {
             router.push(`/decks/${deck.id}`);
           }
         }}
-        className="group relative flex w-full min-w-0 cursor-pointer flex-col rounded-md border border-border bg-background p-2 transition-colors hover:bg-muted/30 sm:rounded-lg sm:p-2.5"
+        className="group relative flex h-full min-h-[7.5rem] w-full min-w-0 cursor-pointer flex-col rounded-md border border-border bg-background p-2 transition-colors hover:bg-muted/30 sm:min-h-[8rem] sm:rounded-lg sm:p-2.5"
       >
-        <div className="absolute right-1 top-1 z-10">
-          <div className="shrink-0 [&_button]:h-7 [&_button]:w-7">
+        <div className="pointer-events-none absolute right-1 top-1 z-10">
+          <div
+            className="pointer-events-auto shrink-0 [&_button]:h-7 [&_button]:w-7"
+            onClick={(e: MouseEvent) => e.stopPropagation()}
+            onKeyDown={(e: KeyboardEvent) => e.stopPropagation()}
+          >
             {renderDeckMenu(deck)}
           </div>
         </div>
 
-        <div className="flex min-h-0 min-w-0 flex-col gap-1 pr-8">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col pr-8 pt-0.5">
           <h3
-            className={`min-w-0 break-words font-semibold leading-snug text-foreground line-clamp-2 ${
+            title={deck.name}
+            className={`line-clamp-2 min-h-[2.5rem] shrink-0 break-words font-semibold leading-snug text-foreground sm:min-h-[2.75rem] md:min-h-[3rem] ${
               narrowGrid
-                ? "text-[11px] sm:text-xs md:text-sm"
+                ? "text-[11px] sm:text-xs md:text-sm md:min-h-[2.75rem]"
                 : "text-xs sm:text-sm md:text-base"
             }`}
           >
             {deck.name}
           </h3>
-          <div className="min-w-0">{metaRow}</div>
+          <div className="min-h-[2px] flex-1" aria-hidden />
+          <div className="mt-auto min-w-0 shrink-0 pt-1">{metaRow}</div>
         </div>
       </div>
     );
@@ -952,12 +970,12 @@ export default function DecksPage() {
     const groupedDeckLayout = viewMode === "grouped";
     if (deckLayout === "grid") {
       const gridClassName = groupedDeckLayout
-        ? "grid w-full min-w-0 grid-cols-2 gap-2 sm:grid-cols-2 sm:gap-2 md:gap-3 xl:grid-cols-3"
-        : "grid w-full min-w-0 grid-cols-1 gap-4 max-mobile:gap-3 sm:grid-cols-2 lg:grid-cols-3";
+        ? "grid w-full min-w-0 grid-cols-2 items-stretch gap-2 sm:grid-cols-2 sm:gap-2 md:gap-3 xl:grid-cols-3"
+        : "grid w-full min-w-0 grid-cols-1 items-stretch gap-4 max-mobile:gap-3 sm:grid-cols-2 lg:grid-cols-3";
       return (
         <div className={gridClassName}>
           {deckList.map((deck) => (
-            <div key={deck.id} className="min-w-0 w-full">
+            <div key={deck.id} className="h-full min-h-0 min-w-0 w-full">
               {wrapper ? wrapper(deck, renderDeckTile(deck)) : renderDeckTile(deck)}
             </div>
           ))}
@@ -1653,6 +1671,7 @@ export default function DecksPage() {
                           key={deck.id}
                           deck={deck}
                           isDragging={activeDragId === deck.id}
+                          className={deckLayout === "grid" ? "h-full min-h-0" : undefined}
                         >
                           {content}
                         </DraggableDeckRow>
