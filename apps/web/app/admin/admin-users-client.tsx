@@ -1,18 +1,61 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import { signIn, signOut, useSession } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 import {
   deleteAdminUser,
+  getAdminUserActivity,
   getAdminUserDeletePreview,
   getAdminUsers,
   patchAdminUser,
   type AdminUserDeletePreview,
   type AdminUserRow,
+  type UserActivityEntry,
 } from "@/lib/api";
-import { Pencil, RotateCw, Trash2 } from "lucide-react";
+import { History, Pencil, RotateCw, Trash2 } from "lucide-react";
+
+const ADMIN_ACTIVITY_LIMIT = 15;
+
+function formatRelativeTimeAdmin(iso: string): string {
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return "";
+  const diffMs = Date.now() - t;
+  const sec = Math.floor(diffMs / 1000);
+  if (sec < 45) return "now";
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const day = Math.floor(hr / 24);
+  if (day < 7) return `${day}d ago`;
+  return new Date(iso).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+  });
+}
+
+function adminActivitySummary(row: UserActivityEntry): string {
+  switch (row.event_type) {
+    case "signed_in":
+      return "Signed in";
+    case "deck_created": {
+      const raw = row.meta?.deck_name;
+      const name = typeof raw === "string" && raw.trim() ? raw.trim() : "Deck";
+      const short = name.length > 56 ? `${name.slice(0, 53)}…` : name;
+      return `Created deck · ${short}`;
+    }
+    default:
+      return row.event_type.replace(/_/g, " ");
+  }
+}
+
+function adminActivityDetailTitle(row: UserActivityEntry): string | undefined {
+  if (row.event_type !== "deck_created") return undefined;
+  const id = row.meta?.deck_id;
+  return typeof id === "string" && id.trim() ? `deck_id: ${id.trim()}` : undefined;
+}
 
 function formatCreated(iso: string) {
   try {
@@ -43,6 +86,11 @@ export function AdminUsersClient() {
   const [deleteModalError, setDeleteModalError] = useState<string | null>(null);
   const [deleteExecuting, setDeleteExecuting] = useState(false);
 
+  const [activityUserId, setActivityUserId] = useState<string | null>(null);
+  const [activityItems, setActivityItems] = useState<UserActivityEntry[]>([]);
+  const [activityLoading, setActivityLoading] = useState(false);
+  const [activityError, setActivityError] = useState<string | null>(null);
+
   const load = useCallback(async () => {
     setError(null);
     setLoading(true);
@@ -68,6 +116,30 @@ export function AdminUsersClient() {
     setDeleteModalError(null);
     setDeletePreviewLoading(false);
     setDeleteExecuting(false);
+  }
+
+  async function toggleUserActivity(userId: string) {
+    if (activityUserId === userId) {
+      setActivityUserId(null);
+      setActivityItems([]);
+      setActivityError(null);
+      return;
+    }
+    setActivityUserId(userId);
+    setActivityItems([]);
+    setActivityError(null);
+    setActivityLoading(true);
+    try {
+      const rows = await getAdminUserActivity(userId, ADMIN_ACTIVITY_LIMIT);
+      setActivityItems(rows);
+    } catch (e) {
+      setActivityError(
+        e instanceof Error ? e.message : "Failed to load activity"
+      );
+      setActivityItems([]);
+    } finally {
+      setActivityLoading(false);
+    }
   }
 
   async function openDeleteModal(userId: string) {
@@ -106,6 +178,11 @@ export function AdminUsersClient() {
     setDraftName(u.name);
     setDraftEmail(u.email);
     setSaveError(null);
+    if (activityUserId === u.id) {
+      setActivityUserId(null);
+      setActivityItems([]);
+      setActivityError(null);
+    }
   }
 
   function cancelEdit() {
@@ -255,7 +332,8 @@ export function AdminUsersClient() {
               {users.map((u) => {
                 const editing = editingId === u.id;
                 return (
-                  <tr key={u.id} className="border-b border-border/60 last:border-0">
+                  <Fragment key={u.id}>
+                  <tr className="border-b border-border/60 last:border-0">
                     <td className="max-w-[10rem] px-2 py-1.5 align-middle sm:max-w-none">
                       {editing ? (
                         <input
@@ -324,6 +402,22 @@ export function AdminUsersClient() {
                             type="button"
                             size="icon-sm"
                             variant="ghost"
+                            disabled={editing}
+                            className={
+                              activityUserId === u.id
+                                ? "bg-muted text-foreground"
+                                : "text-muted-foreground hover:text-foreground"
+                            }
+                            onClick={() => void toggleUserActivity(u.id)}
+                            aria-label={`View activity for ${u.name}`}
+                            title="Recent activity"
+                          >
+                            <History className="size-3.5 shrink-0" aria-hidden />
+                          </Button>
+                          <Button
+                            type="button"
+                            size="icon-sm"
+                            variant="ghost"
                             className="text-muted-foreground hover:text-foreground"
                             onClick={() => startEdit(u)}
                             aria-label={`Edit ${u.name}`}
@@ -344,6 +438,52 @@ export function AdminUsersClient() {
                       )}
                     </td>
                   </tr>
+                  {activityUserId === u.id ? (
+                    <tr className="border-b border-border/60 bg-muted/20 last:border-0">
+                      <td colSpan={4} className="px-3 py-2.5">
+                        <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                          Recent activity
+                        </p>
+                        {activityLoading ? (
+                          <p className="text-xs text-muted-foreground">Loading…</p>
+                        ) : null}
+                        {activityError ? (
+                          <p className="text-xs text-destructive" role="alert">
+                            {activityError}
+                          </p>
+                        ) : null}
+                        {!activityLoading &&
+                        !activityError &&
+                        activityItems.length === 0 ? (
+                          <p className="text-xs text-muted-foreground">
+                            No logged activity.
+                          </p>
+                        ) : null}
+                        {!activityLoading && !activityError && activityItems.length > 0 ? (
+                          <ul className="max-w-2xl space-y-1" aria-label="Activity log">
+                            {activityItems.map((row) => (
+                              <li
+                                key={row.id}
+                                className="flex items-baseline justify-between gap-3 text-xs leading-snug"
+                                title={adminActivityDetailTitle(row)}
+                              >
+                                <span className="min-w-0 text-foreground">
+                                  {adminActivitySummary(row)}
+                                </span>
+                                <time
+                                  className="shrink-0 tabular-nums text-muted-foreground"
+                                  dateTime={row.created_at}
+                                >
+                                  {formatRelativeTimeAdmin(row.created_at)}
+                                </time>
+                              </li>
+                            ))}
+                          </ul>
+                        ) : null}
+                      </td>
+                    </tr>
+                  ) : null}
+                  </Fragment>
                 );
               })}
             </tbody>

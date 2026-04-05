@@ -1,16 +1,18 @@
 from __future__ import annotations
 
+import json
 from typing import List
 
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import delete as sql_delete
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.user_activity import list_user_activity
 from app.core.email_identity import (
     list_users_matching_email_identity,
     normalize_email_for_identity,
@@ -19,6 +21,7 @@ from app.core.platform_admin import require_platform_admin
 from app.models import Category, Deck, Flashcard, Review, User
 from app.schemas.deck import DeckResponse
 from app.schemas.user import (
+    UserActivityItem,
     UserAdminUpdate,
     UserDeletePreviewResponse,
     UserResponse,
@@ -138,6 +141,43 @@ async def admin_list_users(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(User).order_by(User.created_at))
     users = result.scalars().all()
     return [UserResponse.model_validate(u) for u in users]
+
+
+@router.get(
+    "/users/{user_id}/activity",
+    response_model=List[UserActivityItem],
+    dependencies=[Depends(require_platform_admin)],
+)
+async def admin_user_activity(
+    user_id: str,
+    db: AsyncSession = Depends(get_db),
+    limit: int = Query(15, ge=1, le=50),
+):
+    """Recent activity for any user (platform admin only)."""
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    rows = await list_user_activity(db, user_id, limit=limit)
+    out: List[UserActivityItem] = []
+    for row in rows:
+        meta = None
+        if row.meta_json:
+            try:
+                meta = json.loads(row.meta_json)
+                if not isinstance(meta, dict):
+                    meta = None
+            except json.JSONDecodeError:
+                meta = None
+        out.append(
+            UserActivityItem(
+                id=row.id,
+                event_type=row.event_type,
+                created_at=row.created_at,
+                meta=meta,
+            )
+        )
+    return out
 
 
 @router.get(

@@ -190,6 +190,21 @@ export async function getAdminUsers(): Promise<AdminUserRow[]> {
   return res.json();
 }
 
+/** Platform admin only: recent events for any user (same shape as profile activity). */
+export async function getAdminUserActivity(
+  userId: string,
+  limit = 15
+): Promise<UserActivityEntry[]> {
+  const res = await fetch(
+    `${API_BASE}/admin/users/${encodeURIComponent(userId)}/activity?limit=${encodeURIComponent(String(limit))}`,
+    { cache: "no-store" }
+  );
+  if (!res.ok) {
+    throw new Error(await readApiErrorMessage(res, "Failed to load activity"));
+  }
+  return res.json();
+}
+
 export async function patchAdminUser(
   targetUserId: string,
   body: { name?: string; email?: string }
