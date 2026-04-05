@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -6,6 +6,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.user_access import (
+    assert_may_mutate_deck,
+    assert_may_read_deck,
+    get_trusted_acting_user_id,
+)
 from app.models import Deck, Flashcard
 from app.schemas.flashcard import (
     DIFFICULTY_TO_INT,
@@ -22,12 +27,18 @@ router = APIRouter(prefix="/flashcards", tags=["flashcards"])
 async def get_flashcard(
     flashcard_id: str,
     db: AsyncSession = Depends(get_db),
+    trusted_id: Optional[str] = Depends(get_trusted_acting_user_id),
 ):
     """Get a single flashcard by ID."""
     result = await db.execute(select(Flashcard).where(Flashcard.id == flashcard_id))
     flashcard = result.scalar_one_or_none()
     if not flashcard:
         raise HTTPException(status_code=404, detail="Flashcard not found")
+    deck_result = await db.execute(select(Deck).where(Deck.id == flashcard.deck_id))
+    deck = deck_result.scalar_one_or_none()
+    if not deck:
+        raise HTTPException(status_code=404, detail="Deck not found")
+    await assert_may_read_deck(db, trusted_id, deck)
     return FlashcardResponse.from_flashcard(flashcard)
 
 
@@ -36,12 +47,18 @@ async def update_flashcard(
     flashcard_id: str,
     data: FlashcardUpdate,
     db: AsyncSession = Depends(get_db),
+    trusted_id: Optional[str] = Depends(get_trusted_acting_user_id),
 ):
     """Update a flashcard."""
     result = await db.execute(select(Flashcard).where(Flashcard.id == flashcard_id))
     flashcard = result.scalar_one_or_none()
     if not flashcard:
         raise HTTPException(status_code=404, detail="Flashcard not found")
+    deck_result = await db.execute(select(Deck).where(Deck.id == flashcard.deck_id))
+    deck = deck_result.scalar_one_or_none()
+    if not deck:
+        raise HTTPException(status_code=404, detail="Deck not found")
+    await assert_may_mutate_deck(db, trusted_id, deck)
     if data.question is not None:
         flashcard.question = data.question
     if data.answer_short is not None:
@@ -59,12 +76,18 @@ async def update_flashcard(
 async def delete_flashcard(
     flashcard_id: str,
     db: AsyncSession = Depends(get_db),
+    trusted_id: Optional[str] = Depends(get_trusted_acting_user_id),
 ):
     """Delete a flashcard."""
     result = await db.execute(select(Flashcard).where(Flashcard.id == flashcard_id))
     flashcard = result.scalar_one_or_none()
     if not flashcard:
         raise HTTPException(status_code=404, detail="Flashcard not found")
+    deck_result = await db.execute(select(Deck).where(Deck.id == flashcard.deck_id))
+    deck = deck_result.scalar_one_or_none()
+    if not deck:
+        raise HTTPException(status_code=404, detail="Deck not found")
+    await assert_may_mutate_deck(db, trusted_id, deck)
     await db.delete(flashcard)
     await db.flush()
 
@@ -73,6 +96,7 @@ async def delete_flashcard(
 async def create_flashcard(
     payload: FlashcardCreate,
     db: AsyncSession = Depends(get_db),
+    trusted_id: Optional[str] = Depends(get_trusted_acting_user_id),
 ):
     """Create a new flashcard."""
     # Validate deck exists
@@ -80,6 +104,7 @@ async def create_flashcard(
     deck = result.scalar_one_or_none()
     if not deck:
         raise HTTPException(status_code=404, detail="Deck not found")
+    await assert_may_mutate_deck(db, trusted_id, deck)
 
     flashcard = Flashcard(
         deck_id=payload.deck_id,
@@ -123,6 +148,7 @@ class _ImportResponse(BaseModel):
 async def import_flashcards(
     payload: _ImportRequest,
     db: AsyncSession = Depends(get_db),
+    trusted_id: Optional[str] = Depends(get_trusted_acting_user_id),
 ):
     """Batch-create flashcards from structured Q/A import (no LLM).
     Skips exact duplicates (same question text) already in the deck.
@@ -131,6 +157,7 @@ async def import_flashcards(
     deck = result.scalar_one_or_none()
     if not deck:
         raise HTTPException(status_code=404, detail="Deck not found")
+    await assert_may_mutate_deck(db, trusted_id, deck)
 
     existing = await db.execute(
         select(Flashcard.question).where(Flashcard.deck_id == payload.deck_id)

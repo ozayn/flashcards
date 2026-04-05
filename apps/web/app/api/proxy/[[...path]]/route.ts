@@ -1,7 +1,17 @@
+import { createHmac } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
+import { getServerSession } from "next-auth/next";
+import { authOptions } from "@/lib/auth-options";
 import { getBackendUrl } from "@/lib/backend-url";
 
 const PROXY_TIMEOUT_MS = 90_000;
+
+/** Never forward client-supplied values; the proxy sets these from the NextAuth session. */
+const STRIP_FROM_CLIENT = new Set([
+  "x-memo-acting-user-id",
+  "x-memo-acting-user-signature",
+  "x-admin-page-token",
+]);
 
 // Rate-limit error logging: at most once per 10 seconds
 let lastErrorLogMs = 0;
@@ -53,13 +63,20 @@ async function proxy(
 
   const headers = new Headers();
   request.headers.forEach((value, key) => {
-    if (
-      key.toLowerCase() !== "host" &&
-      key.toLowerCase() !== "connection"
-    ) {
-      headers.set(key, value);
-    }
+    const lower = key.toLowerCase();
+    if (lower === "host" || lower === "connection") return;
+    if (STRIP_FROM_CLIENT.has(lower)) return;
+    headers.set(key, value);
   });
+
+  const session = await getServerSession(authOptions);
+  const bid = session?.backendUserId;
+  const secret = process.env.MEMO_OAUTH_SYNC_SECRET?.trim();
+  if (typeof bid === "string" && bid.length > 0 && secret) {
+    const sig = createHmac("sha256", secret).update(bid).digest("hex");
+    headers.set("X-Memo-Acting-User-Id", bid);
+    headers.set("X-Memo-Acting-User-Signature", sig);
+  }
 
   let body: string | undefined;
   if (["POST", "PATCH", "PUT"].includes(request.method)) {

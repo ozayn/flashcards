@@ -46,6 +46,12 @@ class UserSettingsUpdate(BaseModel):
     card_style: Optional[str] = Field(default=None, pattern="^(paper|minimal|modern|anki)$")
 
 
+class UserProfileNameUpdate(BaseModel):
+    """Display name only (email unchanged)."""
+
+    name: str = Field(..., min_length=1, max_length=255)
+
+
 class UserAdminUpdate(BaseModel):
     """Partial update for admin user management (maps to User.name / User.email)."""
 

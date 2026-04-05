@@ -7,9 +7,21 @@ import { signIn } from "next-auth/react";
 import { Logo } from "@/components/Logo";
 import { Button } from "@/components/ui/button";
 
+function signInErrorMessage(error: string | null): string | null {
+  if (!error) return null;
+  if (error === "AccessDenied") {
+    return "This Google account is not allowed to sign in yet. If you need access, ask an administrator to add your email to the allowlist.";
+  }
+  if (error === "Callback") {
+    return "Sign-in could not be completed. Your account may not be authorized, or the server rejected the login.";
+  }
+  return null;
+}
+
 function SignInFormInner({ googleConfigured }: { googleConfigured: boolean }) {
   const params = useSearchParams();
   const oauthError = params.get("error");
+  const oauthMessage = signInErrorMessage(oauthError);
   const [busy, setBusy] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
 
@@ -55,10 +67,11 @@ function SignInFormInner({ googleConfigured }: { googleConfigured: boolean }) {
           </div>
         </header>
 
-        {(oauthError || localError) && (
+        {(oauthMessage || oauthError || localError) && (
           <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-center">
             <p className="text-sm text-destructive">
               {localError ??
+                oauthMessage ??
                 (oauthError === "Configuration"
                   ? "Sign-in is not configured on this server."
                   : "We couldn’t complete sign-in. Please try again.")}

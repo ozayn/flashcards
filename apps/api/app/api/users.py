@@ -3,17 +3,28 @@ import logging
 import os
 import re
 import secrets
-from typing import List
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.email_identity import (
+    list_users_matching_email_identity,
+    normalize_email_for_identity,
+)
+from app.core.login_email_allowlist import email_is_allowed_for_login
+from app.core.user_access import (
+    assert_may_act_as_user,
+    get_trusted_acting_user_id,
+    list_users_visible_in_context,
+)
 from app.models import User
 from app.schemas.user import (
     GoogleOAuthSyncRequest,
     UserCreate,
+    UserProfileNameUpdate,
     UserResponse,
     UserSettingsResponse,
     UserSettingsUpdate,
@@ -43,6 +54,12 @@ async def _upsert_google_oauth_user(db: AsyncSession, payload: GoogleOAuthSyncRe
         return existing
 
     preferred = (payload.email or "").strip().lower() or None
+    norm = normalize_email_for_identity(payload.email or "")
+    if norm:
+        identity_matches = await list_users_matching_email_identity(db, norm)
+        if identity_matches:
+            preferred = None
+
     if preferred:
         clash = await db.execute(select(User).where(User.email == preferred))
         row = clash.scalar_one_or_none()
@@ -90,15 +107,22 @@ async def sync_google_oauth_user(
         or not hmac.compare_digest(x_memo_oauth_secret, expected)
     ):
         raise HTTPException(status_code=401, detail="Invalid or missing OAuth sync secret")
+    if not email_is_allowed_for_login(payload.email):
+        raise HTTPException(
+            status_code=403,
+            detail="This email is not authorized to sign in yet.",
+        )
     user = await _upsert_google_oauth_user(db, payload)
     return UserResponse.model_validate(user)
 
 
 @router.get("", response_model=List[UserResponse])
-async def get_users(db: AsyncSession = Depends(get_db)):
-    """Get all users."""
-    result = await db.execute(select(User).order_by(User.created_at))
-    users = result.scalars().all()
+async def get_users(
+    db: AsyncSession = Depends(get_db),
+    trusted_id: Optional[str] = Depends(get_trusted_acting_user_id),
+):
+    """List users: public context sees legacy accounts only; signed-in sees those plus self."""
+    users = await list_users_visible_in_context(db, trusted_id)
     return [UserResponse.model_validate(u) for u in users]
 
 
@@ -108,8 +132,8 @@ async def create_user(
     db: AsyncSession = Depends(get_db),
 ):
     """Create a new user."""
-    result = await db.execute(select(User).where(User.email == payload.email))
-    if result.scalar_one_or_none():
+    norm = normalize_email_for_identity(payload.email)
+    if norm and await list_users_matching_email_identity(db, norm):
         raise HTTPException(status_code=400, detail="Email already registered")
     user = User(
         email=payload.email,
@@ -123,16 +147,40 @@ async def create_user(
     return UserResponse.model_validate(user)
 
 
+@router.get("/{user_id}", response_model=UserResponse)
+async def get_user(
+    user_id: str,
+    db: AsyncSession = Depends(get_db),
+    trusted_id: Optional[str] = Depends(get_trusted_acting_user_id),
+):
+    """Get one user by id (for profile and client UIs)."""
+    user = await assert_may_act_as_user(db, trusted_id, user_id)
+    return UserResponse.model_validate(user)
+
+
+@router.patch("/{user_id}/profile", response_model=UserResponse)
+async def update_user_profile_name(
+    user_id: str,
+    payload: UserProfileNameUpdate,
+    db: AsyncSession = Depends(get_db),
+    trusted_id: Optional[str] = Depends(get_trusted_acting_user_id),
+):
+    """Update display name only."""
+    user = await assert_may_act_as_user(db, trusted_id, user_id)
+    user.name = payload.name.strip()
+    await db.flush()
+    await db.refresh(user)
+    return UserResponse.model_validate(user)
+
+
 @router.get("/{user_id}/settings", response_model=UserSettingsResponse)
 async def get_user_settings(
     user_id: str,
     db: AsyncSession = Depends(get_db),
+    trusted_id: Optional[str] = Depends(get_trusted_acting_user_id),
 ):
     """Get user study settings."""
-    result = await db.execute(select(User).where(User.id == user_id))
-    user = result.scalar_one_or_none()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+    user = await assert_may_act_as_user(db, trusted_id, user_id)
     return UserSettingsResponse(
         think_delay_enabled=user.think_delay_enabled,
         think_delay_ms=user.think_delay_ms,
@@ -145,12 +193,10 @@ async def update_user_settings(
     user_id: str,
     payload: UserSettingsUpdate,
     db: AsyncSession = Depends(get_db),
+    trusted_id: Optional[str] = Depends(get_trusted_acting_user_id),
 ):
     """Update user study settings."""
-    result = await db.execute(select(User).where(User.id == user_id))
-    user = result.scalar_one_or_none()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+    user = await assert_may_act_as_user(db, trusted_id, user_id)
     if payload.think_delay_enabled is not None:
         user.think_delay_enabled = payload.think_delay_enabled
     if payload.think_delay_ms is not None:

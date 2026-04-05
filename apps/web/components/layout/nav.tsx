@@ -3,11 +3,10 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { signOut, useSession } from "next-auth/react";
+import { useSession } from "next-auth/react";
 import { Menu, X } from "lucide-react";
 import { Logo } from "@/components/Logo";
 import { UserSelector } from "@/components/user-selector";
-import { UserSettings } from "@/components/user-settings";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 
@@ -37,30 +36,11 @@ const landingRightLinks: NavLink[] = [
 
 const landingNavLinks: NavLink[] = [...landingCenterLinks, ...landingRightLinks];
 
-function GoogleSessionHint() {
-  const { data: session, status } = useSession();
-  if (status !== "authenticated" || !session?.user) return null;
-  return (
-    <div className="hidden sm:flex items-center gap-2 text-xs text-muted-foreground max-w-[14rem]">
-      <span className="truncate" title={session.user.email ?? undefined}>
-        {session.user.name ?? "Signed in"}
-      </span>
-      <button
-        type="button"
-        onClick={() => signOut({ callbackUrl: "/" })}
-        className="shrink-0 underline-offset-2 hover:underline text-foreground/80"
-      >
-        Sign out
-      </button>
-    </div>
-  );
-}
-
 export function Nav() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const pathname = usePathname();
-  const { data: session, status } = useSession();
-  const authed = status === "authenticated" && !!session?.user;
+  const { status } = useSession();
+  const authed = status === "authenticated";
   const isLanding = pathname === "/";
   const isStudyOrExplore = (pathname?.startsWith("/study/") || pathname?.startsWith("/explore/")) ?? false;
   const navLinks = isLanding ? landingNavLinks : appNavLinks;
@@ -105,22 +85,13 @@ export function Nav() {
           ))}
         </div>
 
-        {/* Right: Theme + Settings + User (app) or CTA links (landing) */}
-        <div className="hidden md:flex items-center gap-4">
+        {/* Right: Theme + account (app or landing when signed in) or CTAs */}
+        <div className="hidden md:flex items-center gap-3">
           <ThemeToggle />
           {isLanding ? (
             authed ? (
               <>
-                <span className="text-sm text-muted-foreground max-w-[10rem] truncate">
-                  {session?.user?.name}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => signOut({ callbackUrl: "/" })}
-                  className="text-sm text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  Sign out
-                </button>
+                <UserSelector />
                 <Link href="/create-deck">
                   <Button size="sm" className="rounded-lg">
                     Get Started
@@ -147,11 +118,7 @@ export function Nav() {
               ))
             )
           ) : (
-            <>
-              <GoogleSessionHint />
-              <UserSettings />
-              <UserSelector />
-            </>
+            <UserSelector />
           )}
         </div>
 
@@ -173,29 +140,9 @@ export function Nav() {
         <div className="md:hidden border-t border-border/80 bg-background">
           <div className="max-w-4xl mx-auto px-4 sm:px-6 py-3">
             <div className="flex flex-col gap-1">
-              {authed && isLanding && (
-                <div className="py-2 text-xs text-muted-foreground border-b border-border/60 mb-1">
-                  Signed in as{" "}
-                  <span className="text-foreground font-medium">
-                    {session?.user?.name}
-                  </span>
-                </div>
-              )}
               {navLinks.map((link) => {
                 if (authed && isLanding && link.href === "/signin") {
-                  return (
-                    <button
-                      key="sign-out-mobile"
-                      type="button"
-                      onClick={() => {
-                        setMobileOpen(false);
-                        void signOut({ callbackUrl: "/" });
-                      }}
-                      className="block w-full py-2 text-left text-sm text-muted-foreground hover:text-foreground"
-                    >
-                      Sign out
-                    </button>
-                  );
+                  return null;
                 }
                 return (
                   <Link
@@ -223,12 +170,11 @@ export function Nav() {
                 );
               })}
             </div>
-            {!isLanding && (
-              <div className="pt-2 mt-2 border-t border-border/60 space-y-2">
-                <UserSettings />
+            {(authed && isLanding) || !isLanding ? (
+              <div className="pt-3 mt-3 border-t border-border/60">
                 <UserSelector />
               </div>
-            )}
+            ) : null}
           </div>
         </div>
       )}

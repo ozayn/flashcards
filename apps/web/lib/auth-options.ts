@@ -1,6 +1,7 @@
 import type { NextAuthOptions } from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
 import { getBackendUrl } from "@/lib/backend-url";
+import { isEmailAllowedForLogin } from "@/lib/login-email-allowlist";
 
 function googleProviders() {
   const id = process.env.GOOGLE_CLIENT_ID?.trim();
@@ -18,18 +19,46 @@ export const authOptions: NextAuthOptions = {
   providers: googleProviders(),
   pages: {
     signIn: "/signin",
+    error: "/signin",
   },
   session: { strategy: "jwt" },
   secret: process.env.NEXTAUTH_SECRET,
   callbacks: {
-    async jwt({ token, account, profile }) {
+    async signIn({ account, profile, user }) {
+      if (account?.provider !== "google") {
+        return true;
+      }
+      const prof = profile as { email?: string | null } | undefined;
+      const email =
+        (typeof user?.email === "string" ? user.email : null) ??
+        prof?.email ??
+        null;
+      if (!isEmailAllowedForLogin(email)) {
+        return false;
+      }
+      return true;
+    },
+    async jwt({ token, account, profile, user }) {
+      const prof = profile as {
+        email?: string | null;
+        name?: string | null;
+        picture?: string | null;
+      } | undefined;
+      const fromProfile = prof?.picture?.trim();
+      const fromUser =
+        user && "image" in user && typeof user.image === "string"
+          ? user.image.trim()
+          : "";
+      const nextPicture = fromProfile || fromUser;
+      if (nextPicture) {
+        token.picture = nextPicture;
+      }
       if (account?.provider === "google" && account.providerAccountId) {
         const syncSecret = process.env.MEMO_OAUTH_SYNC_SECRET?.trim();
         if (!syncSecret) {
           console.error("[auth] MEMO_OAUTH_SYNC_SECRET is not set");
           throw new Error("Server configuration error");
         }
-        const prof = profile as { email?: string | null; name?: string | null } | undefined;
         const res = await fetch(`${getBackendUrl()}/users/oauth/google`, {
           method: "POST",
           headers: {
@@ -45,6 +74,9 @@ export const authOptions: NextAuthOptions = {
         if (!res.ok) {
           const detail = await res.text();
           console.error("[auth] Google user sync failed", res.status, detail);
+          if (res.status === 403) {
+            throw new Error("LOGIN_NOT_ALLOWED");
+          }
           throw new Error("Could not link your Google account to the app.");
         }
         const row = (await res.json()) as { id: string };
@@ -55,6 +87,9 @@ export const authOptions: NextAuthOptions = {
     async session({ session, token }) {
       if (token.backendUserId) {
         session.backendUserId = token.backendUserId as string;
+      }
+      if (token.picture && session.user) {
+        session.user.image = token.picture as string;
       }
       return session;
     },

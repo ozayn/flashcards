@@ -11,6 +11,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.product_admin import user_has_product_admin_access
+from app.core.user_access import (
+    assert_may_act_as_user,
+    assert_may_mutate_deck,
+    assert_may_read_deck,
+    get_trusted_acting_user_id,
+)
 from app.models import Category, Deck, Flashcard, Review, User
 from app.schemas.deck import DeckCreate, DeckMoveRequest, DeckResponse, DeckUpdate
 from app.schemas.flashcard import FlashcardResponse
@@ -23,8 +29,10 @@ async def get_decks(
     user_id: str = Query(..., description="User ID to filter decks"),
     archived: bool = Query(False, description="If true, return only archived decks"),
     db: AsyncSession = Depends(get_db),
+    trusted_id: Optional[str] = Depends(get_trusted_acting_user_id),
 ):
     """Get all decks for a user. By default returns active (non-archived) decks."""
+    await assert_may_act_as_user(db, trusted_id, user_id)
     result = await db.execute(
         select(Deck)
         .where(Deck.user_id == user_id, Deck.archived == archived)
@@ -77,12 +85,15 @@ async def duplicate_deck(
     deck_id: str,
     user_id: str = Query(..., description="User ID to own the duplicated deck"),
     db: AsyncSession = Depends(get_db),
+    trusted_id: Optional[str] = Depends(get_trusted_acting_user_id),
 ):
     """Create a personal copy of a deck and all its flashcards."""
     result = await db.execute(select(Deck).where(Deck.id == deck_id))
     source = result.scalar_one_or_none()
     if not source:
         raise HTTPException(status_code=404, detail="Deck not found")
+    await assert_may_read_deck(db, trusted_id, source)
+    await assert_may_act_as_user(db, trusted_id, user_id)
 
     new_deck = Deck(
         user_id=user_id,
@@ -123,8 +134,15 @@ async def get_deck_flashcards(
     due_only: bool = Query(False, description="Return only cards due for review"),
     user_id: Optional[str] = Query(None, description="User ID (required when due_only=true)"),
     db: AsyncSession = Depends(get_db),
+    trusted_id: Optional[str] = Depends(get_trusted_acting_user_id),
 ):
     """Get all flashcards for a deck. When due_only=true, return only cards due for review for the given user."""
+    deck_row = await db.execute(select(Deck).where(Deck.id == deck_id))
+    deck_for_access = deck_row.scalar_one_or_none()
+    if not deck_for_access:
+        raise HTTPException(status_code=404, detail="Deck not found")
+    await assert_may_read_deck(db, trusted_id, deck_for_access)
+
     result = await db.execute(
         select(Flashcard).where(Flashcard.deck_id == deck_id).order_by(Flashcard.created_at)
     )
@@ -136,6 +154,7 @@ async def get_deck_flashcards(
                 status_code=400,
                 detail="user_id is required when due_only=true",
             )
+        await assert_may_act_as_user(db, trusted_id, user_id.strip())
         now = datetime.utcnow()
         # Latest review per flashcard for THIS user only
         latest_review_subq = (
@@ -168,12 +187,14 @@ async def get_deck_flashcards(
 async def get_deck(
     deck_id: str,
     db: AsyncSession = Depends(get_db),
+    trusted_id: Optional[str] = Depends(get_trusted_acting_user_id),
 ):
     """Get a single deck by ID."""
     result = await db.execute(select(Deck).where(Deck.id == deck_id))
     deck = result.scalar_one_or_none()
     if not deck:
         raise HTTPException(status_code=404, detail="Deck not found")
+    await assert_may_read_deck(db, trusted_id, deck)
     count_result = await db.execute(
         select(func.count(Flashcard.id)).where(Flashcard.deck_id == deck_id)
     )
@@ -186,12 +207,21 @@ async def get_related_decks(
     deck_id: str,
     limit: int = Query(4, ge=1, le=10),
     db: AsyncSession = Depends(get_db),
+    trusted_id: Optional[str] = Depends(get_trusted_acting_user_id),
 ):
     """Get other decks in the same category as this deck. Excludes current deck and archived."""
     result = await db.execute(select(Deck).where(Deck.id == deck_id))
     deck = result.scalar_one_or_none()
     if not deck or not deck.category_id:
         return []
+    await assert_may_read_deck(db, trusted_id, deck)
+    owner_result = await db.execute(select(User).where(User.id == deck.user_id))
+    owner = owner_result.scalar_one_or_none()
+    restrict_to_public = (
+        owner is not None
+        and owner.google_sub is not None
+        and trusted_id != deck.user_id
+    )
     related = await db.execute(
         select(Deck)
         .where(
@@ -199,6 +229,7 @@ async def get_related_decks(
             Deck.id != deck_id,
             Deck.archived == False,
             Deck.user_id == deck.user_id,
+            *([Deck.is_public == True] if restrict_to_public else []),
         )
         .order_by(Deck.created_at.desc())
         .limit(limit)
@@ -224,6 +255,7 @@ async def update_deck(
     deck_id: str,
     data: DeckUpdate,
     db: AsyncSession = Depends(get_db),
+    trusted_id: Optional[str] = Depends(get_trusted_acting_user_id),
 ):
     """Update a deck's name and/or description."""
     result = await db.execute(select(Deck).where(Deck.id == deck_id))
@@ -231,6 +263,7 @@ async def update_deck(
 
     if deck is None:
         raise HTTPException(status_code=404, detail="Deck not found")
+    await assert_may_mutate_deck(db, trusted_id, deck)
 
     if data.name is not None:
         deck.name = data.name
@@ -278,12 +311,14 @@ async def move_deck(
     deck_id: str,
     payload: DeckMoveRequest,
     db: AsyncSession = Depends(get_db),
+    trusted_id: Optional[str] = Depends(get_trusted_acting_user_id),
 ):
     """Move a deck to a category."""
     result = await db.execute(select(Deck).where(Deck.id == deck_id))
     deck = result.scalar_one_or_none()
     if not deck:
         raise HTTPException(status_code=404, detail="Deck not found")
+    await assert_may_mutate_deck(db, trusted_id, deck)
 
     raw = payload.category_id
     category_id = (raw.strip() if raw else None) or None
@@ -316,18 +351,22 @@ async def delete_deck_reviews(
     deck_id: str,
     user_id: Optional[str] = Query(None, description="If provided, only delete reviews for this user"),
     db: AsyncSession = Depends(get_db),
+    trusted_id: Optional[str] = Depends(get_trusted_acting_user_id),
 ):
     """Development-only: Delete all review records for a deck. Flashcards become 'new' again."""
     if (os.environ.get("ENVIRONMENT") or "development").strip().lower() == "production":
         raise HTTPException(status_code=403, detail="This endpoint is disabled in production")
 
     deck_result = await db.execute(select(Deck).where(Deck.id == deck_id))
-    if not deck_result.scalar_one_or_none():
+    deck_row = deck_result.scalar_one_or_none()
+    if not deck_row:
         raise HTTPException(status_code=404, detail="Deck not found")
+    await assert_may_mutate_deck(db, trusted_id, deck_row)
 
     flashcard_ids = select(Flashcard.id).where(Flashcard.deck_id == deck_id)
     stmt = delete(Review).where(Review.flashcard_id.in_(flashcard_ids))
     if user_id and user_id.strip():
+        await assert_may_act_as_user(db, trusted_id, user_id.strip())
         stmt = stmt.where(Review.user_id == user_id.strip())
     result = await db.execute(stmt)
     await db.flush()
@@ -339,12 +378,14 @@ async def delete_deck_reviews(
 async def delete_deck(
     deck_id: str,
     db: AsyncSession = Depends(get_db),
+    trusted_id: Optional[str] = Depends(get_trusted_acting_user_id),
 ):
     """Delete a deck and all its flashcards."""
     result = await db.execute(select(Deck).where(Deck.id == deck_id))
     deck = result.scalar_one_or_none()
     if not deck:
         raise HTTPException(status_code=404, detail="Deck not found")
+    await assert_may_mutate_deck(db, trusted_id, deck)
     await db.delete(deck)
     await db.flush()
 
@@ -353,8 +394,10 @@ async def delete_deck(
 async def create_deck(
     payload: DeckCreate,
     db: AsyncSession = Depends(get_db),
+    trusted_id: Optional[str] = Depends(get_trusted_acting_user_id),
 ):
     """Create a new deck."""
+    await assert_may_act_as_user(db, trusted_id, payload.user_id)
     deck = Deck(
         user_id=payload.user_id,
         name=payload.name,
@@ -402,12 +445,14 @@ def _get_transcript_deck(deck) -> None:
 async def download_transcript(
     deck_id: str,
     db: AsyncSession = Depends(get_db),
+    trusted_id: Optional[str] = Depends(get_trusted_acting_user_id),
 ):
     """Download the stored plain transcript as a .txt file."""
     result = await db.execute(select(Deck).where(Deck.id == deck_id))
     deck = result.scalar_one_or_none()
     if not deck:
         raise HTTPException(status_code=404, detail="Deck not found")
+    await assert_may_read_deck(db, trusted_id, deck)
     _get_transcript_deck(deck)
 
     title = deck.source_topic or deck.name or "YouTube Video"
@@ -432,12 +477,14 @@ async def download_transcript(
 async def download_transcript_timestamped(
     deck_id: str,
     db: AsyncSession = Depends(get_db),
+    trusted_id: Optional[str] = Depends(get_trusted_acting_user_id),
 ):
     """Download the stored transcript with timestamps as a .txt file."""
     result = await db.execute(select(Deck).where(Deck.id == deck_id))
     deck = result.scalar_one_or_none()
     if not deck:
         raise HTTPException(status_code=404, detail="Deck not found")
+    await assert_may_read_deck(db, trusted_id, deck)
     _get_transcript_deck(deck)
 
     if not deck.source_segments or not deck.source_segments.strip():

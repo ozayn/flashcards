@@ -1,10 +1,19 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useSession } from "next-auth/react";
+import { signOut, useSession } from "next-auth/react";
 import { ChevronDown, Plus } from "lucide-react";
-import { getUsers, createUser, waitForApiReadiness, apiUrl } from "@/lib/api";
+import {
+  getUsers,
+  createUser,
+  waitForApiReadiness,
+  apiUrl,
+  getUserSettings,
+  updateUserSettings,
+  type UserSettings,
+} from "@/lib/api";
 import { userIsProductAdmin } from "@/lib/product-admin";
 import { cn } from "@/lib/utils";
 
@@ -24,7 +33,7 @@ export type User = {
 
 export function UserSelector() {
   const router = useRouter();
-  const { data: session } = useSession();
+  const { data: session, status: sessionStatus } = useSession();
   const [users, setUsers] = useState<User[]>([]);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -35,19 +44,66 @@ export function UserSelector() {
   const [addName, setAddName] = useState("");
   const [addError, setAddError] = useState<string | null>(null);
   const [addLoading, setAddLoading] = useState(false);
+  const [cardSettings, setCardSettings] = useState<UserSettings | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  function applyUserList(data: unknown) {
+  useEffect(() => {
+    const userId = getStoredUserId();
+    if (userId) {
+      getUserSettings(userId)
+        .then(setCardSettings)
+        .catch(() => setCardSettings(null));
+    } else {
+      setCardSettings(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    const handleUserChanged = () => {
+      const userId = getStoredUserId();
+      if (userId) {
+        getUserSettings(userId)
+          .then(setCardSettings)
+          .catch(() => setCardSettings(null));
+      } else {
+        setCardSettings(null);
+      }
+    };
+    window.addEventListener("flashcard_user_changed", handleUserChanged);
+    return () =>
+      window.removeEventListener("flashcard_user_changed", handleUserChanged);
+  }, []);
+
+  useEffect(() => {
+    const onSettings = (e: Event) => {
+      const ce = e as CustomEvent<{ settings: UserSettings }>;
+      if (ce.detail?.settings) setCardSettings(ce.detail.settings);
+    };
+    window.addEventListener("flashcard_settings_changed", onSettings);
+    return () =>
+      window.removeEventListener("flashcard_settings_changed", onSettings);
+  }, []);
+
+  function applyUserList(
+    data: unknown,
+    options?: { preferOauthUserId?: string | null }
+  ) {
     const userList = Array.isArray(data) ? data : [];
     setUsers(userList);
 
     const stored = localStorage.getItem(STORAGE_KEY);
     const validStored = userList.some((u: User) => u.id === stored);
-    const userId = validStored && stored ? stored : userList[0]?.id ?? null;
+    const prefer = options?.preferOauthUserId;
+    const oauthInList =
+      prefer && userList.some((u: User) => u.id === prefer) ? prefer : null;
+
+    const userId: string | null =
+      oauthInList ??
+      (validStored && stored ? stored : userList[0]?.id ?? null);
 
     if (userId) {
       setSelectedUserId(userId);
-      if (!validStored || !stored) {
+      if (!validStored || !stored || oauthInList) {
         localStorage.setItem(STORAGE_KEY, userId);
       }
       const matchedUser = userList.find((u: User) => u.id === userId);
@@ -62,12 +118,19 @@ export function UserSelector() {
     }
   }
 
+  const preferOauthUserIdRef = useRef<string | null>(null);
+  preferOauthUserIdRef.current =
+    sessionStatus === "authenticated" && session?.backendUserId
+      ? session.backendUserId
+      : null;
+
   async function loadUsers() {
     setApiError(false);
+    const preferOauth = preferOauthUserIdRef.current;
     try {
       try {
         const data = await getUsers();
-        applyUserList(data);
+        applyUserList(data, { preferOauthUserId: preferOauth });
         return;
       } catch {
         /* cold start or transient failure — retry after brief readiness poll */
@@ -85,7 +148,7 @@ export function UserSelector() {
       }
 
       const data = await getUsers();
-      applyUserList(data);
+      applyUserList(data, { preferOauthUserId: preferOauth });
     } catch {
       setUsers([]);
       setApiError(true);
@@ -127,17 +190,18 @@ export function UserSelector() {
   }, [session?.backendUserId, session?.user?.name, session?.user?.email]);
 
   useEffect(() => {
-    if (!open && !(users.length === 0 && showAddForm)) return;
+    if (!open) return;
     function handleClickOutside(e: MouseEvent) {
       const el = containerRef.current;
       if (!el || !document.contains(el)) return;
       if (!el.contains(e.target as Node)) {
         setOpen(false);
-        if (users.length === 0) setShowAddForm(false);
+        setShowAddForm(false);
       }
     }
     function handleBlur() {
       setOpen(false);
+      setShowAddForm(false);
     }
     document.addEventListener("mousedown", handleClickOutside);
     window.addEventListener("blur", handleBlur);
@@ -145,7 +209,7 @@ export function UserSelector() {
       document.removeEventListener("mousedown", handleClickOutside);
       window.removeEventListener("blur", handleBlur);
     };
-  }, [open, users.length, showAddForm]);
+  }, [open]);
 
   const handleSelect = (userId: string) => {
     const changed = userId !== selectedUserId;
@@ -164,6 +228,24 @@ export function UserSelector() {
     );
     if (changed) {
       router.push("/decks");
+    }
+  };
+
+  const handleCardStyleChange = async (
+    style: "paper" | "minimal" | "modern" | "anki"
+  ) => {
+    const userId = getStoredUserId();
+    if (!userId || !cardSettings) return;
+    try {
+      const updated = await updateUserSettings(userId, { card_style: style });
+      setCardSettings(updated);
+      window.dispatchEvent(
+        new CustomEvent("flashcard_settings_changed", {
+          detail: { settings: updated },
+        })
+      );
+    } catch {
+      /* ignore */
     }
   };
 
@@ -201,60 +283,147 @@ export function UserSelector() {
     );
   }
 
+  const closeMenu = () => {
+    setOpen(false);
+    setShowAddForm(false);
+  };
+
+  const accountMenuFooter = (
+    <>
+      <div className="border-t border-border pt-1 pb-1">
+        <Link
+          href="/profile"
+          className="flex w-full px-3 py-2 text-left text-sm text-popover-foreground hover:bg-accent hover:text-accent-foreground rounded-sm"
+          onClick={closeMenu}
+        >
+          Profile
+        </Link>
+        {sessionStatus === "authenticated" && (
+          <button
+            type="button"
+            className="flex w-full px-3 py-2 text-left text-sm text-popover-foreground hover:bg-accent hover:text-accent-foreground rounded-sm"
+            onClick={() => {
+              closeMenu();
+              void signOut({ callbackUrl: "/" });
+            }}
+          >
+            Sign out
+          </button>
+        )}
+      </div>
+      {cardSettings && (
+        <div className="border-t border-border px-3 py-2">
+          <p className="text-xs font-medium text-muted-foreground mb-2">
+            Flashcard style
+          </p>
+          <div className="flex flex-col gap-1">
+            {(["paper", "minimal", "modern", "anki"] as const).map((style) => (
+              <label
+                key={style}
+                className={cn(
+                  "flex items-center gap-2 px-2 py-1 rounded-md cursor-pointer text-sm",
+                  cardSettings.card_style === style && "bg-accent"
+                )}
+              >
+                <input
+                  type="radio"
+                  name="card-style-nav"
+                  checked={cardSettings.card_style === style}
+                  onChange={() => void handleCardStyleChange(style)}
+                  className="rounded-full"
+                />
+                {style.charAt(0).toUpperCase() + style.slice(1)}
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+    </>
+  );
+
   if (users.length === 0) {
     return (
       <div ref={containerRef} className="relative">
         <button
           type="button"
-          onClick={() => setShowAddForm(true)}
-          className="flex h-8 items-center gap-1 rounded-md border border-dashed border-input bg-background px-2 text-sm text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+          onClick={() => setOpen(!open)}
+          className="flex h-8 items-center gap-1 rounded-md border border-input bg-background px-2 text-sm text-foreground hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          aria-haspopup="menu"
+          aria-expanded={open}
         >
-          <Plus className="size-4" />
-          Add user
+          <span>Account</span>
+          <ChevronDown
+            className={cn(
+              "size-4 text-muted-foreground transition-transform",
+              open && "rotate-180"
+            )}
+          />
         </button>
-        {showAddForm && (
-          <div className="absolute right-0 top-full z-50 mt-1 w-64 rounded-md border border-border bg-popover p-3 shadow-lg">
-            <form onSubmit={handleAddUser} className="space-y-2">
-              <input
-                id="add-user-email"
-                name="email"
-                type="email"
-                placeholder="Email"
-                value={addEmail}
-                onChange={(e) => setAddEmail(e.target.value)}
-                required
-                autoComplete="email"
-                className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm"
-              />
-              <input
-                id="add-user-name"
-                name="name"
-                type="text"
-                placeholder="Name"
-                value={addName}
-                onChange={(e) => setAddName(e.target.value)}
-                required
-                autoComplete="name"
-                className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm"
-              />
-              {addError && <p className="text-xs text-destructive">{addError}</p>}
-              <div className="flex gap-2">
-                <button
-                  type="submit"
-                  disabled={addLoading}
-                  className="rounded-md bg-primary px-2 py-1.5 text-sm text-primary-foreground hover:bg-primary/80 disabled:opacity-50"
-                >
-                  {addLoading ? "Adding..." : "Add"}
-                </button>
+        {open && (
+          <div
+            className="absolute right-0 top-full z-50 mt-1 w-56 rounded-md border border-border bg-popover py-1 shadow-lg"
+            role="menu"
+          >
+            {accountMenuFooter}
+            <div className="border-t border-border mt-1 pt-1 px-1">
+              {showAddForm ? (
+                <form onSubmit={handleAddUser} className="space-y-2 p-2">
+                  <input
+                    id="add-user-email"
+                    name="email"
+                    type="email"
+                    placeholder="Email"
+                    value={addEmail}
+                    onChange={(e) => setAddEmail(e.target.value)}
+                    required
+                    autoComplete="email"
+                    className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm"
+                  />
+                  <input
+                    id="add-user-name"
+                    name="name"
+                    type="text"
+                    placeholder="Name"
+                    value={addName}
+                    onChange={(e) => setAddName(e.target.value)}
+                    required
+                    autoComplete="name"
+                    className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm"
+                  />
+                  {addError && (
+                    <p className="text-xs text-destructive">{addError}</p>
+                  )}
+                  <div className="flex gap-2">
+                    <button
+                      type="submit"
+                      disabled={addLoading}
+                      className="rounded-md bg-primary px-2 py-1.5 text-sm text-primary-foreground hover:bg-primary/80 disabled:opacity-50"
+                    >
+                      {addLoading ? "Adding..." : "Add"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowAddForm(false);
+                        setAddError(null);
+                      }}
+                      className="rounded-md border border-input px-2 py-1.5 text-sm hover:bg-muted"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              ) : (
                 <button
                   type="button"
-                  onClick={() => setShowAddForm(false)}
-                  className="rounded-md border border-input px-2 py-1.5 text-sm hover:bg-muted"
+                  onClick={() => setShowAddForm(true)}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground"
                 >
-                  Cancel
+                  <Plus className="size-4" />
+                  Add user
                 </button>
-              </div>
-            </form>
+              )}
+            </div>
           </div>
         )}
       </div>
@@ -269,23 +438,27 @@ export function UserSelector() {
         type="button"
         onClick={() => setOpen(!open)}
         className="flex h-8 items-center gap-1 rounded-md border border-input bg-background px-2 text-sm text-foreground hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        aria-haspopup="listbox"
+        aria-haspopup="menu"
         aria-expanded={open}
       >
-        <span className="text-sm">{selectedUser?.name ?? "Select user"}</span>
-        <ChevronDown className={cn("size-4 text-muted-foreground transition-transform", open && "rotate-180")} />
+        <span className="text-sm max-w-[9rem] truncate">
+          {selectedUser?.name ?? "Account"}
+        </span>
+        <ChevronDown className={cn("size-4 text-muted-foreground transition-transform shrink-0", open && "rotate-180")} />
       </button>
       {open && (
         <div
-          className="absolute right-0 top-full z-50 mt-1 min-w-[10rem] rounded-md border border-border bg-popover py-1 shadow-lg"
-          role="listbox"
+          className="absolute right-0 top-full z-50 mt-1 min-w-[11rem] w-56 max-w-[calc(100vw-2rem)] rounded-md border border-border bg-popover py-1 shadow-lg"
+          role="menu"
         >
+          <p className="px-3 pt-1.5 pb-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+            Switch user
+          </p>
           {users.map((user) => (
             <button
               key={user.id}
               type="button"
-              role="option"
-              aria-selected={user.id === selectedUserId}
+              role="menuitem"
               onClick={() => handleSelect(user.id)}
               className={cn(
                 "w-full px-3 py-2 text-left text-sm text-popover-foreground hover:bg-accent hover:text-accent-foreground",
@@ -351,6 +524,7 @@ export function UserSelector() {
               </button>
             )}
           </div>
+          {accountMenuFooter}
         </div>
       )}
     </div>

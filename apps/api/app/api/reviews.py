@@ -1,11 +1,17 @@
 from datetime import datetime, timedelta
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.models import Flashcard, Review
+from app.core.user_access import (
+    assert_may_act_as_user,
+    assert_may_read_deck,
+    get_trusted_acting_user_id,
+)
+from app.models import Deck, Flashcard, Review
 from app.schemas.review import ReviewCreate, ReviewResponse
 
 router = APIRouter(prefix="/reviews", tags=["reviews"])
@@ -28,11 +34,19 @@ def _next_review_delta(rating: str) -> timedelta:
 async def create_review(
     payload: ReviewCreate,
     db: AsyncSession = Depends(get_db),
+    trusted_id: Optional[str] = Depends(get_trusted_acting_user_id),
 ):
     """Submit a spaced repetition review for a flashcard."""
     result = await db.execute(select(Flashcard).where(Flashcard.id == payload.flashcard_id))
-    if not result.scalar_one_or_none():
+    flashcard = result.scalar_one_or_none()
+    if not flashcard:
         raise HTTPException(status_code=404, detail="Flashcard not found")
+    deck_result = await db.execute(select(Deck).where(Deck.id == flashcard.deck_id))
+    deck = deck_result.scalar_one_or_none()
+    if not deck:
+        raise HTTPException(status_code=404, detail="Deck not found")
+    await assert_may_read_deck(db, trusted_id, deck)
+    await assert_may_act_as_user(db, trusted_id, payload.user_id)
 
     now = datetime.utcnow()
     next_review = now + _next_review_delta(payload.rating.value)

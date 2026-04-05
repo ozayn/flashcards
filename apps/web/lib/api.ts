@@ -62,6 +62,45 @@ export async function waitForApiReadiness(options?: {
   return false;
 }
 
+export type UserRow = {
+  id: string;
+  email: string;
+  name: string;
+  role: string;
+  plan: string;
+  created_at: string;
+};
+
+export async function getUser(userId: string): Promise<UserRow> {
+  const res = await fetch(`${API_BASE}/users/${encodeURIComponent(userId)}`, {
+    cache: "no-store",
+  });
+  if (!res.ok) throw new Error("Failed to fetch user");
+  return res.json();
+}
+
+export async function patchUserProfileName(
+  userId: string,
+  name: string
+): Promise<UserRow> {
+  const res = await fetch(
+    `${API_BASE}/users/${encodeURIComponent(userId)}/profile`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    }
+  );
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    const detail = err.detail;
+    throw new Error(
+      typeof detail === "string" ? detail : "Failed to update name"
+    );
+  }
+  return res.json();
+}
+
 export async function getUsers() {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 8000);
@@ -89,13 +128,10 @@ export type AdminUserRow = {
   created_at: string;
 };
 
-/** Requires signed admin session token from POST /api/admin/unlock (enforced by API). */
-export async function getAdminUsers(
-  adminPageToken: string
-): Promise<AdminUserRow[]> {
+/** Requires signed-in Google session; proxy sends acting-user headers; API checks ADMIN_EMAILS on backend user. */
+export async function getAdminUsers(): Promise<AdminUserRow[]> {
   const res = await fetch(`${API_BASE}/admin/users`, {
     cache: "no-store",
-    headers: { "X-Admin-Page-Token": adminPageToken },
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -108,7 +144,6 @@ export async function getAdminUsers(
 }
 
 export async function patchAdminUser(
-  adminPageToken: string,
   targetUserId: string,
   body: { name?: string; email?: string }
 ): Promise<AdminUserRow> {
@@ -116,7 +151,6 @@ export async function patchAdminUser(
     method: "PATCH",
     headers: {
       "Content-Type": "application/json",
-      "X-Admin-Page-Token": adminPageToken,
     },
     body: JSON.stringify(body),
   });
@@ -138,14 +172,12 @@ export type AdminUserDeletePreview = {
 };
 
 export async function getAdminUserDeletePreview(
-  adminPageToken: string,
   userId: string
 ): Promise<AdminUserDeletePreview> {
   const res = await fetch(
     `${API_BASE}/admin/users/${userId}/delete-preview`,
     {
       cache: "no-store",
-      headers: { "X-Admin-Page-Token": adminPageToken },
     }
   );
   if (!res.ok) {
@@ -158,13 +190,9 @@ export async function getAdminUserDeletePreview(
   return res.json();
 }
 
-export async function deleteAdminUser(
-  adminPageToken: string,
-  userId: string
-): Promise<void> {
+export async function deleteAdminUser(userId: string): Promise<void> {
   const res = await fetch(`${API_BASE}/admin/users/${userId}`, {
     method: "DELETE",
-    headers: { "X-Admin-Page-Token": adminPageToken },
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));

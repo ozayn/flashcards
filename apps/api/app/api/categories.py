@@ -1,10 +1,11 @@
-from typing import List
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import case, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.user_access import assert_may_act_as_user, get_trusted_acting_user_id
 from app.models import Category, Deck, Flashcard
 from app.schemas.category import CategoryCreate, CategoryResponse, CategoryUpdate
 from app.schemas.deck import DeckResponse
@@ -21,8 +22,10 @@ def _normalize_category_name(s: str) -> str:
 async def get_categories(
     user_id: str = Query(..., description="User ID (returns only categories owned by this user)"),
     db: AsyncSession = Depends(get_db),
+    trusted_id: Optional[str] = Depends(get_trusted_acting_user_id),
 ):
     """Get categories owned by the user. Categories are user-specific and never shared."""
+    await assert_may_act_as_user(db, trusted_id, user_id)
     result = await db.execute(
         select(Category)
         .where(Category.user_id == user_id)
@@ -35,8 +38,10 @@ async def get_categories(
 async def create_category(
     payload: CategoryCreate,
     db: AsyncSession = Depends(get_db),
+    trusted_id: Optional[str] = Depends(get_trusted_acting_user_id),
 ):
     """Create a new category. The category is owned by the user_id in the payload."""
+    await assert_may_act_as_user(db, trusted_id, payload.user_id)
     normalized = _normalize_category_name(payload.name)
     result = await db.execute(
         select(Category).where(Category.user_id == payload.user_id)
@@ -63,8 +68,10 @@ async def update_category(
     data: CategoryUpdate,
     user_id: str = Query(..., description="User ID (must own the category)"),
     db: AsyncSession = Depends(get_db),
+    trusted_id: Optional[str] = Depends(get_trusted_acting_user_id),
 ):
     """Rename a category. Only the owner can update."""
+    await assert_may_act_as_user(db, trusted_id, user_id)
     result = await db.execute(
         select(Category).where(Category.id == category_id, Category.user_id == user_id)
     )
@@ -96,9 +103,11 @@ async def get_category_decks(
     category_id: str,
     user_id: str = Query(..., description="User ID (must own the category)"),
     db: AsyncSession = Depends(get_db),
+    trusted_id: Optional[str] = Depends(get_trusted_acting_user_id),
 ):
     """Get non-archived decks in a category, ordered by category_assigned_at ASC.
     Nulls (legacy decks) sort to the end, using created_at as tiebreaker."""
+    await assert_may_act_as_user(db, trusted_id, user_id)
     result = await db.execute(
         select(Category).where(Category.id == category_id, Category.user_id == user_id)
     )
@@ -138,8 +147,10 @@ async def delete_category(
     category_id: str,
     user_id: str = Query(..., description="User ID (must own the category)"),
     db: AsyncSession = Depends(get_db),
+    trusted_id: Optional[str] = Depends(get_trusted_acting_user_id),
 ):
     """Delete a category. Only the owner can delete. Decks in this category will have category_id set to NULL."""
+    await assert_may_act_as_user(db, trusted_id, user_id)
     result = await db.execute(
         select(Category).where(Category.id == category_id, Category.user_id == user_id)
     )

@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db, AsyncSessionLocal
 from app.core.product_admin import user_has_product_admin_access
+from app.core.user_access import assert_may_mutate_deck, get_trusted_acting_user_id
 from app.llm.json_truncation import analyze_llm_json_response
 from app.llm.router import generate_completion, _get_default_max_tokens, RateLimitError
 from app.models import Deck, Flashcard, User
@@ -3066,6 +3067,7 @@ async def _run_generation_background(payload: GenerateFlashcardsRequest) -> None
 async def generate_flashcards_background(
     payload: GenerateFlashcardsRequest,
     db: AsyncSession = Depends(get_db),
+    trusted_id: Optional[str] = Depends(get_trusted_acting_user_id),
 ):
     """Start flashcard generation in the background. Returns immediately."""
     deck_id_str = str(payload.deck_id)
@@ -3073,6 +3075,7 @@ async def generate_flashcards_background(
     deck = result.scalar_one_or_none()
     if not deck:
         raise HTTPException(status_code=404, detail="Deck not found")
+    await assert_may_mutate_deck(db, trusted_id, deck)
 
     max_cards = await _get_max_cards_for_deck(deck_id_str, db)
     if payload.num_cards > max_cards:
@@ -3712,6 +3715,7 @@ def _sync_prepare_generated_cards(
 async def generate_flashcards(
     payload: GenerateFlashcardsRequest,
     db: AsyncSession = Depends(get_db),
+    trusted_id: Optional[str] = Depends(get_trusted_acting_user_id),
 ):
     """Generate flashcards using configured LLM provider."""
     deck_id_str = str(payload.deck_id)
@@ -3719,6 +3723,7 @@ async def generate_flashcards(
     deck = result.scalar_one_or_none()
     if not deck:
         raise HTTPException(status_code=404, detail="Deck not found")
+    await assert_may_mutate_deck(db, trusted_id, deck)
 
     max_cards = await _get_max_cards_for_deck(deck_id_str, db)
     if payload.num_cards > max_cards:
