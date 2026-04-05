@@ -1,4 +1,6 @@
 fastapi==0.115.6
+# Required for Pydantic EmailStr on UserAdminUpdate (app/schemas/user.py)
+email-validator>=2.0.0,<3
 python-multipart>=0.0.9
 uvicorn[standard]==0.32.1
 sqlalchemy[asyncio]==2.0.36

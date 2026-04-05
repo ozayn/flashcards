@@ -146,6 +146,11 @@ async def init_db() -> None:
                 "ALTER TABLE decks ADD COLUMN source_segments TEXT",
                 pg_if_not_exists="ALTER TABLE decks ADD COLUMN IF NOT EXISTS source_segments TEXT"
             )
+            _add_column_if_missing(
+                sync_conn, "decks", "source_metadata",
+                "ALTER TABLE decks ADD COLUMN source_metadata TEXT",
+                pg_if_not_exists="ALTER TABLE decks ADD COLUMN IF NOT EXISTS source_metadata TEXT"
+            )
         await conn.run_sync(_migrate_decks)
     logger.info("Applied decks column migrations")
 

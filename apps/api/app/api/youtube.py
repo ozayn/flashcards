@@ -10,7 +10,7 @@ from urllib.parse import parse_qs, urlparse
 import requests
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from youtube_transcript_api import YouTubeTranscriptApi
+from youtube_transcript_api import NoTranscriptFound, YouTubeTranscriptApi
 from youtube_transcript_api.proxies import GenericProxyConfig, WebshareProxyConfig
 
 from app.core.auth import require_admin_key
@@ -100,12 +100,33 @@ def _build_proxy_config():
         print(f"[youtube] proxy: configured (mode=generic, host={host})")
         return cfg
 
-    logger.info("[youtube] proxy: not configured — transcript requests use server egress (no proxy)")
+    yt_nonempty = bool(os.environ.get("YOUTUBE_PROXY_URL", "").strip())
+    ws_user_set = bool(os.environ.get("WEBSHARE_PROXY_USER", "").strip())
+    ws_pass_set = bool(os.environ.get("WEBSHARE_PROXY_PW", "").strip())
+    logger.info(
+        "[youtube] proxy: not configured — transcript uses server egress "
+        "(YOUTUBE_PROXY_URL non-empty=%s; WEBSHARE user/pass set=%s/%s; value not logged)",
+        yt_nonempty,
+        ws_user_set,
+        ws_pass_set,
+    )
     print("[youtube] proxy: not configured — transcript requests use server egress (no proxy)")
     return None
 
 
-_proxy_config = _build_proxy_config()
+_proxy_config: Any = None
+
+
+def reload_proxy_config_from_env() -> None:
+    """Re-read proxy settings from the environment (call after .env load / at app startup)."""
+    global _proxy_config, _proxy_egress_observed_ip, _proxy_egress_check_outcome, _proxy_egress_check_message
+    _proxy_config = _build_proxy_config()
+    _proxy_egress_observed_ip = None
+    _proxy_egress_check_outcome = "not_run"
+    _proxy_egress_check_message = ""
+
+
+reload_proxy_config_from_env()
 
 
 def run_proxy_egress_verification_at_startup() -> None:
@@ -222,20 +243,40 @@ def extract_video_id(url: str) -> Optional[str]:
     return None
 
 
-def fetch_video_title(video_id: str) -> Optional[str]:
+_WATCH_LENGTH_SECONDS_RE = re.compile(r'"lengthSeconds"\s*:\s*"?(\d+)"?')
+
+
+def fetch_video_watch_meta(video_id: str) -> tuple[Optional[str], Optional[int]]:
+    """
+    One watch-page GET: parse HTML title and embedded lengthSeconds (no API key).
+    Returns (title, duration_seconds); either may be None if parsing fails.
+    """
     try:
         resp = requests.get(
             f"https://www.youtube.com/watch?v={video_id}",
             headers={"Accept-Language": "en-US,en;q=0.9"},
             timeout=10,
         )
-        if resp.status_code == 200:
-            m = re.search(r"<title>(.+?)(?:\s*-\s*YouTube)?\s*</title>", resp.text)
-            if m:
-                return html.unescape(m.group(1)).strip()
+        if resp.status_code != 200:
+            return None, None
+        page = resp.text
+        title = None
+        m = re.search(r"<title>(.+?)(?:\s*-\s*YouTube)?\s*</title>", page)
+        if m:
+            title = html.unescape(m.group(1)).strip()
+        duration: Optional[int] = None
+        lm = _WATCH_LENGTH_SECONDS_RE.search(page)
+        if lm:
+            try:
+                duration = int(lm.group(1))
+                if duration < 0 or duration > 86400 * 30:
+                    duration = None
+            except ValueError:
+                duration = None
+        return title, duration
     except Exception:
-        logger.debug("Could not fetch video title for %s", video_id)
-    return None
+        logger.debug("Could not fetch watch page meta for %s", video_id)
+        return None, None
 
 
 class TranscriptRequest(BaseModel):
@@ -253,6 +294,7 @@ class TranscriptResponse(BaseModel):
     transcript: str
     segments: list[TranscriptSegment] = []
     language: Optional[str] = None
+    duration_seconds: Optional[int] = None
     char_count: int
 
 
@@ -288,14 +330,68 @@ def _is_ip_block_error(exc: Exception) -> bool:
     ))
 
 
+def _enumerate_available_transcripts(tlist) -> list[tuple[str, str, bool]]:
+    """(language_code, language_name, is_generated) in API order (manual transcripts before generated)."""
+    out: list[tuple[str, str, bool]] = []
+    seen: set[str] = set()
+    for tr in tlist:
+        code = tr.language_code
+        if code not in seen:
+            seen.add(code)
+            out.append((code, tr.language, tr.is_generated))
+    return out
+
+
+def _normalize_lang_key(code: str) -> str:
+    return code.strip().lower().replace("_", "-")
+
+
+def _transcript_language_fetch_order(available: list[tuple[str, str, bool]]) -> list[str]:
+    """
+    Priority for youtube_transcript_api find_transcript():
+    1) YOUTUBE_TRANSCRIPT_LANGUAGES (comma-separated, leftmost highest)
+    2) Common English codes if present
+    3) Any remaining languages YouTube returned (e.g. fa auto-generated only)
+    """
+    codes = [t[0] for t in available]
+    result: list[str] = []
+    used: set[str] = set()
+
+    def try_add_preference(pref: str) -> None:
+        p = _normalize_lang_key(pref)
+        for c in codes:
+            cnorm = _normalize_lang_key(c)
+            if cnorm == p or cnorm.startswith(p + "-") or p.startswith(cnorm + "-"):
+                if c not in used:
+                    used.add(c)
+                    result.append(c)
+                return
+
+    env_raw = os.environ.get("YOUTUBE_TRANSCRIPT_LANGUAGES", "").strip()
+    if env_raw:
+        for part in env_raw.split(","):
+            if part.strip():
+                try_add_preference(part.strip())
+    for en in ("en", "en-US", "en-GB"):
+        try_add_preference(en)
+    for c in codes:
+        if c not in used:
+            used.add(c)
+            result.append(c)
+    return result
+
+
 @router.post("/transcript", response_model=TranscriptResponse)
 async def get_transcript(payload: TranscriptRequest):
     video_id = extract_video_id(payload.url)
     if not video_id:
         raise HTTPException(status_code=400, detail="Invalid YouTube URL. Please paste a valid video link.")
 
-    title = fetch_video_title(video_id)
-    print(f"[youtube] Title fetch for {video_id}: {'ok → ' + repr(title) if title else 'failed'}")
+    title, duration_seconds = fetch_video_watch_meta(video_id)
+    print(
+        f"[youtube] Watch meta for {video_id}: title={'ok → ' + repr(title) if title else 'failed'}, "
+        f"duration_seconds={duration_seconds if duration_seconds is not None else 'unknown'}"
+    )
 
     path = "proxy" if _proxy_config else "direct"
     mode = _transcript_proxy_mode(_proxy_config)
@@ -321,11 +417,43 @@ async def get_transcript(payload: TranscriptRequest):
     )
     try:
         ytt_api = YouTubeTranscriptApi(proxy_config=_proxy_config)
-        transcript_list = ytt_api.fetch(video_id)
-        logger.info("[youtube] transcript: fetch ok video_id=%s (path=%s)", video_id, path)
-        print(f"[youtube] Transcript fetch for {video_id}: ok (path={path})")
+        tlist = ytt_api.list(video_id)
+        available = _enumerate_available_transcripts(tlist)
+        lang_order = _transcript_language_fetch_order(available)
+        avail_summary = [(a[0], a[1], a[2]) for a in available]
+        logger.info(
+            "[youtube] transcript: available languages (code, name, generated)=%s; fetch_order=%s",
+            avail_summary,
+            lang_order,
+        )
+        print(
+            f"[youtube] transcript: available={[a[0] for a in available]} "
+            f"fetch_order={lang_order}"
+        )
+        picked = tlist.find_transcript(lang_order)
+        transcript_list = picked.fetch(preserve_formatting=False)
+        logger.info(
+            "[youtube] transcript: fetch ok video_id=%s (path=%s, language_code=%s)",
+            video_id,
+            path,
+            getattr(picked, "language_code", None),
+        )
+        print(
+            f"[youtube] Transcript fetch for {video_id}: ok "
+            f"(path={path}, language={getattr(picked, 'language_code', '?')})"
+        )
     except HTTPException:
         raise
+    except NoTranscriptFound as exc:
+        print(f"[youtube] Transcript fetch for {video_id}: FAILED — {exc}")
+        logger.warning("Transcript fetch for %s: no matching language — %s", video_id, exc)
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "message": "No transcript available in a supported language for this video.",
+                "title": title,
+            },
+        )
     except Exception as exc:
         print(f"[youtube] Transcript fetch for {video_id}: FAILED — {exc}")
         logger.warning("Transcript fetch for %s: failed — %s", video_id, exc)
@@ -397,5 +525,6 @@ async def get_transcript(payload: TranscriptRequest):
         transcript=text,
         segments=segments,
         language=lang,
+        duration_seconds=duration_seconds,
         char_count=len(text),
     )

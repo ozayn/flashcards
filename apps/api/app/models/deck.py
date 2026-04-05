@@ -31,6 +31,8 @@ class Deck(Base):
     source_topic: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
     source_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     source_segments: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # JSON blob for source-specific metadata (e.g. YouTube duration_seconds, caption_language).
+    source_metadata: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     generation_status: Mapped[str] = mapped_column(
         String(32), default=GenerationStatus.completed.value, nullable=False
     )

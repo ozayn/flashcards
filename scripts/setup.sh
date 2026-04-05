@@ -43,7 +43,7 @@ pip install -r requirements.txt
 
 # Verify API setup
 echo "Verifying API setup..."
-python -c "import fastapi, uvicorn; print('  OK')" || { echo "Error: API dependencies failed to install."; exit 1; }
+python -c "import fastapi, uvicorn, email_validator; print('  OK')" || { echo "Error: API dependencies failed to install."; exit 1; }
 
 # --------------------------------
 # Setup Web environment

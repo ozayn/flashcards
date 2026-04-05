@@ -1,17 +1,21 @@
 from pathlib import Path
 
-# Load .env first (before other imports that may read env)
-for env_path in [
+# Load .env first (before other imports that may read env).
+# Load ALL existing candidates in order; later files override earlier keys (e.g. app/.env over api/.env).
+LOADED_ENV_FILES: list[str] = []
+_env_candidates = [
     Path(__file__).resolve().parent.parent / ".env",  # apps/api/.env
-    Path(__file__).resolve().parent / ".env",          # apps/api/app/.env
-]:
-    if env_path.exists():
-        try:
-            from dotenv import load_dotenv
-            load_dotenv(env_path)
-        except ImportError:
-            pass
-        break
+    Path(__file__).resolve().parent / ".env",  # apps/api/app/.env
+]
+try:
+    from dotenv import load_dotenv
+
+    for env_path in _env_candidates:
+        if env_path.exists():
+            load_dotenv(env_path, override=True)
+            LOADED_ENV_FILES.append(str(env_path.resolve()))
+except ImportError:
+    pass
 
 import hashlib
 import hmac
@@ -21,7 +25,7 @@ from fastapi import Depends, Form, Request, FastAPI
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import generation, health, decks, users, flashcards, reviews, categories, youtube, webpage
+from app.api import admin, generation, health, decks, users, flashcards, reviews, categories, youtube, webpage
 from app.core.database import engine, Base
 from app.core.init_db import init_db
 from app.core.auth import require_admin_key
@@ -101,6 +105,7 @@ app.include_router(health.router)
 app.include_router(categories.router)
 app.include_router(decks.router)
 app.include_router(users.router)
+app.include_router(admin.router)
 app.include_router(flashcards.router)
 app.include_router(generation.router)
 app.include_router(reviews.router)
@@ -166,17 +171,25 @@ async def protected_ping():
 
 @app.on_event("startup")
 async def startup():
+    import logging
+
+    log = logging.getLogger("uvicorn.error")
+    if LOADED_ENV_FILES:
+        log.info("Env files loaded (later overrides earlier): %s", LOADED_ENV_FILES)
+    else:
+        log.warning(
+            "No .env file found at apps/api/.env or apps/api/app/.env — "
+            "set YOUTUBE_PROXY_URL etc. in the environment or create one of those files"
+        )
+
     try:
         await init_db()
     except Exception as e:
-        import logging
-        logging.getLogger("uvicorn.error").warning(
-            f"Database setup skipped (connect to PostgreSQL to enable): {e}"
-        )
+        log.warning(f"Database setup skipped (connect to PostgreSQL to enable): {e}")
+
     try:
+        youtube.reload_proxy_config_from_env()
+        webpage.log_webpage_proxy_status()
         youtube.run_proxy_egress_verification_at_startup()
     except Exception:
-        import logging
-        logging.getLogger("uvicorn.error").exception(
-            "YouTube proxy egress verification crashed during startup"
-        )
+        log.exception("YouTube proxy setup or egress verification crashed during startup")

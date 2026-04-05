@@ -4,10 +4,13 @@ import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronDown, Plus } from "lucide-react";
 import { getUsers, createUser, waitForApiReadiness, apiUrl } from "@/lib/api";
+import { userIsProductAdmin } from "@/lib/product-admin";
 import { cn } from "@/lib/utils";
 
 const STORAGE_KEY = "flashcard_user_id";
 const ROLE_STORAGE_KEY = "flashcard_user_role";
+const NAME_STORAGE_KEY = "flashcard_user_name";
+const EMAIL_STORAGE_KEY = "flashcard_user_email";
 
 export type User = {
   id: string;
@@ -48,6 +51,11 @@ export function UserSelector() {
       const matchedUser = userList.find((u: User) => u.id === userId);
       if (matchedUser) {
         localStorage.setItem(ROLE_STORAGE_KEY, matchedUser.role);
+        localStorage.setItem(NAME_STORAGE_KEY, matchedUser.name);
+        localStorage.setItem(EMAIL_STORAGE_KEY, matchedUser.email);
+        window.dispatchEvent(
+          new CustomEvent("flashcard_user_changed", { detail: { userId } })
+        );
       }
     }
   }
@@ -114,7 +122,11 @@ export function UserSelector() {
     setSelectedUserId(userId);
     localStorage.setItem(STORAGE_KEY, userId);
     const matchedUser = users.find((u) => u.id === userId);
-    if (matchedUser) localStorage.setItem(ROLE_STORAGE_KEY, matchedUser.role);
+    if (matchedUser) {
+      localStorage.setItem(ROLE_STORAGE_KEY, matchedUser.role);
+      localStorage.setItem(NAME_STORAGE_KEY, matchedUser.name);
+      localStorage.setItem(EMAIL_STORAGE_KEY, matchedUser.email);
+    }
     setOpen(false);
     setShowAddForm(false);
     window.dispatchEvent(
@@ -322,7 +334,11 @@ export function getStoredUserId(): string | null {
 
 export function isStoredUserAdmin(): boolean {
   if (typeof window === "undefined") return false;
-  return localStorage.getItem(ROLE_STORAGE_KEY) === "admin";
+  return userIsProductAdmin({
+    role: localStorage.getItem(ROLE_STORAGE_KEY) ?? "",
+    name: localStorage.getItem(NAME_STORAGE_KEY) ?? "",
+    email: localStorage.getItem(EMAIL_STORAGE_KEY) ?? "",
+  });
 }
 
 export const MAX_CARDS_ADMIN = 50;
@@ -352,8 +368,9 @@ export function useCardCountOptions(): number[] {
 }
 
 /**
- * Whether the selected user is admin (from localStorage). Always false until mount
- * so server HTML matches the client’s first paint.
+ * Whether the selected user has product admin access (from localStorage, synced from
+ * the user list). Always false until mount so server HTML matches the client’s first paint.
+ * Updates when the account selector finishes loading or the user switches accounts.
  */
 export function useClientIsAdmin(): boolean {
   const [admin, setAdmin] = useState(false);

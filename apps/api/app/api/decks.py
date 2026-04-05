@@ -10,8 +10,8 @@ from sqlalchemy import and_, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.product_admin import user_has_product_admin_access
 from app.models import Category, Deck, Flashcard, Review, User
-from app.models.enums import UserRole
 from app.schemas.deck import DeckCreate, DeckMoveRequest, DeckResponse, DeckUpdate
 from app.schemas.flashcard import FlashcardResponse
 
@@ -91,6 +91,7 @@ async def duplicate_deck(
         source_type=source.source_type,
         source_url=source.source_url,
         source_topic=source.source_topic,
+        source_metadata=source.source_metadata,
         is_public=False,
     )
     db.add(new_deck)
@@ -241,10 +242,9 @@ async def update_deck(
         deck.archived = data.archived
 
     if data.is_public is not None:
-        user_result = await db.execute(select(User.role).where(User.id == deck.user_id))
-        user_row = user_result.first()
-        is_admin = user_row and user_row[0] in (UserRole.admin, UserRole.admin.value)
-        if not is_admin:
+        owner_result = await db.execute(select(User).where(User.id == deck.user_id))
+        owner = owner_result.scalar_one_or_none()
+        if not user_has_product_admin_access(owner):
             raise HTTPException(status_code=403, detail="Only admin users can change deck visibility.")
         deck.is_public = data.is_public
 
@@ -364,6 +364,7 @@ async def create_deck(
         source_topic=payload.source_topic,
         source_text=payload.source_text,
         source_segments=payload.source_segments,
+        source_metadata=payload.source_metadata,
     )
     db.add(deck)
     await db.flush()

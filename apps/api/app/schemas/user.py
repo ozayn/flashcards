@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, EmailStr, Field, model_validator
 
 from app.models.enums import Plan, UserRole
 
@@ -36,3 +36,16 @@ class UserSettingsUpdate(BaseModel):
     think_delay_enabled: Optional[bool] = None
     think_delay_ms: Optional[int] = Field(default=None, ge=0, le=30000)
     card_style: Optional[str] = Field(default=None, pattern="^(paper|minimal|modern|anki)$")
+
+
+class UserAdminUpdate(BaseModel):
+    """Partial update for admin user management (maps to User.name / User.email)."""
+
+    name: Optional[str] = Field(default=None, min_length=1, max_length=255)
+    email: Optional[EmailStr] = None
+
+    @model_validator(mode="after")
+    def at_least_one_field(self) -> "UserAdminUpdate":
+        if self.name is None and self.email is None:
+            raise ValueError("At least one of name or email must be provided")
+        return self

@@ -16,6 +16,8 @@ trap cleanup SIGINT SIGTERM
 echo "Starting backend..."
 cd apps/api
 if [ -d .venv313 ]; then source .venv313/bin/activate; elif [ -d .venv ]; then source .venv/bin/activate; fi
+echo "Syncing API dependencies (requirements.txt)..."
+python -m pip install -q -r requirements.txt
 uvicorn main:app --reload --port 8080 &
 BACKEND_PID=$!
 cd "$PROJECT_ROOT"

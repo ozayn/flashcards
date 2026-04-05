@@ -139,11 +139,15 @@ def _safe_proxy_label(proxy_url: str) -> str:
     return proxy_url.split("@")[-1] if "@" in proxy_url else proxy_url[:30]
 
 
-_proxy_url = _get_proxy_url()
-if _proxy_url:
-    print(f"[webpage] Proxy configured: {_safe_proxy_label(_proxy_url)}")
-else:
-    print("[webpage] Proxy: NONE — proxy fallback disabled")
+def log_webpage_proxy_status() -> None:
+    """Log whether YOUTUBE_PROXY_URL is set (called at app startup after .env reload)."""
+    proxy_url = _get_proxy_url()
+    if proxy_url:
+        logger.info("[webpage] proxy: configured for fallback fetch (host=%s)", _safe_proxy_label(proxy_url))
+        print(f"[webpage] Proxy configured: {_safe_proxy_label(proxy_url)}")
+    else:
+        logger.info("[webpage] proxy: not configured — webpage proxy fallback disabled")
+        print("[webpage] Proxy: NONE — proxy fallback disabled")
 
 
 def _is_block_response(resp: requests.Response) -> bool:

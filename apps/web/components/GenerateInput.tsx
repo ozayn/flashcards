@@ -4,7 +4,17 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { createDeck, generateFlashcardsBackground, fetchYouTubeTranscript, fetchWebpageContent, normalizeYouTubeUrl, isYouTubePlaylistUrl, TranscriptFetchError, getUsers } from "@/lib/api";
+import {
+  buildYoutubeDeckSourceMetadata,
+  createDeck,
+  fetchWebpageContent,
+  fetchYouTubeTranscript,
+  generateFlashcardsBackground,
+  getUsers,
+  isYouTubePlaylistUrl,
+  normalizeYouTubeUrl,
+  TranscriptFetchError,
+} from "@/lib/api";
 import { getStoredUserId } from "@/components/user-selector";
 
 const YT_REGEX = /(?:youtube\.com\/watch\?.*v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/shorts\/)/i;
@@ -92,6 +102,7 @@ export function GenerateInput({
           source_text: transcript.transcript,
           source_topic: videoTitle,
           source_segments: transcript.segments?.length ? JSON.stringify(transcript.segments) : undefined,
+          source_metadata: buildYoutubeDeckSourceMetadata(transcript),
         });
         const deckId = (deck as { id: string }).id;
 

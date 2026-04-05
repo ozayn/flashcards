@@ -5,7 +5,19 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { getUsers, createDeck, generateFlashcardsBackground, importFlashcards, parseQAPairs, fetchYouTubeTranscript, fetchWebpageContent, normalizeYouTubeUrl, isYouTubePlaylistUrl, TranscriptFetchError } from "@/lib/api";
+import {
+  buildYoutubeDeckSourceMetadata,
+  createDeck,
+  fetchWebpageContent,
+  fetchYouTubeTranscript,
+  generateFlashcardsBackground,
+  getUsers,
+  importFlashcards,
+  isYouTubePlaylistUrl,
+  normalizeYouTubeUrl,
+  parseQAPairs,
+  TranscriptFetchError,
+} from "@/lib/api";
 import { getStoredUserId, useCardCountOptions } from "@/components/user-selector";
 import { GENERATION_TEXT_MAX_CHARS } from "@/lib/generation-text";
 import { markDeckBackgroundGenerationNavigation } from "@/lib/deck-pending-generation";
@@ -330,6 +342,7 @@ function CreateDeckForm() {
           source_text: transcript.transcript,
           source_topic: videoTitle,
           source_segments: transcript.segments?.length ? JSON.stringify(transcript.segments) : undefined,
+          source_metadata: buildYoutubeDeckSourceMetadata(transcript),
         });
         const deckId = (deck as { id: string }).id;
 

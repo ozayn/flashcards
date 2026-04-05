@@ -34,6 +34,11 @@ class DeckCreate(BaseModel):
     source_topic: Optional[str] = Field(None, max_length=512, description="Topic used for AI generation (Topic mode)")
     source_text: Optional[str] = None
     source_segments: Optional[str] = None
+    source_metadata: Optional[str] = Field(
+        None,
+        max_length=4096,
+        description="Optional JSON string for source metadata (e.g. YouTube duration)",
+    )
     count: Optional[int] = Field(default=10, ge=1, le=50, description="Number of flashcards to generate (1–50)")
 
 
@@ -48,6 +53,7 @@ class DeckResponse(BaseModel):
     source_topic: Optional[str] = None
     source_text: Optional[str] = None
     source_segments: Optional[str] = Field(None, exclude=True)
+    source_metadata: Optional[str] = None
     generation_status: str = "completed"
     generated_by_ai: bool = False
     archived: bool = False

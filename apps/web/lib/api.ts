@@ -79,6 +79,57 @@ export async function getUsers() {
   }
 }
 
+/** User row from admin list/update (same shape as public user API). */
+export type AdminUserRow = {
+  id: string;
+  email: string;
+  name: string;
+  role: string;
+  plan: string;
+  created_at: string;
+};
+
+/** Requires signed admin session token from POST /api/admin/unlock (enforced by API). */
+export async function getAdminUsers(
+  adminPageToken: string
+): Promise<AdminUserRow[]> {
+  const res = await fetch(`${API_BASE}/admin/users`, {
+    cache: "no-store",
+    headers: { "X-Admin-Page-Token": adminPageToken },
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    const detail = err.detail;
+    throw new Error(
+      typeof detail === "string" ? detail : "Failed to load users"
+    );
+  }
+  return res.json();
+}
+
+export async function patchAdminUser(
+  adminPageToken: string,
+  targetUserId: string,
+  body: { name?: string; email?: string }
+): Promise<AdminUserRow> {
+  const res = await fetch(`${API_BASE}/admin/users/${targetUserId}`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Admin-Page-Token": adminPageToken,
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    const detail = err.detail;
+    throw new Error(
+      typeof detail === "string" ? detail : "Failed to update user"
+    );
+  }
+  return res.json();
+}
+
 export async function createUser(data: {
   email: string;
   name: string;
@@ -147,6 +198,52 @@ export async function getRelatedDecks(deckId: string, limit = 4) {
   return res.json();
 }
 
+/** Compact JSON for YouTube decks: duration_seconds, caption_language (stored in deck.source_metadata). */
+export function buildYoutubeDeckSourceMetadata(transcript: {
+  duration_seconds?: number | null;
+  language?: string | null;
+}): string | undefined {
+  const o: Record<string, unknown> = {};
+  if (
+    transcript.duration_seconds != null &&
+    Number.isFinite(transcript.duration_seconds) &&
+    transcript.duration_seconds >= 0
+  ) {
+    o.duration_seconds = Math.floor(transcript.duration_seconds);
+  }
+  if (transcript.language?.trim()) o.caption_language = transcript.language.trim();
+  return Object.keys(o).length ? JSON.stringify(o) : undefined;
+}
+
+export type YoutubeDeckSourceMetadata = {
+  duration_seconds?: number;
+  caption_language?: string;
+};
+
+export function parseYoutubeDeckSourceMetadata(
+  raw: string | null | undefined
+): YoutubeDeckSourceMetadata | null {
+  if (!raw?.trim()) return null;
+  try {
+    const j = JSON.parse(raw) as unknown;
+    if (!j || typeof j !== "object") return null;
+    return j as YoutubeDeckSourceMetadata;
+  } catch {
+    return null;
+  }
+}
+
+export function formatYoutubeDuration(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds < 0) return "";
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = Math.floor(seconds % 60);
+  if (h > 0 && m > 0) return `${h}h ${m}m`;
+  if (h > 0) return `${h}h`;
+  if (m > 0) return `${m}m`;
+  return `${s}s`;
+}
+
 export async function createDeck(data: {
   user_id: string;
   name: string;
@@ -156,6 +253,7 @@ export async function createDeck(data: {
   source_topic?: string | null;
   source_text?: string | null;
   source_segments?: string | null;
+  source_metadata?: string | null;
 }) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 15000);
@@ -168,6 +266,7 @@ export async function createDeck(data: {
     if (data.source_url === undefined) delete body.source_url;
     if (data.source_text === undefined) delete body.source_text;
     if (data.source_segments === undefined) delete body.source_segments;
+    if (data.source_metadata === undefined) delete body.source_metadata;
     const res = await fetch(`${API_BASE}/decks`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -230,6 +329,7 @@ export async function fetchYouTubeTranscript(url: string): Promise<{
   transcript: string;
   segments: { text: string; start: number }[];
   language: string | null;
+  duration_seconds: number | null;
   char_count: number;
 }> {
   const res = await fetch(`${API_BASE}/youtube/transcript`, {

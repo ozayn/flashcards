@@ -22,19 +22,21 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
+  createCategory,
+  deleteDeck,
+  deleteFlashcard,
+  duplicateDeck,
+  formatYoutubeDuration,
+  generateFlashcards,
+  getCategories,
   getDeck,
   getFlashcards,
   getRelatedDecks,
-  getCategories,
-  generateFlashcards,
   importFlashcards,
-  parseQAPairs,
-  updateDeck,
-  deleteDeck,
-  deleteFlashcard,
   moveDeckToCategory,
-  createCategory,
-  duplicateDeck,
+  parseQAPairs,
+  parseYoutubeDeckSourceMetadata,
+  updateDeck,
 } from "@/lib/api";
 import { getStoredUserId, useCardCountOptions, useClientIsAdmin } from "@/components/user-selector";
 import { GENERATION_TEXT_MAX_CHARS } from "@/lib/generation-text";
@@ -59,6 +61,8 @@ interface Deck {
   source_type?: string | null;
   source_topic?: string | null;
   source_url?: string | null;
+  /** JSON: { duration_seconds?, caption_language? } for YouTube */
+  source_metadata?: string | null;
   has_timestamps?: boolean;
   generation_status?: string;
   archived?: boolean;
@@ -1072,6 +1076,29 @@ export default function DeckPage({ params }: DeckPageProps) {
                     {deck.source_topic?.trim() || deck.source_url}
                   </a>
                 </p>
+                {(() => {
+                  const ym = parseYoutubeDeckSourceMetadata(deck.source_metadata);
+                  if (!ym) return null;
+                  const parts: string[] = [];
+                  if (
+                    ym.duration_seconds != null &&
+                    Number.isFinite(ym.duration_seconds) &&
+                    ym.duration_seconds >= 0
+                  ) {
+                    const d = formatYoutubeDuration(ym.duration_seconds);
+                    if (d) parts.push(d);
+                  }
+                  const cap = ym.caption_language?.trim();
+                  if (cap) {
+                    parts.push(/caption/i.test(cap) ? cap : `${cap} captions`);
+                  }
+                  if (!parts.length) return null;
+                  return (
+                    <p className="text-xs text-muted-foreground/80 leading-snug max-mobile:text-[11px]">
+                      {parts.join(" · ")}
+                    </p>
+                  );
+                })()}
                 <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
                   <a
                     href={`/api/proxy/decks/${deck.id}/transcript`}

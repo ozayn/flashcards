@@ -12,10 +12,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db, AsyncSessionLocal
+from app.core.product_admin import user_has_product_admin_access
 from app.llm.json_truncation import analyze_llm_json_response
 from app.llm.router import generate_completion, _get_default_max_tokens, RateLimitError
 from app.models import Deck, Flashcard, User
-from app.models.enums import GenerationStatus, SourceType, UserRole
+from app.models.enums import GenerationStatus, SourceType
 from app.schemas.flashcard import DIFFICULTY_TO_INT
 from app.utils.topic_analysis import (
     build_language_rule,
@@ -134,14 +135,14 @@ MAX_CARDS_USER = 25
 
 
 async def _get_max_cards_for_deck(deck_id: str, db: AsyncSession) -> int:
-    """Return the max allowed card count based on the deck owner's role."""
+    """Return the max allowed card count based on the deck owner's product admin access."""
     result = await db.execute(select(Deck.user_id).where(Deck.id == deck_id))
     row = result.first()
     if not row:
         return MAX_CARDS_USER
-    user_result = await db.execute(select(User.role).where(User.id == row[0]))
-    user_row = user_result.first()
-    if user_row and user_row[0] in (UserRole.admin, UserRole.admin.value):
+    user_result = await db.execute(select(User).where(User.id == row[0]))
+    owner = user_result.scalar_one_or_none()
+    if user_has_product_admin_access(owner):
         return MAX_CARDS_ADMIN
     return MAX_CARDS_USER
 
