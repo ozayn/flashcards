@@ -195,6 +195,6 @@ async def startup():
         log_llm_outbound_isolation_once()
         youtube.reload_proxy_config_from_env()
         webpage.log_webpage_proxy_status()
-        youtube.run_proxy_egress_verification_at_startup()
+        youtube.schedule_proxy_egress_verification_after_startup()
     except Exception:
         log.exception("YouTube proxy setup or egress verification crashed during startup")

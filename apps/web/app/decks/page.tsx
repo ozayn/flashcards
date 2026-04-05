@@ -27,6 +27,7 @@ import {
   List,
   MoreVertical,
   Pencil,
+  Plus,
   Search,
   SlidersHorizontal,
   Trash2,
@@ -50,6 +51,7 @@ import {
 import { getStoredUserId } from "@/components/user-selector";
 import PageContainer from "@/components/layout/page-container";
 import { DeckGenerationBadge } from "@/components/DeckGenerationBadge";
+import { DeckActionsMenu } from "@/components/DeckActionsMenu";
 import { AdminTransferDeckConfirmModal } from "@/components/AdminTransferDeckConfirmModal";
 import { AdminBulkLegacyTransferConfirmModal } from "@/components/AdminBulkLegacyTransferConfirmModal";
 import { formatDeckCreatedCalendarDate } from "@/lib/format-deck-date";
@@ -239,6 +241,10 @@ export default function DecksPage() {
   const [moveModalDeckId, setMoveModalDeckId] = useState<string | null>(null);
   const [moveModalCategoryId, setMoveModalCategoryId] = useState<string | null>(null);
   const [moveModalSaving, setMoveModalSaving] = useState(false);
+  const [moveModalShowNewCatInput, setMoveModalShowNewCatInput] = useState(false);
+  const [moveModalNewCatName, setMoveModalNewCatName] = useState("");
+  const [moveModalNewCatError, setMoveModalNewCatError] = useState<string | null>(null);
+  const [moveModalCreatingCat, setMoveModalCreatingCat] = useState(false);
   const [renameDeckModalOpen, setRenameDeckModalOpen] = useState(false);
   const [renameDeckId, setRenameDeckId] = useState<string | null>(null);
   const [renameDeckName, setRenameDeckName] = useState("");
@@ -552,13 +558,56 @@ export default function DecksPage() {
     const deck = decks.find((d) => d.id === deckId);
     setMoveModalDeckId(deckId);
     setMoveModalCategoryId(deck?.category_id ?? null);
+    setMoveModalShowNewCatInput(false);
+    setMoveModalNewCatName("");
+    setMoveModalNewCatError(null);
     setOpenDeckMenuId(null);
   }
 
   function closeMoveModal() {
-    if (!moveModalSaving) {
+    if (!moveModalSaving && !moveModalCreatingCat) {
       setMoveModalDeckId(null);
       setMoveModalCategoryId(null);
+      setMoveModalShowNewCatInput(false);
+      setMoveModalNewCatName("");
+      setMoveModalNewCatError(null);
+    }
+  }
+
+  async function handleMoveDeckCreateCategory() {
+    if (!userId || moveModalCreatingCat) return;
+    const trimmed = moveModalNewCatName.trim();
+    if (!trimmed) {
+      setMoveModalNewCatError("Category name cannot be empty.");
+      return;
+    }
+    const normalized = normalizeCategoryName(trimmed);
+    const duplicate = categories.find(
+      (c) => normalizeCategoryName(c.name) === normalized
+    );
+    if (duplicate) {
+      setMoveModalCategoryId(duplicate.id);
+      setMoveModalShowNewCatInput(false);
+      setMoveModalNewCatName("");
+      setMoveModalNewCatError(null);
+      return;
+    }
+    setMoveModalCreatingCat(true);
+    setMoveModalNewCatError(null);
+    try {
+      const created = await createCategory({ name: trimmed, user_id: userId });
+      const catId = (created as { id: string }).id;
+      const cats = await getCategories(userId);
+      setCategories(Array.isArray(cats) ? cats : []);
+      setMoveModalCategoryId(catId);
+      setMoveModalShowNewCatInput(false);
+      setMoveModalNewCatName("");
+    } catch (err) {
+      setMoveModalNewCatError(
+        err instanceof Error ? err.message : "Failed to create category."
+      );
+    } finally {
+      setMoveModalCreatingCat(false);
     }
   }
 
@@ -679,29 +728,13 @@ export default function DecksPage() {
   }
 
   function renderDeckMenu(deck: Deck) {
+    const menuOpen = openDeckMenuId === deck.id;
     return (
-      <div className={`relative deck-menu-button opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100 max-mobile:opacity-100 ${openDeckMenuId === deck.id ? "!opacity-100" : ""}`}>
-        <Button
-          variant="ghost"
-          size="icon"
-          onPointerDown={(e) => e.stopPropagation()}
-          onClick={(e) => {
-            e.stopPropagation();
-            e.preventDefault();
-            setOpenDeckMenuId((prev) => (prev === deck.id ? null : deck.id));
-          }}
-          className="text-muted-foreground hover:text-foreground"
-          aria-label="Deck actions"
-          aria-expanded={openDeckMenuId === deck.id}
-        >
-          <MoreVertical className="size-4" />
-        </Button>
-        {openDeckMenuId === deck.id && (
-          <div
-            className="absolute right-0 top-full mt-1 z-50 w-max min-w-[17rem] max-w-[calc(100vw-1.5rem)] rounded-lg border border-border bg-background py-1 shadow-lg"
-            onClick={(e: MouseEvent) => e.stopPropagation()}
-            role="menu"
-          >
+      <DeckActionsMenu
+        open={menuOpen}
+        onOpenChange={(next) => setOpenDeckMenuId(next ? deck.id : null)}
+        triggerClassName={`relative deck-menu-button opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100 max-mobile:opacity-100 ${menuOpen ? "!opacity-100" : ""}`}
+      >
             <button
               type="button"
               role="menuitem"
@@ -784,9 +817,7 @@ export default function DecksPage() {
               <Trash2 className="size-4 shrink-0" aria-hidden />
               <span>Delete deck</span>
             </button>
-          </div>
-        )}
-      </div>
+      </DeckActionsMenu>
     );
   }
 
@@ -1180,7 +1211,7 @@ export default function DecksPage() {
                       const v = e.target.value;
                       setMoveModalCategoryId(v === UNCATEGORIZED ? null : v);
                     }}
-                    disabled={moveModalSaving}
+                    disabled={moveModalSaving || moveModalCreatingCat}
                     className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm min-h-[44px] max-mobile:min-h-[48px]"
                   >
                     <option value={UNCATEGORIZED}>Uncategorized</option>
@@ -1191,16 +1222,75 @@ export default function DecksPage() {
                     ))}
                   </select>
                 </div>
+                {moveModalShowNewCatInput ? (
+                  <div className="space-y-2">
+                    <div className="flex gap-2">
+                      <Input
+                        placeholder="New category name"
+                        value={moveModalNewCatName}
+                        onChange={(e) => {
+                          setMoveModalNewCatName(e.target.value);
+                          setMoveModalNewCatError(null);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            void handleMoveDeckCreateCategory();
+                          }
+                        }}
+                        disabled={moveModalCreatingCat}
+                        autoFocus
+                        className="h-9 flex-1"
+                      />
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={() => void handleMoveDeckCreateCategory()}
+                        disabled={moveModalCreatingCat || !moveModalNewCatName.trim()}
+                        className="h-9 px-3"
+                      >
+                        {moveModalCreatingCat ? "Adding…" : "Add"}
+                      </Button>
+                    </div>
+                    {moveModalNewCatError && (
+                      <p className="text-xs text-destructive">{moveModalNewCatError}</p>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMoveModalShowNewCatInput(false);
+                        setMoveModalNewCatName("");
+                        setMoveModalNewCatError(null);
+                      }}
+                      className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setMoveModalShowNewCatInput(true)}
+                    disabled={moveModalSaving}
+                    className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    <Plus className="size-3.5" />
+                    New category
+                  </button>
+                )}
                 <div className="flex justify-end gap-2">
                   <Button
                     type="button"
                     variant="outline"
                     onClick={closeMoveModal}
-                    disabled={moveModalSaving}
+                    disabled={moveModalSaving || moveModalCreatingCat}
                   >
                     Cancel
                   </Button>
-                  <Button type="submit" disabled={moveModalSaving}>
+                  <Button
+                    type="submit"
+                    disabled={moveModalSaving || moveModalCreatingCat}
+                  >
                     {moveModalSaving ? "Moving..." : "Move"}
                   </Button>
                 </div>

@@ -137,41 +137,6 @@ function SignInFormInner({
               callbacks work, unless your host injects it automatically.
             </p>
           ) : null}
-
-          <Button
-            variant="outline"
-            className="w-full justify-center gap-2.5 h-11"
-            disabled
-            type="button"
-          >
-            <svg
-              className="size-4"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden
-            >
-              <rect width="20" height="16" x="2" y="4" rx="2" />
-              <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
-            </svg>
-            Continue with email
-            <span className="sr-only">(coming soon)</span>
-          </Button>
-          <p className="text-xs text-center text-muted-foreground">
-            Email sign-in is coming soon.
-          </p>
-        </div>
-
-        <div className="relative">
-          <div className="absolute inset-0 flex items-center">
-            <span className="w-full border-t border-border/60" />
-          </div>
-          <div className="relative flex justify-center text-xs">
-            <span className="bg-background px-3 text-muted-foreground">or</span>
-          </div>
         </div>
 
         <div className="text-center">

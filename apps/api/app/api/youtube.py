@@ -4,6 +4,8 @@ import html
 import logging
 import os
 import re
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Literal, Optional
 from urllib.parse import parse_qs, urlparse
 
@@ -63,6 +65,11 @@ def _env_truthy(name: str, default: bool) -> bool:
     if raw is None or raw.strip() == "":
         return default
     return raw.strip().lower() in ("1", "true", "yes", "on")
+
+
+def _youtube_proxy_verify_egress_default_enabled() -> bool:
+    """Production: verify by default when proxies exist. Dev: opt-in via YOUTUBE_PROXY_VERIFY_EGRESS=1."""
+    return os.environ.get("ENVIRONMENT", "development").lower() == "production"
 
 
 def _proxy_host_for_logs(proxy_config: Any) -> str:
@@ -173,10 +180,70 @@ def reload_proxy_config_from_env() -> None:
 reload_proxy_config_from_env()
 
 
-def run_proxy_egress_verification_at_startup() -> None:
+def _verify_single_proxy_egress(
+    i: int,
+    cfg: Any,
+    n: int,
+    echo_url: str,
+    timeout: float,
+) -> tuple[int, bool, Optional[str], str]:
+    """One proxy egress check; safe to run in a thread pool."""
+    host = _proxy_host_for_logs(cfg)
+    proxies = _requests_proxies_from_ytt_config(cfg)
+    if not proxies:
+        logger.error("[youtube] proxy[%d/%d]: could not build requests proxy dict (host=%s)", i + 1, n, host)
+        return i, False, None, f"[{i}]no_dict"
+    logger.info("[youtube] proxy[%d/%d]: egress check starting (host=%s)", i + 1, n, host)
+    try:
+        resp = requests.get(
+            echo_url,
+            proxies=proxies,
+            timeout=timeout,
+            headers={"User-Agent": "MemoNext-YouTube-proxy-verify/1.0"},
+        )
+        body = (resp.text or "").strip()
+        if resp.status_code != 200:
+            logger.error(
+                "[youtube] proxy[%d/%d]: egress failed — HTTP %s (host=%s)",
+                i + 1,
+                n,
+                resp.status_code,
+                host,
+            )
+            return i, False, None, f"[{i}]http{resp.status_code}"
+        first_line = body.splitlines()[0].strip() if body else ""
+        if not _IP_RE.match(first_line):
+            logger.error(
+                "[youtube] proxy[%d/%d]: egress failed — not plain IP (host=%s)",
+                i + 1,
+                n,
+                host,
+            )
+            return i, False, None, f"[{i}]bad_body"
+        logger.info(
+            "[youtube] proxy[%d/%d]: egress OK — observed IP %s (host=%s)",
+            i + 1,
+            n,
+            first_line,
+            host,
+        )
+        print(f"[youtube] proxy[{i + 1}/{n}]: egress OK — IP {first_line} (host={host})")
+        return i, True, first_line, f"[{i}]ok"
+    except requests.RequestException as exc:
+        logger.error("[youtube] proxy[%d/%d]: egress failed — %s (host=%s)", i + 1, n, exc, host)
+        return i, False, None, f"[{i}]{type(exc).__name__}"
+    except Exception as exc:
+        logger.exception("[youtube] proxy[%d/%d]: egress check crashed (host=%s)", i + 1, n, host)
+        return i, False, None, f"[{i}]{type(exc).__name__}"
+
+
+def run_proxy_egress_verification(*, force: bool = False) -> None:
     """
     For each configured proxy, one outbound HTTPS request through the same proxy dict
-    as YouTubeTranscriptApi. Logs per-index results; overall ok if any succeeds.
+    as YouTubeTranscriptApi. Checks run in parallel (bounded pool). Overall ok if any succeeds.
+
+    When ``force`` is False, respects YOUTUBE_PROXY_VERIFY_EGRESS (default on in production only;
+    default off in development — set YOUTUBE_PROXY_VERIFY_EGRESS=1 to enable).
     """
     global _proxy_egress_observed_ip, _proxy_egress_check_outcome, _proxy_egress_check_message
 
@@ -185,90 +252,71 @@ def run_proxy_egress_verification_at_startup() -> None:
         _proxy_egress_check_message = "no proxy configured"
         return
 
-    verify = _env_truthy("YOUTUBE_PROXY_VERIFY_EGRESS", default=True)
-    if not verify:
-        _proxy_egress_check_outcome = "skipped"
-        _proxy_egress_check_message = "YOUTUBE_PROXY_VERIFY_EGRESS disabled"
-        mode = _transcript_proxy_mode_list(_proxy_configs)
-        logger.info(
-            "[youtube] proxy: %d config(s) (mode=%s) — egress verification skipped (YOUTUBE_PROXY_VERIFY_EGRESS=0)",
-            len(_proxy_configs),
-            mode,
+    if not force:
+        verify = _env_truthy(
+            "YOUTUBE_PROXY_VERIFY_EGRESS",
+            default=_youtube_proxy_verify_egress_default_enabled(),
         )
-        print(
-            f"[youtube] proxy: {len(_proxy_configs)} config(s) (mode={mode}) "
-            "— egress verification skipped (YOUTUBE_PROXY_VERIFY_EGRESS=0)"
-        )
-        return
+        if not verify:
+            _proxy_egress_check_outcome = "skipped"
+            explicit = (os.environ.get("YOUTUBE_PROXY_VERIFY_EGRESS") or "").strip().lower()
+            if explicit in ("0", "false", "no", "off"):
+                _proxy_egress_check_message = "YOUTUBE_PROXY_VERIFY_EGRESS disabled"
+            else:
+                _proxy_egress_check_message = (
+                    "egress verification skipped (non-production defaults off; "
+                    "set YOUTUBE_PROXY_VERIFY_EGRESS=1 for startup checks, or POST /youtube/proxy-verify-egress)"
+                )
+            mode = _transcript_proxy_mode_list(_proxy_configs)
+            logger.info(
+                "[youtube] proxy: %d config(s) (mode=%s) — egress verification skipped (%s)",
+                len(_proxy_configs),
+                mode,
+                _proxy_egress_check_message,
+            )
+            print(
+                f"[youtube] proxy: {len(_proxy_configs)} config(s) (mode={mode}) "
+                f"— egress verification skipped — {_proxy_egress_check_message}"
+            )
+            return
 
     echo_url = os.environ.get("YOUTUBE_PROXY_IP_ECHO_URL", _DEFAULT_IP_ECHO_URL).strip() or _DEFAULT_IP_ECHO_URL
-    timeout = float(os.environ.get("YOUTUBE_PROXY_EGRESS_TIMEOUT", "15"))
+    timeout = float(os.environ.get("YOUTUBE_PROXY_EGRESS_TIMEOUT", "5"))
+    max_workers = max(1, int(os.environ.get("YOUTUBE_PROXY_EGRESS_MAX_WORKERS", "8")))
     mode = _transcript_proxy_mode_list(_proxy_configs)
     n = len(_proxy_configs)
+    workers = min(n, max_workers)
     logger.info(
-        "[youtube] proxy: verifying egress for %d config(s) (mode=%s, echo=%s)",
+        "[youtube] proxy: verifying egress for %d config(s) (mode=%s, echo=%s, timeout=%ss, workers=%d)",
         n,
         mode,
         echo_url,
+        timeout,
+        workers,
     )
-    print(f"[youtube] proxy: verifying egress for {n} proxy config(s) (mode={mode}, echo={echo_url})")
+    print(
+        f"[youtube] proxy: verifying egress for {n} proxy config(s) "
+        f"(mode={mode}, echo={echo_url}, timeout={timeout}s, parallel workers={workers})"
+    )
 
-    per_results: list[str] = []
+    per_results: list[str] = [""] * n
     any_ok = False
-    for i, cfg in enumerate(_proxy_configs):
-        host = _proxy_host_for_logs(cfg)
-        proxies = _requests_proxies_from_ytt_config(cfg)
-        if not proxies:
-            per_results.append(f"[{i}]no_dict")
-            logger.error("[youtube] proxy[%d/%d]: could not build requests proxy dict (host=%s)", i + 1, n, host)
-            continue
-        logger.info("[youtube] proxy[%d/%d]: egress check starting (host=%s)", i + 1, n, host)
-        try:
-            resp = requests.get(
-                echo_url,
-                proxies=proxies,
-                timeout=timeout,
-                headers={"User-Agent": "MemoNext-YouTube-proxy-verify/1.0"},
-            )
-            body = (resp.text or "").strip()
-            if resp.status_code != 200:
-                per_results.append(f"[{i}]http{resp.status_code}")
-                logger.error(
-                    "[youtube] proxy[%d/%d]: egress failed — HTTP %s (host=%s)",
-                    i + 1,
-                    n,
-                    resp.status_code,
-                    host,
-                )
-                continue
-            first_line = body.splitlines()[0].strip() if body else ""
-            if not _IP_RE.match(first_line):
-                per_results.append(f"[{i}]bad_body")
-                logger.error(
-                    "[youtube] proxy[%d/%d]: egress failed — not plain IP (host=%s)",
-                    i + 1,
-                    n,
-                    host,
-                )
-                continue
-            per_results.append(f"[{i}]ok")
-            if not any_ok:
-                _proxy_egress_observed_ip = first_line
-            any_ok = True
-            logger.info(
-                "[youtube] proxy[%d/%d]: egress OK — observed IP %s (host=%s)",
-                i + 1,
-                n,
-                first_line,
-                host,
-            )
-            print(
-                f"[youtube] proxy[{i + 1}/{n}]: egress OK — IP {first_line} (host={host})"
-            )
-        except requests.RequestException as exc:
-            per_results.append(f"[{i}]{type(exc).__name__}")
-            logger.error("[youtube] proxy[%d/%d]: egress failed — %s (host=%s)", i + 1, n, exc, host)
+    first_ip: Optional[str] = None
 
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        futures = [
+            executor.submit(_verify_single_proxy_egress, i, cfg, n, echo_url, timeout)
+            for i, cfg in enumerate(_proxy_configs)
+        ]
+        for fut in as_completed(futures):
+            i, ok, observed, tag = fut.result()
+            per_results[i] = tag
+            if ok:
+                any_ok = True
+                if first_ip is None and observed:
+                    first_ip = observed
+
+    _proxy_egress_observed_ip = first_ip if any_ok else None
     summary = "; ".join(per_results)
     if any_ok:
         _proxy_egress_check_outcome = "ok"
@@ -279,6 +327,39 @@ def run_proxy_egress_verification_at_startup() -> None:
         _proxy_egress_check_message = summary or "all failed"
         logger.error("[youtube] proxy: egress verification — all %d proxy config(s) failed — %s", n, summary)
         print(f"[youtube] proxy: egress verification — all {n} proxy config(s) failed")
+
+
+def schedule_proxy_egress_verification_after_startup() -> None:
+    """
+    Apply fast proxy state (no_proxy / skipped) on the startup thread; when verification is
+    enabled, run the network checks in a daemon thread so ASGI startup is not blocked.
+    """
+    if not _proxy_configs:
+        run_proxy_egress_verification(force=False)
+        return
+
+    verify = _env_truthy(
+        "YOUTUBE_PROXY_VERIFY_EGRESS",
+        default=_youtube_proxy_verify_egress_default_enabled(),
+    )
+    if not verify:
+        run_proxy_egress_verification(force=False)
+        return
+
+    def _run() -> None:
+        try:
+            run_proxy_egress_verification(force=False)
+        except Exception:
+            logger.exception("[youtube] proxy: background egress verification crashed")
+
+    logger.info("[youtube] proxy: egress verification running in background (startup not blocked)")
+    print("[youtube] proxy: egress verification running in background…")
+    threading.Thread(target=_run, name="youtube-proxy-egress-verify", daemon=True).start()
+
+
+def run_proxy_egress_verification_at_startup() -> None:
+    """Backward-compatible name; prefer schedule_proxy_egress_verification_after_startup from app startup."""
+    run_proxy_egress_verification(force=False)
 
 
 def extract_video_id(url: str) -> Optional[str]:
@@ -366,9 +447,7 @@ class ProxyEgressStatusResponse(BaseModel):
     egress_observed_ip: Optional[str] = None
 
 
-@router.get("/proxy-egress-status", response_model=ProxyEgressStatusResponse, dependencies=[Depends(require_admin_key)])
-async def proxy_egress_status():
-    """Debug: whether YouTube transcript proxy is configured and egress verification result."""
+def _proxy_egress_status_response() -> ProxyEgressStatusResponse:
     n = len(_proxy_configs)
     first = _proxy_configs[0] if _proxy_configs else None
     return ProxyEgressStatusResponse(
@@ -381,6 +460,27 @@ async def proxy_egress_status():
         egress_check_message=_proxy_egress_check_message,
         egress_observed_ip=_proxy_egress_observed_ip,
     )
+
+
+@router.get("/proxy-egress-status", response_model=ProxyEgressStatusResponse, dependencies=[Depends(require_admin_key)])
+async def proxy_egress_status():
+    """Debug: whether YouTube transcript proxy is configured and egress verification result."""
+    return _proxy_egress_status_response()
+
+
+@router.post(
+    "/proxy-verify-egress",
+    response_model=ProxyEgressStatusResponse,
+    dependencies=[Depends(require_admin_key)],
+)
+def proxy_verify_egress_now():
+    """
+    Run egress checks immediately (same probes as startup). Uses YOUTUBE_PROXY_EGRESS_TIMEOUT /
+    YOUTUBE_PROXY_EGRESS_MAX_WORKERS. Ignores YOUTUBE_PROXY_VERIFY_EGRESS — use when debugging proxies
+    without restarting the API.
+    """
+    run_proxy_egress_verification(force=True)
+    return _proxy_egress_status_response()
 
 
 def _is_ip_block_error(exc: Exception) -> bool:

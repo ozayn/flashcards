@@ -118,12 +118,30 @@ export function Nav() {
               ))
             )
           ) : (
-            <UserSelector />
+            <>
+              {!authed && (
+                <Link
+                  href="/signin"
+                  className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  Sign in
+                </Link>
+              )}
+              <UserSelector />
+            </>
           )}
         </div>
 
-        <div className="flex md:hidden items-center gap-1">
+        <div className="flex md:hidden items-center gap-1 sm:gap-2">
           <ThemeToggle />
+          {!authed && (
+            <Link
+              href="/signin"
+              className="text-sm font-medium text-muted-foreground hover:text-foreground px-2 py-1.5 -mr-0.5 rounded-md shrink-0"
+            >
+              Sign in
+            </Link>
+          )}
           <Button
             variant="ghost"
             size="icon"
@@ -141,7 +159,8 @@ export function Nav() {
           <div className="max-w-4xl mx-auto px-4 sm:px-6 py-3">
             <div className="flex flex-col gap-1">
               {navLinks.map((link) => {
-                if (authed && isLanding && link.href === "/signin") {
+                /* Landing: Sign in is in the desktop right column or the mobile top bar */
+                if (isLanding && link.href === "/signin") {
                   return null;
                 }
                 return (
