@@ -1,4 +1,6 @@
-from typing import List, Optional
+from __future__ import annotations
+
+from typing import List
 
 from datetime import datetime
 
@@ -47,7 +49,7 @@ async def _destination_category_for_transferred_deck(
     db: AsyncSession,
     admin_user: User,
     source_category: Category,
-) -> tuple[Optional[str], Optional[datetime]]:
+) -> tuple[str | None, datetime | None]:
     """
     Pick or create an admin-owned category matching the source category name.
     Returns (category_id, category_assigned_at) or (None, None) for uncategorized.

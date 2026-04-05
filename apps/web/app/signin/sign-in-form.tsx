@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 function signInErrorMessage(error: string | null): string | null {
   if (!error) return null;
   if (error === "AccessDenied") {
-    return "This Google account is not allowed to sign in yet. If you need access, ask an administrator to add your email to the allowlist.";
+    return "Your Google email is not on ALLOWED_LOGIN_EMAILS for this web app (trim + lowercase per entry; Gmail dots and +tags are not normalized—list the exact address Google returns). Check the Next.js server logs for \"[auth] Google sign-in AccessDenied\" (includes comparedEmail and denyReason). Set SIGNIN_ALLOWLIST_DEBUG=1 on the web server for a full allowlist trace on each attempt.";
   }
   if (error === "Callback") {
     return "Sign-in could not be completed. Your account may not be authorized, or the server rejected the login.";

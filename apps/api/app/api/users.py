@@ -14,7 +14,10 @@ from app.core.email_identity import (
     list_users_matching_email_identity,
     normalize_email_for_identity,
 )
-from app.core.login_email_allowlist import email_is_allowed_for_login
+from app.core.login_email_allowlist import (
+    allowed_login_allowlist_entry_count,
+    email_is_allowed_for_login,
+)
 from app.core.user_access import (
     assert_may_act_as_user,
     get_trusted_acting_user_id,
@@ -108,6 +111,13 @@ async def sync_google_oauth_user(
     ):
         raise HTTPException(status_code=401, detail="Invalid or missing OAuth sync secret")
     if not email_is_allowed_for_login(payload.email):
+        compared = (payload.email or "").strip().lower() or None
+        logger.warning(
+            "oauth/google 403: email not in ALLOWED_LOGIN_EMAILS (same trim+lowercase "
+            "rules as NextAuth signIn). compared=%s allowlist_entry_count=%s",
+            compared,
+            allowed_login_allowlist_entry_count(),
+        )
         raise HTTPException(
             status_code=403,
             detail="This email is not authorized to sign in yet.",

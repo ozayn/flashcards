@@ -2,7 +2,7 @@ import type { NextAuthOptions } from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
 import { getBackendUrl } from "@/lib/backend-url";
 import { isAdminEmailAllowlisted } from "@/lib/admin-email-allowlist";
-import { isEmailAllowedForLogin } from "@/lib/login-email-allowlist";
+import { evaluateAllowedLoginEmail } from "@/lib/login-email-allowlist";
 
 function googleProviders() {
   const id = process.env.GOOGLE_CLIENT_ID?.trim();
@@ -34,7 +34,37 @@ export const authOptions: NextAuthOptions = {
         (typeof user?.email === "string" ? user.email : null) ??
         prof?.email ??
         null;
-      if (!isEmailAllowedForLogin(email)) {
+      const ev = evaluateAllowedLoginEmail(email);
+      const allowlistDebug = process.env.SIGNIN_ALLOWLIST_DEBUG?.trim() === "1";
+
+      if (allowlistDebug) {
+        console.info(
+          "[auth][google-allowlist-debug]",
+          JSON.stringify({
+            googleEmailPresent: ev.googleEmailPresent,
+            comparedEmail: ev.comparedEmail,
+            allowlistEntryCount: ev.allowlistEntryCount,
+            matchedAllowlist: ev.allowed,
+            denyReason: ev.denyReason,
+          })
+        );
+      }
+
+      if (!ev.allowed) {
+        const hint =
+          ev.denyReason === "no_google_email"
+            ? "No email on Google user/profile (NextAuth signIn callback)."
+            : ev.denyReason === "allowlist_empty"
+              ? "ALLOWED_LOGIN_EMAILS is empty or unset on the web server."
+              : "Email not in ALLOWED_LOGIN_EMAILS (comma-separated list; trim + lowercase exact match per entry; Gmail dots and +tags are not normalized).";
+        console.warn(
+          `[auth] Google sign-in AccessDenied (signIn returned false → NextAuth error=AccessDenied): ${hint}`,
+          JSON.stringify({
+            denyReason: ev.denyReason,
+            comparedEmail: ev.comparedEmail,
+            allowlistEntryCount: ev.allowlistEntryCount,
+          })
+        );
         return false;
       }
       return true;
