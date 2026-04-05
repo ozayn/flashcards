@@ -10,10 +10,31 @@ from urllib.parse import parse_qs, urlparse
 import requests
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from youtube_transcript_api import NoTranscriptFound, YouTubeTranscriptApi
+from youtube_transcript_api import (
+    AgeRestricted,
+    CookieError,
+    CookieInvalid,
+    CookiePathInvalid,
+    CouldNotRetrieveTranscript,
+    FailedToCreateConsentCookie,
+    InvalidVideoId,
+    IpBlocked,
+    NoTranscriptFound,
+    NotTranslatable,
+    PoTokenRequired,
+    RequestBlocked,
+    TranslationLanguageNotAvailable,
+    TranscriptsDisabled,
+    VideoUnavailable,
+    VideoUnplayable,
+    YouTubeDataUnparsable,
+    YouTubeRequestFailed,
+    YouTubeTranscriptApi,
+)
 from youtube_transcript_api.proxies import GenericProxyConfig, WebshareProxyConfig
 
 from app.core.auth import require_admin_key
+from app.core.proxy_env import parse_generic_proxy_url_list
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +87,23 @@ def _transcript_proxy_mode(proxy_config: Any) -> str:
     return "unknown"
 
 
+def _transcript_proxy_mode_list(configs: list[Any]) -> str:
+    if not configs:
+        return "none"
+    if isinstance(configs[0], WebshareProxyConfig):
+        return "webshare"
+    if len(configs) == 1:
+        return "generic"
+    return f"multi_generic({len(configs)})"
+
+
+def _proxy_hosts_summary(configs: list[Any]) -> str:
+    if not configs:
+        return "(none)"
+    parts = [f"[{i}]{_proxy_host_for_logs(c)}" for i, c in enumerate(configs)]
+    return "; ".join(parts)[:400]
+
+
 def _requests_proxies_from_ytt_config(proxy_config: Any) -> Optional[dict[str, str]]:
     """Same proxy dict youtube_transcript_api uses (via ProxyConfig.to_requests_dict)."""
     if proxy_config is None:
@@ -81,46 +119,52 @@ def _requests_proxies_from_ytt_config(proxy_config: Any) -> Optional[dict[str, s
         return None
 
 
-def _build_proxy_config():
-    """Build proxy config from environment variables, if set."""
+def _build_proxy_configs() -> list[Any]:
+    """Ordered proxy configs: Webshare (single) wins; else one GenericProxyConfig per URL."""
     ws_user = os.environ.get("WEBSHARE_PROXY_USER", "").strip()
     ws_pass = os.environ.get("WEBSHARE_PROXY_PW", "").strip()
     if ws_user and ws_pass:
         cfg = WebshareProxyConfig(proxy_username=ws_user, proxy_password=ws_pass)
         host = _proxy_host_for_logs(cfg)
-        logger.info("[youtube] proxy: configured (mode=webshare, host=%s)", host)
-        print(f"[youtube] proxy: configured (mode=webshare, host={host})")
-        return cfg
+        logger.info("[youtube] proxy: 1 config (webshare, host=%s)", host)
+        print(f"[youtube] proxy: 1 config (webshare, host={host})")
+        return [cfg]
 
-    proxy_url = os.environ.get("YOUTUBE_PROXY_URL", "").strip()
-    if proxy_url:
-        cfg = GenericProxyConfig(https_url=proxy_url)
-        host = _proxy_host_for_logs(cfg)
-        logger.info("[youtube] proxy: configured (mode=generic, host=%s)", host)
-        print(f"[youtube] proxy: configured (mode=generic, host={host})")
-        return cfg
+    urls = parse_generic_proxy_url_list()
+    if urls:
+        cfgs = [GenericProxyConfig(https_url=u) for u in urls]
+        labels = [_proxy_host_for_logs(c) for c in cfgs]
+        logger.info(
+            "[youtube] proxy: %d generic URL(s) configured (order=%s)",
+            len(cfgs),
+            labels,
+        )
+        print(f"[youtube] proxy: {len(cfgs)} generic proxy URL(s) configured (try in order)")
+        return cfgs
 
     yt_nonempty = bool(os.environ.get("YOUTUBE_PROXY_URL", "").strip())
+    yts_nonempty = bool(os.environ.get("YOUTUBE_PROXY_URLS", "").strip())
     ws_user_set = bool(os.environ.get("WEBSHARE_PROXY_USER", "").strip())
     ws_pass_set = bool(os.environ.get("WEBSHARE_PROXY_PW", "").strip())
     logger.info(
         "[youtube] proxy: not configured — transcript uses server egress "
-        "(YOUTUBE_PROXY_URL non-empty=%s; WEBSHARE user/pass set=%s/%s; value not logged)",
+        "(YOUTUBE_PROXY_URL non-empty=%s; YOUTUBE_PROXY_URLS non-empty=%s; WEBSHARE user/pass set=%s/%s)",
         yt_nonempty,
+        yts_nonempty,
         ws_user_set,
         ws_pass_set,
     )
     print("[youtube] proxy: not configured — transcript requests use server egress (no proxy)")
-    return None
+    return []
 
 
-_proxy_config: Any = None
+_proxy_configs: list[Any] = []
 
 
 def reload_proxy_config_from_env() -> None:
     """Re-read proxy settings from the environment (call after .env load / at app startup)."""
-    global _proxy_config, _proxy_egress_observed_ip, _proxy_egress_check_outcome, _proxy_egress_check_message
-    _proxy_config = _build_proxy_config()
+    global _proxy_configs, _proxy_egress_observed_ip, _proxy_egress_check_outcome, _proxy_egress_check_message
+    _proxy_configs = _build_proxy_configs()
     _proxy_egress_observed_ip = None
     _proxy_egress_check_outcome = "not_run"
     _proxy_egress_check_message = ""
@@ -131,12 +175,12 @@ reload_proxy_config_from_env()
 
 def run_proxy_egress_verification_at_startup() -> None:
     """
-    One outbound HTTPS request through the same proxy dict as YouTubeTranscriptApi.
-    Runs once at app startup when a proxy is configured (unless disabled via env).
+    For each configured proxy, one outbound HTTPS request through the same proxy dict
+    as YouTubeTranscriptApi. Logs per-index results; overall ok if any succeeds.
     """
     global _proxy_egress_observed_ip, _proxy_egress_check_outcome, _proxy_egress_check_message
 
-    if _proxy_config is None:
+    if not _proxy_configs:
         _proxy_egress_check_outcome = "no_proxy"
         _proxy_egress_check_message = "no proxy configured"
         return
@@ -145,85 +189,96 @@ def run_proxy_egress_verification_at_startup() -> None:
     if not verify:
         _proxy_egress_check_outcome = "skipped"
         _proxy_egress_check_message = "YOUTUBE_PROXY_VERIFY_EGRESS disabled"
+        mode = _transcript_proxy_mode_list(_proxy_configs)
         logger.info(
-            "[youtube] proxy: transcript path will use proxy (mode=%s) — egress verification skipped (YOUTUBE_PROXY_VERIFY_EGRESS=0)",
-            _transcript_proxy_mode(_proxy_config),
+            "[youtube] proxy: %d config(s) (mode=%s) — egress verification skipped (YOUTUBE_PROXY_VERIFY_EGRESS=0)",
+            len(_proxy_configs),
+            mode,
         )
         print(
-            f"[youtube] proxy: transcript path will use proxy (mode={_transcript_proxy_mode(_proxy_config)}) "
+            f"[youtube] proxy: {len(_proxy_configs)} config(s) (mode={mode}) "
             "— egress verification skipped (YOUTUBE_PROXY_VERIFY_EGRESS=0)"
         )
         return
 
-    proxies = _requests_proxies_from_ytt_config(_proxy_config)
-    if not proxies:
-        _proxy_egress_check_outcome = "failed"
-        _proxy_egress_check_message = "could not derive requests proxy dict from config"
-        logger.error(
-            "[youtube] proxy: configured but egress check aborted — %s",
-            _proxy_egress_check_message,
-        )
-        print(f"[youtube] proxy: configured but egress check aborted — {_proxy_egress_check_message}")
-        return
-
     echo_url = os.environ.get("YOUTUBE_PROXY_IP_ECHO_URL", _DEFAULT_IP_ECHO_URL).strip() or _DEFAULT_IP_ECHO_URL
-    mode = _transcript_proxy_mode(_proxy_config)
-    host = _proxy_host_for_logs(_proxy_config)
+    timeout = float(os.environ.get("YOUTUBE_PROXY_EGRESS_TIMEOUT", "15"))
+    mode = _transcript_proxy_mode_list(_proxy_configs)
+    n = len(_proxy_configs)
     logger.info(
-        "[youtube] proxy: verifying egress via same proxy as transcripts (mode=%s, host=%s, echo=%s)",
+        "[youtube] proxy: verifying egress for %d config(s) (mode=%s, echo=%s)",
+        n,
         mode,
-        host,
         echo_url,
     )
-    print(
-        f"[youtube] proxy: verifying egress via same proxy as transcripts "
-        f"(mode={mode}, host={host}, echo={echo_url})"
-    )
+    print(f"[youtube] proxy: verifying egress for {n} proxy config(s) (mode={mode}, echo={echo_url})")
 
-    try:
-        resp = requests.get(
-            echo_url,
-            proxies=proxies,
-            timeout=float(os.environ.get("YOUTUBE_PROXY_EGRESS_TIMEOUT", "15")),
-            headers={"User-Agent": "MemoNext-YouTube-proxy-verify/1.0"},
-        )
-        body = (resp.text or "").strip()
-        if resp.status_code != 200:
-            _proxy_egress_check_outcome = "failed"
-            _proxy_egress_check_message = f"HTTP {resp.status_code}"
-            logger.error(
-                "[youtube] proxy: egress verification failed — HTTP %s (body prefix=%r)",
-                resp.status_code,
-                body[:80],
+    per_results: list[str] = []
+    any_ok = False
+    for i, cfg in enumerate(_proxy_configs):
+        host = _proxy_host_for_logs(cfg)
+        proxies = _requests_proxies_from_ytt_config(cfg)
+        if not proxies:
+            per_results.append(f"[{i}]no_dict")
+            logger.error("[youtube] proxy[%d/%d]: could not build requests proxy dict (host=%s)", i + 1, n, host)
+            continue
+        logger.info("[youtube] proxy[%d/%d]: egress check starting (host=%s)", i + 1, n, host)
+        try:
+            resp = requests.get(
+                echo_url,
+                proxies=proxies,
+                timeout=timeout,
+                headers={"User-Agent": "MemoNext-YouTube-proxy-verify/1.0"},
             )
-            print(f"[youtube] proxy: egress verification failed — HTTP {resp.status_code}")
-            return
-        first_line = body.splitlines()[0].strip() if body else ""
-        if not _IP_RE.match(first_line):
-            _proxy_egress_check_outcome = "failed"
-            _proxy_egress_check_message = "response was not a plain IP"
-            logger.error(
-                "[youtube] proxy: egress verification failed — body is not a plain IP (prefix=%r)",
-                body[:80],
+            body = (resp.text or "").strip()
+            if resp.status_code != 200:
+                per_results.append(f"[{i}]http{resp.status_code}")
+                logger.error(
+                    "[youtube] proxy[%d/%d]: egress failed — HTTP %s (host=%s)",
+                    i + 1,
+                    n,
+                    resp.status_code,
+                    host,
+                )
+                continue
+            first_line = body.splitlines()[0].strip() if body else ""
+            if not _IP_RE.match(first_line):
+                per_results.append(f"[{i}]bad_body")
+                logger.error(
+                    "[youtube] proxy[%d/%d]: egress failed — not plain IP (host=%s)",
+                    i + 1,
+                    n,
+                    host,
+                )
+                continue
+            per_results.append(f"[{i}]ok")
+            if not any_ok:
+                _proxy_egress_observed_ip = first_line
+            any_ok = True
+            logger.info(
+                "[youtube] proxy[%d/%d]: egress OK — observed IP %s (host=%s)",
+                i + 1,
+                n,
+                first_line,
+                host,
             )
-            print("[youtube] proxy: egress verification failed — body is not a plain IP")
-            return
-        _proxy_egress_observed_ip = first_line
+            print(
+                f"[youtube] proxy[{i + 1}/{n}]: egress OK — IP {first_line} (host={host})"
+            )
+        except requests.RequestException as exc:
+            per_results.append(f"[{i}]{type(exc).__name__}")
+            logger.error("[youtube] proxy[%d/%d]: egress failed — %s (host=%s)", i + 1, n, exc, host)
+
+    summary = "; ".join(per_results)
+    if any_ok:
         _proxy_egress_check_outcome = "ok"
-        _proxy_egress_check_message = "ok"
-        logger.info(
-            "[youtube] proxy: egress verification OK — observed outbound IP %s (same requests proxy dict as transcripts)",
-            _proxy_egress_observed_ip,
-        )
-        print(
-            f"[youtube] proxy: egress verification OK — observed outbound IP {_proxy_egress_observed_ip} "
-            "(same requests proxy dict as transcripts)"
-        )
-    except requests.RequestException as exc:
+        _proxy_egress_check_message = summary
+        logger.info("[youtube] proxy: egress summary (at least one OK) — %s", summary)
+    else:
         _proxy_egress_check_outcome = "failed"
-        _proxy_egress_check_message = str(exc)
-        logger.error("[youtube] proxy: egress verification failed — %s", exc)
-        print(f"[youtube] proxy: egress verification failed — {exc}")
+        _proxy_egress_check_message = summary or "all failed"
+        logger.error("[youtube] proxy: egress verification — all %d proxy config(s) failed — %s", n, summary)
+        print(f"[youtube] proxy: egress verification — all {n} proxy config(s) failed")
 
 
 def extract_video_id(url: str) -> Optional[str]:
@@ -302,8 +357,10 @@ class ProxyEgressStatusResponse(BaseModel):
     """Admin-only: proxy flags and last egress verification (no secrets)."""
 
     proxy_configured: bool
+    proxy_count: int = 0
     transcript_proxy_mode: str
     proxy_host_safe: str
+    proxy_hosts_safe: str = ""
     egress_check_outcome: str
     egress_check_message: str
     egress_observed_ip: Optional[str] = None
@@ -312,10 +369,14 @@ class ProxyEgressStatusResponse(BaseModel):
 @router.get("/proxy-egress-status", response_model=ProxyEgressStatusResponse, dependencies=[Depends(require_admin_key)])
 async def proxy_egress_status():
     """Debug: whether YouTube transcript proxy is configured and egress verification result."""
+    n = len(_proxy_configs)
+    first = _proxy_configs[0] if _proxy_configs else None
     return ProxyEgressStatusResponse(
-        proxy_configured=_proxy_config is not None,
-        transcript_proxy_mode=_transcript_proxy_mode(_proxy_config),
-        proxy_host_safe=_proxy_host_for_logs(_proxy_config),
+        proxy_configured=bool(_proxy_configs),
+        proxy_count=n,
+        transcript_proxy_mode=_transcript_proxy_mode_list(_proxy_configs),
+        proxy_host_safe=_proxy_host_for_logs(first),
+        proxy_hosts_safe=_proxy_hosts_summary(_proxy_configs),
         egress_check_outcome=_proxy_egress_check_outcome,
         egress_check_message=_proxy_egress_check_message,
         egress_observed_ip=_proxy_egress_observed_ip,
@@ -327,7 +388,40 @@ def _is_ip_block_error(exc: Exception) -> bool:
     return any(kw in msg for kw in (
         "ip", "block", "cloud provider", "too many requests",
         "429", "/sorry", "max retries exceeded", "responseerror",
+        "403", "502", "503", "504", "proxy", "connection refused",
+        "connection reset", "tunnel connection failed", "connect timeout",
+        "timed out", "ssl", "certificate",
     ))
+
+
+def _should_try_next_proxy_for_transcript(exc: Exception) -> bool:
+    """True only for proxy/network/block-style failures — not missing captions or bad URL."""
+    if isinstance(
+        exc,
+        (
+            NoTranscriptFound,
+            TranscriptsDisabled,
+            VideoUnavailable,
+            InvalidVideoId,
+            AgeRestricted,
+            VideoUnplayable,
+            NotTranslatable,
+            TranslationLanguageNotAvailable,
+            CookieError,
+            CookieInvalid,
+            CookiePathInvalid,
+            FailedToCreateConsentCookie,
+            YouTubeDataUnparsable,
+        ),
+    ):
+        return False
+    if isinstance(exc, (IpBlocked, RequestBlocked, PoTokenRequired)):
+        return True
+    if isinstance(exc, YouTubeRequestFailed):
+        return True
+    if isinstance(exc, CouldNotRetrieveTranscript):
+        return _is_ip_block_error(exc)
+    return _is_ip_block_error(exc)
 
 
 def _enumerate_available_transcripts(tlist) -> list[tuple[str, str, bool]]:
@@ -393,10 +487,12 @@ async def get_transcript(payload: TranscriptRequest):
         f"duration_seconds={duration_seconds if duration_seconds is not None else 'unknown'}"
     )
 
-    path = "proxy" if _proxy_config else "direct"
-    mode = _transcript_proxy_mode(_proxy_config)
+    attempts = _proxy_configs if _proxy_configs else [None]
+    n_attempts = len(attempts)
+    path = "proxy" if _proxy_configs else "direct"
+    mode = _transcript_proxy_mode_list(_proxy_configs)
     egress_suffix = ""
-    if _proxy_config:
+    if _proxy_configs:
         if _proxy_egress_check_outcome == "ok" and _proxy_egress_observed_ip:
             egress_suffix = f", confirmed_egress_ip={_proxy_egress_observed_ip}"
         elif _proxy_egress_check_outcome == "failed":
@@ -406,63 +502,110 @@ async def get_transcript(payload: TranscriptRequest):
         elif _proxy_egress_check_outcome == "not_run":
             egress_suffix = ", egress_check=not_run"
     logger.info(
-        "[youtube] transcript: starting fetch video_id=%s (path=%s, mode=%s%s)",
+        "[youtube] transcript: starting fetch video_id=%s (path=%s, mode=%s, proxies=%d%s)",
         video_id,
         path,
         mode,
+        n_attempts,
         egress_suffix,
     )
     print(
-        f"[youtube] transcript: starting fetch (path={path}, mode={mode}{egress_suffix})"
+        f"[youtube] transcript: starting fetch (path={path}, mode={mode}, proxies={n_attempts}{egress_suffix})"
     )
-    try:
-        ytt_api = YouTubeTranscriptApi(proxy_config=_proxy_config)
-        tlist = ytt_api.list(video_id)
-        available = _enumerate_available_transcripts(tlist)
-        lang_order = _transcript_language_fetch_order(available)
-        avail_summary = [(a[0], a[1], a[2]) for a in available]
+
+    transcript_list = None
+    picked = None
+    last_exc: Optional[Exception] = None
+    last_attempt_idx: int = 0
+
+    for attempt_idx, cfg in enumerate(attempts):
+        last_attempt_idx = attempt_idx
+        host = _proxy_host_for_logs(cfg)
         logger.info(
-            "[youtube] transcript: available languages (code, name, generated)=%s; fetch_order=%s",
-            avail_summary,
-            lang_order,
-        )
-        print(
-            f"[youtube] transcript: available={[a[0] for a in available]} "
-            f"fetch_order={lang_order}"
-        )
-        picked = tlist.find_transcript(lang_order)
-        transcript_list = picked.fetch(preserve_formatting=False)
-        logger.info(
-            "[youtube] transcript: fetch ok video_id=%s (path=%s, language_code=%s)",
+            "[youtube] transcript: trying proxy index %d/%d (host=%s) video_id=%s",
+            attempt_idx + 1,
+            n_attempts,
+            host,
             video_id,
-            path,
-            getattr(picked, "language_code", None),
         )
-        print(
-            f"[youtube] Transcript fetch for {video_id}: ok "
-            f"(path={path}, language={getattr(picked, 'language_code', '?')})"
-        )
-    except HTTPException:
-        raise
-    except NoTranscriptFound as exc:
-        print(f"[youtube] Transcript fetch for {video_id}: FAILED — {exc}")
-        logger.warning("Transcript fetch for %s: no matching language — %s", video_id, exc)
-        raise HTTPException(
-            status_code=422,
-            detail={
-                "message": "No transcript available in a supported language for this video.",
-                "title": title,
-            },
-        )
-    except Exception as exc:
-        print(f"[youtube] Transcript fetch for {video_id}: FAILED — {exc}")
-        logger.warning("Transcript fetch for %s: failed — %s", video_id, exc)
-        if _proxy_config and _is_ip_block_error(exc):
+        print(f"[youtube] transcript: try {attempt_idx + 1}/{n_attempts} (host={host})")
+        try:
+            ytt_api = YouTubeTranscriptApi(proxy_config=cfg)
+            tlist = ytt_api.list(video_id)
+            available = _enumerate_available_transcripts(tlist)
+            lang_order = _transcript_language_fetch_order(available)
+            avail_summary = [(a[0], a[1], a[2]) for a in available]
+            logger.info(
+                "[youtube] transcript: available languages (code, name, generated)=%s; fetch_order=%s",
+                avail_summary,
+                lang_order,
+            )
+            print(
+                f"[youtube] transcript: available={[a[0] for a in available]} "
+                f"fetch_order={lang_order}"
+            )
+            picked = tlist.find_transcript(lang_order)
+            transcript_list = picked.fetch(preserve_formatting=False)
+            logger.info(
+                "[youtube] transcript: success via index %d/%d (host=%s) video_id=%s language_code=%s",
+                attempt_idx + 1,
+                n_attempts,
+                host,
+                video_id,
+                getattr(picked, "language_code", None),
+            )
+            print(
+                f"[youtube] Transcript fetch for {video_id}: ok "
+                f"(proxy_index={attempt_idx + 1}/{n_attempts}, language={getattr(picked, 'language_code', '?')})"
+            )
+            break
+        except HTTPException:
+            raise
+        except NoTranscriptFound as exc:
+            print(f"[youtube] Transcript fetch for {video_id}: FAILED — {exc}")
+            logger.warning("Transcript fetch for %s: no matching language — %s", video_id, exc)
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "message": "No transcript available in a supported language for this video.",
+                    "title": title,
+                },
+            )
+        except Exception as exc:
+            last_exc = exc
+            print(f"[youtube] Transcript fetch for {video_id}: FAILED — {exc}")
+            logger.warning(
+                "Transcript fetch for %s: failed (proxy_index=%d/%d, host=%s) — %s",
+                video_id,
+                attempt_idx + 1,
+                n_attempts,
+                host,
+                exc,
+            )
+            if (
+                _proxy_configs
+                and _should_try_next_proxy_for_transcript(exc)
+                and attempt_idx < n_attempts - 1
+            ):
+                logger.warning(
+                    "[youtube] transcript: proxy failure is retryable — trying next proxy (%d/%d tried)",
+                    attempt_idx + 1,
+                    n_attempts,
+                )
+                print(
+                    f"[youtube] transcript: retryable failure on proxy {attempt_idx + 1}/{n_attempts}, trying next"
+                )
+                continue
+            break
+
+    if transcript_list is None:
+        exc = last_exc or RuntimeError("transcript fetch failed with no exception recorded")
+        if _proxy_configs and _is_ip_block_error(exc):
             if _proxy_egress_check_outcome == "ok" and _proxy_egress_observed_ip:
                 logger.warning(
                     "[youtube] transcript: YouTube blocked or IP-related error while proxy was configured — "
-                    "egress verification previously observed IP %s via the same proxy dict as transcripts "
-                    "(transcript fetch still failed; may be YouTube-side block for that IP)",
+                    "egress verification previously observed IP %s (first successful proxy check) — "
+                    "all transcript proxy attempts failed or last error was block-like",
                     _proxy_egress_observed_ip,
                 )
                 print(
@@ -472,13 +615,22 @@ async def get_transcript(payload: TranscriptRequest):
             else:
                 logger.warning(
                     "[youtube] transcript: YouTube block/error with proxy configured — "
-                    "egress verification did not succeed (outcome=%s); proxy may not be applied to outbound traffic",
+                    "egress verification outcome=%s; proxy application uncertain",
                     _proxy_egress_check_outcome,
                 )
                 print(
                     f"[youtube] transcript: YouTube block/error with proxy — "
                     f"egress verification outcome={_proxy_egress_check_outcome} (proxy application uncertain)"
                 )
+        if _proxy_configs and n_attempts > 1 and last_attempt_idx == n_attempts - 1:
+            logger.error(
+                "[youtube] transcript: all %d proxy config(s) exhausted without success (last_error=%s)",
+                n_attempts,
+                type(exc).__name__,
+            )
+            print(
+                f"[youtube] transcript: all {n_attempts} proxies exhausted (last: {type(exc).__name__})"
+            )
         if _is_ip_block_error(exc):
             raise HTTPException(
                 status_code=503,

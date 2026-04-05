@@ -18,7 +18,9 @@ cd apps/api
 if [ -d .venv313 ]; then source .venv313/bin/activate; elif [ -d .venv ]; then source .venv/bin/activate; fi
 echo "Syncing API dependencies (requirements.txt)..."
 python -m pip install -q -r requirements.txt
-uvicorn main:app --reload --port 8080 &
+# --reload-delay: debounce rapid mtime updates (Dropbox/cloud sync, IDE safe-writes)
+# so WatchFiles does not reload in a tight loop on the same .py files.
+uvicorn main:app --reload --reload-delay 1.25 --port 8080 &
 BACKEND_PID=$!
 cd "$PROJECT_ROOT"
 

@@ -10,10 +10,9 @@ import os
 import re
 import time
 
-import requests
-
 from app.llm.cache import get_cached_response, save_cached_response
 from app.llm.cost_tracker import log_llm_usage, log_usage_unavailable
+from app.llm.direct_outbound import get_llm_requests_session, groq_client, openai_client
 
 logger = logging.getLogger(__name__)
 
@@ -68,8 +67,7 @@ def _generate_groq(prompt: str, temperature: float, max_tokens: int) -> str:
     if not api_key:
         raise ValueError("GROQ_API_KEY not configured")
     model = (os.getenv("GROQ_MODEL") or "").strip() or DEFAULT_MODELS["groq"]
-    from groq import Groq
-    client = Groq(api_key=api_key)
+    client = groq_client(api_key)
     kwargs = {
         "model": model,
         "messages": [
@@ -109,7 +107,6 @@ def _generate_openrouter(prompt: str, temperature: float, max_tokens: int) -> st
     if not api_key:
         raise ValueError("OPENROUTER_API_KEY not configured")
     model = (os.getenv("OPENROUTER_MODEL") or "").strip() or DEFAULT_MODELS["openrouter"]
-    import requests
     payload = {
         "model": model,
         "messages": [
@@ -121,7 +118,7 @@ def _generate_openrouter(prompt: str, temperature: float, max_tokens: int) -> st
     }
     if max_tokens:
         payload["max_tokens"] = max_tokens
-    resp = requests.post(
+    resp = get_llm_requests_session().post(
         "https://openrouter.ai/api/v1/chat/completions",
         headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
         json=payload,
@@ -183,7 +180,8 @@ def _generate_gemini(prompt: str, temperature: float, max_tokens: int) -> str:
         return cfg
 
     def post_payload(payload: dict) -> dict:
-        resp = requests.post(
+        sess = get_llm_requests_session()
+        resp = sess.post(
             url,
             headers={"Content-Type": "application/json"},
             json=payload,
@@ -198,7 +196,7 @@ def _generate_gemini(prompt: str, temperature: float, max_tokens: int) -> str:
                 )
                 gc = generation_config(min(max_tokens, cap), False)
                 payload["generationConfig"] = gc
-                resp = requests.post(
+                resp = sess.post(
                     url,
                     headers={"Content-Type": "application/json"},
                     json=payload,
@@ -359,8 +357,7 @@ def _generate_openai(prompt: str, temperature: float, max_tokens: int) -> str:
     if not api_key:
         raise ValueError("OPENAI_API_KEY not configured")
     model = (os.getenv("OPENAI_MODEL") or "").strip() or DEFAULT_MODELS["openai"]
-    from openai import OpenAI
-    client = OpenAI(api_key=api_key)
+    client = openai_client(api_key)
     kwargs = {
         "model": model,
         "messages": [

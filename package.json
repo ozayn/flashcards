@@ -4,7 +4,7 @@
   "scripts": {
     "dev": "npm run dev --workspace=web",
     "dev:web": "npm run dev --workspace=web",
-    "dev:api": "cd apps/api && uvicorn app.main:app --reload",
+    "dev:api": "cd apps/api && uvicorn main:app --reload --reload-delay 1.25",
     "build:web": "npm run build --workspace=web",
     "build:api": "cd apps/api && pip install -r requirements.txt"
   },

@@ -13,6 +13,8 @@ from bs4 import BeautifulSoup
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
+from app.core.proxy_env import parse_generic_proxy_url_list
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/webpage", tags=["webpage"])
@@ -130,9 +132,8 @@ def _validate_response(resp: requests.Response) -> None:
 # Proxy + fetch logic
 # ---------------------------------------------------------------------------
 
-def _get_proxy_url() -> Optional[str]:
-    url = os.environ.get("YOUTUBE_PROXY_URL", "").strip()
-    return url or None
+def _get_proxy_urls() -> list[str]:
+    return parse_generic_proxy_url_list()
 
 
 def _safe_proxy_label(proxy_url: str) -> str:
@@ -140,11 +141,16 @@ def _safe_proxy_label(proxy_url: str) -> str:
 
 
 def log_webpage_proxy_status() -> None:
-    """Log whether YOUTUBE_PROXY_URL is set (called at app startup after .env reload)."""
-    proxy_url = _get_proxy_url()
-    if proxy_url:
-        logger.info("[webpage] proxy: configured for fallback fetch (host=%s)", _safe_proxy_label(proxy_url))
-        print(f"[webpage] Proxy configured: {_safe_proxy_label(proxy_url)}")
+    """Log generic proxy URL list for webpage fallback (YOUTUBE_PROXY_URL + YOUTUBE_PROXY_URLS)."""
+    urls = _get_proxy_urls()
+    if urls:
+        labels = [_safe_proxy_label(u) for u in urls]
+        logger.info(
+            "[webpage] proxy: %d URL(s) for fallback fetch (order=%s)",
+            len(urls),
+            labels,
+        )
+        print(f"[webpage] Proxy: {len(urls)} URL(s) for fallback — try in order")
     else:
         logger.info("[webpage] proxy: not configured — webpage proxy fallback disabled")
         print("[webpage] Proxy: NONE — proxy fallback disabled")
@@ -162,10 +168,38 @@ def _is_block_response(resp: requests.Response) -> bool:
 
 
 def _is_block_exception(exc: Exception) -> bool:
-    """Return True if a network exception plausibly reflects IP blocking."""
+    """Return True if a network exception plausibly reflects IP blocking or proxy failure."""
     msg = str(exc).lower()
-    return any(kw in msg for kw in ("403", "429", "503", "blocked", "captcha",
-                                     "access denied", "max retries", "/sorry"))
+    return any(
+        kw in msg
+        for kw in (
+            "403",
+            "429",
+            "503",
+            "502",
+            "504",
+            "blocked",
+            "captcha",
+            "access denied",
+            "max retries",
+            "/sorry",
+            "proxy",
+            "connection refused",
+            "connection reset",
+            "tunnel connection failed",
+            "connect timeout",
+            "timed out",
+        )
+    )
+
+
+def _proxy_failure_allows_next(resp: Optional[requests.Response], exc: Optional[Exception]) -> bool:
+    """True when trying the next proxy might help (block / rate limit / proxy transport)."""
+    if resp is not None and _is_block_response(resp):
+        return True
+    if exc is not None and _is_block_exception(exc):
+        return True
+    return False
 
 
 def _fetch_url(url: str, proxies: Optional[dict] = None) -> requests.Response:
@@ -186,45 +220,69 @@ def _fetch_url(url: str, proxies: Optional[dict] = None) -> requests.Response:
 
 
 def _fetch_with_proxy_fallback(url: str) -> requests.Response:
-    """Fetch URL directly first; retry through proxy if the response looks blocked."""
+    """Fetch URL directly first; retry through each configured proxy in order on block-like failure."""
     print(f"[webpage] Direct fetch: {url}")
+    direct_resp: Optional[requests.Response] = None
+    direct_exc: Optional[Exception] = None
     try:
-        resp = _fetch_url(url)
-        _validate_redirect_chain(resp)
-        _validate_response(resp)
-        if _is_block_response(resp):
-            print(f"[webpage] Direct fetch blocked (HTTP {resp.status_code}), will retry with proxy")
+        direct_resp = _fetch_url(url)
+        _validate_redirect_chain(direct_resp)
+        _validate_response(direct_resp)
+        if _is_block_response(direct_resp):
+            print(f"[webpage] Direct fetch blocked (HTTP {direct_resp.status_code}), will try proxy list")
         else:
-            resp.raise_for_status()
-            print(f"[webpage] Direct fetch succeeded (HTTP {resp.status_code})")
-            return resp
+            direct_resp.raise_for_status()
+            print(f"[webpage] Direct fetch succeeded (HTTP {direct_resp.status_code})")
+            return direct_resp
     except _UrlValidationError:
         raise
     except requests.RequestException as exc:
+        direct_exc = exc
         if not _is_block_exception(exc):
             print(f"[webpage] Direct fetch failed (non-block): {exc}")
             raise
         print(f"[webpage] Direct fetch failed (block-like): {exc}")
 
-    proxy = _get_proxy_url()
-    if not proxy:
+    if not _proxy_failure_allows_next(direct_resp, direct_exc):
+        if direct_resp is not None:
+            direct_resp.raise_for_status()
+        assert direct_exc is not None
+        raise direct_exc
+
+    proxy_urls = _get_proxy_urls()
+    if not proxy_urls:
         print("[webpage] No proxy configured — cannot retry")
         raise requests.RequestException("Page fetch was blocked and no proxy is available")
 
-    print(f"[webpage] Proxy retry: {_safe_proxy_label(proxy)}")
-    proxy_dict = {"https": proxy, "http": proxy}
-    try:
-        resp = _fetch_url(url, proxies=proxy_dict)
-        _validate_redirect_chain(resp)
-        _validate_response(resp)
-        resp.raise_for_status()
-        print(f"[webpage] Proxy fetch succeeded (HTTP {resp.status_code})")
-        return resp
-    except _UrlValidationError:
-        raise
-    except requests.RequestException as exc:
-        print(f"[webpage] Proxy fetch failed: {exc}")
-        raise
+    n = len(proxy_urls)
+    for i, proxy in enumerate(proxy_urls):
+        label = _safe_proxy_label(proxy)
+        logger.info("[webpage] proxy try %d/%d (host=%s)", i + 1, n, label)
+        print(f"[webpage] Proxy try {i + 1}/{n}: {label}")
+        proxy_dict = {"https": proxy, "http": proxy}
+        try:
+            resp = _fetch_url(url, proxies=proxy_dict)
+            _validate_redirect_chain(resp)
+            _validate_response(resp)
+            if _is_block_response(resp):
+                print(f"[webpage] Proxy {i + 1}/{n} returned block-like response (HTTP {resp.status_code})")
+                if i < n - 1:
+                    continue
+                resp.raise_for_status()
+            resp.raise_for_status()
+            logger.info("[webpage] fetch succeeded via proxy index %d/%d (host=%s)", i + 1, n, label)
+            print(f"[webpage] Proxy fetch succeeded ({i + 1}/{n}, HTTP {resp.status_code})")
+            return resp
+        except _UrlValidationError:
+            raise
+        except requests.RequestException as exc:
+            print(f"[webpage] Proxy {i + 1}/{n} failed: {exc}")
+            if i < n - 1 and _is_block_exception(exc):
+                continue
+            if i == n - 1:
+                logger.error("[webpage] all %d proxy URL(s) failed", n)
+                print(f"[webpage] All {n} proxies failed")
+            raise
 
 
 def _is_wikipedia_url(url: str) -> bool:

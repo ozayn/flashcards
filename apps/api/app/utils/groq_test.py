@@ -49,17 +49,17 @@ def main():
         sys.exit(1)
 
     try:
-        from groq import Groq
+        from app.llm.direct_outbound import groq_client
     except ImportError:
         print(
-            "Error: groq not installed. Activate the venv and install:\n"
-            "  cd apps/api && source .venv/bin/activate && pip install groq\n"
-            "Or run: ./scripts/groq_test.sh",
+            "Error: cannot import app package — run from apps/api, e.g.:\n"
+            "  cd apps/api && python -m app.utils.groq_test\n"
+            "Or use: ./scripts/groq_test.sh",
             file=sys.stderr,
         )
         sys.exit(1)
 
-    client = Groq(api_key=api_key)
+    client = groq_client(api_key)
 
     prompt = "Generate 2 flashcards about Greek mythology as JSON."
     print(f"Prompt: {prompt}\n")

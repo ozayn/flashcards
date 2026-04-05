@@ -29,6 +29,8 @@ from app.api import admin, generation, health, decks, users, flashcards, reviews
 from app.core.database import engine, Base
 from app.core.init_db import init_db
 from app.core.auth import require_admin_key
+from app.core.dev_logging import attach_dev_access_log_filter
+from app.llm.direct_outbound import log_llm_outbound_isolation_once
 from app.models import User, Deck, Flashcard, Review  # noqa: F401 - register models
 
 _is_production = os.environ.get("ENVIRONMENT", "development").lower() == "production"
@@ -173,6 +175,8 @@ async def protected_ping():
 async def startup():
     import logging
 
+    attach_dev_access_log_filter()
+
     log = logging.getLogger("uvicorn.error")
     if LOADED_ENV_FILES:
         log.info("Env files loaded (later overrides earlier): %s", LOADED_ENV_FILES)
@@ -188,6 +192,7 @@ async def startup():
         log.warning(f"Database setup skipped (connect to PostgreSQL to enable): {e}")
 
     try:
+        log_llm_outbound_isolation_once()
         youtube.reload_proxy_config_from_env()
         webpage.log_webpage_proxy_status()
         youtube.run_proxy_egress_verification_at_startup()
