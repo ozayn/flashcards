@@ -12,10 +12,11 @@ from app.core.user_access import get_trusted_acting_user_id
 from app.models import User
 
 
-async def require_platform_admin(
-    db: AsyncSession = Depends(get_db),
-    trusted_id: Optional[str] = Depends(get_trusted_acting_user_id),
+async def assert_acting_user_is_platform_admin(
+    db: AsyncSession,
+    trusted_id: Optional[str],
 ) -> User:
+    """Same rule as /admin: acting user must be allowlisted via ADMIN_EMAILS."""
     if not trusted_id:
         raise HTTPException(status_code=401, detail="Authentication required")
     result = await db.execute(select(User).where(User.id == trusted_id))
@@ -25,3 +26,10 @@ async def require_platform_admin(
     if not email_is_admin_allowlisted(user.email):
         raise HTTPException(status_code=403, detail="Admin access required")
     return user
+
+
+async def require_platform_admin(
+    db: AsyncSession = Depends(get_db),
+    trusted_id: Optional[str] = Depends(get_trusted_acting_user_id),
+) -> User:
+    return await assert_acting_user_is_platform_admin(db, trusted_id)

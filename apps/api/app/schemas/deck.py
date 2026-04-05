@@ -62,6 +62,9 @@ class DeckResponse(BaseModel):
     category_assigned_at: Optional[datetime] = None
     created_at: datetime
     card_count: int = 0
+    owner_is_legacy: bool = False
+    owner_name: Optional[str] = None
+    owner_email: Optional[str] = None
 
     model_config = {"from_attributes": True}
 

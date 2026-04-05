@@ -1,6 +1,7 @@
 import type { NextAuthOptions } from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
 import { getBackendUrl } from "@/lib/backend-url";
+import { isAdminEmailAllowlisted } from "@/lib/admin-email-allowlist";
 import { isEmailAllowedForLogin } from "@/lib/login-email-allowlist";
 
 function googleProviders() {
@@ -91,6 +92,8 @@ export const authOptions: NextAuthOptions = {
       if (token.picture && session.user) {
         session.user.image = token.picture as string;
       }
+      const email = session.user?.email?.trim();
+      session.isPlatformAdmin = Boolean(email && isAdminEmailAllowlisted(email));
       return session;
     },
   },

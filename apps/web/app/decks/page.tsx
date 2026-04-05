@@ -17,6 +17,7 @@ import {
 import {
   Archive,
   ArchiveRestore,
+  ArrowRightLeft,
   BookOpen,
   ChevronDown,
   Eye,
@@ -30,12 +31,27 @@ import {
   SlidersHorizontal,
   Trash2,
 } from "lucide-react";
+import { useSession } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { getUsers, getDecks, getCategories, updateDeck, createCategory, updateCategory, deleteCategory, deleteDeck, moveDeckToCategory } from "@/lib/api";
-import { getStoredUserId, useClientIsAdmin } from "@/components/user-selector";
+import {
+  getUsers,
+  getDecks,
+  getCategories,
+  updateDeck,
+  createCategory,
+  updateCategory,
+  deleteCategory,
+  deleteDeck,
+  moveDeckToCategory,
+  getAdminLegacyBulkTransferPreview,
+  type LegacyBulkTransferPreview,
+} from "@/lib/api";
+import { getStoredUserId } from "@/components/user-selector";
 import PageContainer from "@/components/layout/page-container";
 import { DeckGenerationBadge } from "@/components/DeckGenerationBadge";
+import { AdminTransferDeckConfirmModal } from "@/components/AdminTransferDeckConfirmModal";
+import { AdminBulkLegacyTransferConfirmModal } from "@/components/AdminBulkLegacyTransferConfirmModal";
 import { formatDeckCreatedCalendarDate } from "@/lib/format-deck-date";
 
 const SHOW_DECK_DATES_STORAGE_KEY = "flashcards_deck_show_dates";
@@ -56,7 +72,25 @@ export type Deck = {
   created_at: string;
   card_count?: number;
   category_id?: string | null;
+  owner_is_legacy?: boolean;
+  owner_name?: string | null;
+  owner_email?: string | null;
 };
+
+function showMoveToMyAccountForDeck(
+  deck: Deck,
+  sessionStatus: string,
+  isPlatformAdmin: boolean,
+  backendUserId: string | undefined
+): boolean {
+  return (
+    sessionStatus === "authenticated" &&
+    isPlatformAdmin &&
+    Boolean(deck.owner_is_legacy) &&
+    Boolean(backendUserId) &&
+    deck.user_id !== backendUserId
+  );
+}
 
 export type Category = {
   id: string;
@@ -217,7 +251,22 @@ export default function DecksPage() {
   const [sortMode, setSortMode] = useState<"newest" | "oldest" | "az">("newest");
   const [deckLayout, setDeckLayout] = useState<"list" | "grid">("list");
   const [showDeckDates, setShowDeckDates] = useState(false);
-  const isAdminClient = useClientIsAdmin();
+  const [adminTransferTarget, setAdminTransferTarget] = useState<Deck | null>(null);
+  const [bulkLegacyTransferModalOpen, setBulkLegacyTransferModalOpen] = useState(false);
+  const [bulkPreview, setBulkPreview] = useState<LegacyBulkTransferPreview | null>(null);
+  const [bulkPreviewLoading, setBulkPreviewLoading] = useState(false);
+  const { data: session, status: sessionStatus } = useSession();
+  const isPlatformAdmin = Boolean(session?.isPlatformAdmin);
+
+  const showBulkLegacyTransferAction =
+    sessionStatus === "authenticated" &&
+    isPlatformAdmin &&
+    Boolean(session?.backendUserId) &&
+    Boolean(userId) &&
+    userId !== session.backendUserId &&
+    Boolean(bulkPreview?.is_legacy_user) &&
+    !bulkPreviewLoading &&
+    (bulkPreview?.deck_count ?? 0) > 0;
 
   useEffect(() => {
     try {
@@ -281,6 +330,35 @@ export default function DecksPage() {
     window.addEventListener("flashcard_user_changed", handleUserChanged);
     return () => window.removeEventListener("flashcard_user_changed", handleUserChanged);
   }, []);
+
+  useEffect(() => {
+    if (
+      !userId ||
+      sessionStatus !== "authenticated" ||
+      !isPlatformAdmin ||
+      !session?.backendUserId ||
+      userId === session.backendUserId
+    ) {
+      setBulkPreview(null);
+      setBulkPreviewLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setBulkPreviewLoading(true);
+    void (async () => {
+      try {
+        const p = await getAdminLegacyBulkTransferPreview(userId);
+        if (!cancelled) setBulkPreview(p);
+      } catch {
+        if (!cancelled) setBulkPreview(null);
+      } finally {
+        if (!cancelled) setBulkPreviewLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [userId, sessionStatus, isPlatformAdmin, session?.backendUserId, refreshKey]);
 
   useEffect(() => {
     if (!userId) {
@@ -642,7 +720,26 @@ export default function DecksPage() {
               <Pencil className="size-4 shrink-0" aria-hidden />
               <span>Rename deck</span>
             </button>
-            {isAdminClient && (
+            {showMoveToMyAccountForDeck(
+              deck,
+              sessionStatus,
+              isPlatformAdmin,
+              session?.backendUserId
+            ) && (
+              <button
+                type="button"
+                role="menuitem"
+                className="flex w-full items-center justify-start gap-2.5 whitespace-nowrap px-3 py-2.5 text-left text-sm hover:bg-muted focus-visible:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background max-mobile:min-h-[44px] max-mobile:py-3"
+                onClick={() => {
+                  setOpenDeckMenuId(null);
+                  setAdminTransferTarget(deck);
+                }}
+              >
+                <ArrowRightLeft className="size-4 shrink-0" aria-hidden />
+                <span>Move to my account</span>
+              </button>
+            )}
+            {sessionStatus === "authenticated" && isPlatformAdmin && (
               <button
                 type="button"
                 role="menuitem"
@@ -857,9 +954,34 @@ export default function DecksPage() {
 
   return (
     <PageContainer className="max-mobile:space-y-3">
-        <div className="flex items-center justify-between gap-2 max-mobile:gap-2">
-          <h1 className="text-2xl font-semibold tracking-tight max-mobile:text-xl shrink-0 min-w-0">Decks</h1>
-          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between max-mobile:gap-2">
+          <div className="flex flex-col gap-1 min-w-0 sm:flex-row sm:items-center sm:gap-3">
+            <h1 className="text-2xl font-semibold tracking-tight max-mobile:text-xl shrink-0 min-w-0">
+              Decks
+            </h1>
+            {bulkPreviewLoading &&
+            isPlatformAdmin &&
+            sessionStatus === "authenticated" &&
+            userId &&
+            session?.backendUserId &&
+            userId !== session.backendUserId ? (
+              <span className="text-xs text-muted-foreground whitespace-nowrap sm:sr-only">
+                Checking admin actions…
+              </span>
+            ) : null}
+          </div>
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 flex-wrap justify-end sm:justify-start">
+            {showBulkLegacyTransferAction ? (
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                className="whitespace-nowrap max-mobile:min-h-10 w-full justify-center sm:w-auto sm:justify-start"
+                onClick={() => setBulkLegacyTransferModalOpen(true)}
+              >
+                Move all decks to my account
+              </Button>
+            ) : null}
             <button
               type="button"
               onClick={() => {
@@ -1579,6 +1701,44 @@ export default function DecksPage() {
             </DndContext>
           )}
         </div>
+
+        <AdminTransferDeckConfirmModal
+          open={adminTransferTarget !== null}
+          onOpenChange={(open) => {
+            if (!open) setAdminTransferTarget(null);
+          }}
+          deck={
+            adminTransferTarget
+              ? {
+                  id: adminTransferTarget.id,
+                  owner_name: adminTransferTarget.owner_name,
+                  owner_email: adminTransferTarget.owner_email,
+                }
+              : null
+          }
+          onTransferred={(data) => {
+            const id = (data as { id: string }).id;
+            setDecks((d) => d.filter((x) => x.id !== id));
+            setRefreshKey((k) => k + 1);
+            router.refresh();
+          }}
+        />
+
+        <AdminBulkLegacyTransferConfirmModal
+          open={bulkLegacyTransferModalOpen}
+          onOpenChange={setBulkLegacyTransferModalOpen}
+          sourceUserId={
+            bulkLegacyTransferModalOpen && bulkPreview?.is_legacy_user && userId ? userId : null
+          }
+          ownerName={bulkPreview?.name ?? ""}
+          ownerEmail={bulkPreview?.email ?? ""}
+          deckCount={bulkPreview?.deck_count ?? 0}
+          onTransferred={() => {
+            setDecks([]);
+            setRefreshKey((k) => k + 1);
+            router.refresh();
+          }}
+        />
     </PageContainer>
   );
 }

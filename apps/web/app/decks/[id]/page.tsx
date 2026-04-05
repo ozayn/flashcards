@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import {
   Archive,
   ArchiveRestore,
+  ArrowRightLeft,
   ChevronRight,
   ChevronUp,
   Download,
@@ -18,6 +19,7 @@ import {
   Trash2,
   Upload,
 } from "lucide-react";
+import { useSession } from "next-auth/react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -38,7 +40,7 @@ import {
   parseYoutubeDeckSourceMetadata,
   updateDeck,
 } from "@/lib/api";
-import { getStoredUserId, useCardCountOptions, useClientIsAdmin } from "@/components/user-selector";
+import { getStoredUserId, useCardCountOptions } from "@/components/user-selector";
 import { GENERATION_TEXT_MAX_CHARS } from "@/lib/generation-text";
 import {
   peekDeckBackgroundGenerationPending,
@@ -49,6 +51,7 @@ import PageContainer from "@/components/layout/page-container";
 import FormattedText from "@/components/FormattedText";
 import { FlashcardModal } from "@/components/FlashcardModal";
 import { DeckGenerationBadge, isDeckGeneratingLike } from "@/components/DeckGenerationBadge";
+import { AdminTransferDeckConfirmModal } from "@/components/AdminTransferDeckConfirmModal";
 
 interface DeckPageProps {
   params: { id: string };
@@ -70,6 +73,9 @@ interface Deck {
   category_id?: string | null;
   user_id?: string;
   created_at?: string | null;
+  owner_is_legacy?: boolean;
+  owner_name?: string | null;
+  owner_email?: string | null;
 }
 
 interface Category {
@@ -306,6 +312,7 @@ export default function DeckPage({ params }: DeckPageProps) {
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [gridMenuOpenId, setGridMenuOpenId] = useState<string | null>(null);
   const [deckDeleteConfirm, setDeckDeleteConfirm] = useState(false);
+  const [transferConfirmOpen, setTransferConfirmOpen] = useState(false);
   const [modalCardIndex, setModalCardIndex] = useState<number | null>(null);
   const [genTopic, setGenTopic] = useState("");
   const [genText, setGenText] = useState("");
@@ -320,7 +327,8 @@ export default function DeckPage({ params }: DeckPageProps) {
   const [useNameAsTopic, setUseNameAsTopic] = useState(false);
   const [cardCount, setCardCount] = useState(10);
   const cardCountOptions = useCardCountOptions();
-  const isAdminClient = useClientIsAdmin();
+  const { data: session, status: sessionStatus } = useSession();
+  const isPlatformAdmin = Boolean(session?.isPlatformAdmin);
   const [cardView, setCardView] = useState<"list" | "grid">("grid");
   const [cardsExpanded, setCardsExpanded] = useState(false);
   const [cardSearch, setCardSearch] = useState("");
@@ -335,6 +343,12 @@ export default function DeckPage({ params }: DeckPageProps) {
 
   const currentUserId = getStoredUserId();
   const isReadOnly = Boolean(deck?.is_public && deck?.user_id && deck.user_id !== currentUserId);
+  const canOfferAdminTransfer =
+    sessionStatus === "authenticated" &&
+    isPlatformAdmin &&
+    Boolean(deck?.owner_is_legacy) &&
+    Boolean(session?.backendUserId) &&
+    deck?.user_id !== session.backendUserId;
   const [duplicating, setDuplicating] = useState(false);
 
   const processedCards = useMemo(() => {
@@ -1022,11 +1036,11 @@ export default function DeckPage({ params }: DeckPageProps) {
                 >
                   Change
                 </button>
-                {isAdminClient && (
-                  <>
-                    <span className="text-muted-foreground/50" aria-hidden>
-                      ·
-                    </span>
+                <>
+                  <span className="text-muted-foreground/50" aria-hidden>
+                    ·
+                  </span>
+                  {sessionStatus === "authenticated" && isPlatformAdmin ? (
                     <Button
                       variant="ghost"
                       size="sm"
@@ -1040,7 +1054,9 @@ export default function DeckPage({ params }: DeckPageProps) {
                         }
                       }}
                       className="h-auto min-h-[44px] sm:min-h-0 py-1.5 sm:py-0 px-1.5 text-sm font-normal text-muted-foreground hover:text-foreground"
-                      aria-label={deck.is_public ? "Deck is public; make private" : "Deck is private; make public"}
+                      aria-label={
+                        deck.is_public ? "Deck is public; remove from Library" : "Deck is private; add to Library"
+                      }
                     >
                       {deck.is_public ? (
                         <span className="text-emerald-600 dark:text-emerald-400">Public</span>
@@ -1048,8 +1064,18 @@ export default function DeckPage({ params }: DeckPageProps) {
                         "Private"
                       )}
                     </Button>
-                  </>
-                )}
+                  ) : (
+                    <span
+                      className={`text-sm ${
+                        deck.is_public
+                          ? "font-medium text-emerald-600 dark:text-emerald-400"
+                          : "text-muted-foreground"
+                      }`}
+                    >
+                      {deck.is_public ? "Public" : "Private"}
+                    </span>
+                  )}
+                </>
                 {deckDateShort && (
                   <>
                     <span className="text-muted-foreground/50" aria-hidden>
@@ -1857,6 +1883,26 @@ export default function DeckPage({ params }: DeckPageProps) {
           )}
         </section>
 
+        {canOfferAdminTransfer && deck && (
+          <section className="section space-y-3 pt-8 border-t border-border">
+            <h2 className="text-lg font-semibold">Admin</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed max-w-xl">
+              This deck belongs to a public/legacy account. You can move it into your
+              Google-linked account. Cards and source data stay the same; it will no
+              longer appear under the original owner.
+            </p>
+            <Button
+              type="button"
+              variant="secondary"
+              className="gap-2"
+              onClick={() => setTransferConfirmOpen(true)}
+            >
+              <ArrowRightLeft className="size-4 shrink-0" aria-hidden />
+              Move to my account
+            </Button>
+          </section>
+        )}
+
         {relatedDecks.length > 0 && (
           <section className="section space-y-4 pt-8 border-t border-border">
             <h2 className="text-lg font-semibold">More from this category</h2>
@@ -1930,6 +1976,28 @@ export default function DeckPage({ params }: DeckPageProps) {
             </div>
           </div>
         )}
+
+        <AdminTransferDeckConfirmModal
+          open={transferConfirmOpen}
+          onOpenChange={setTransferConfirmOpen}
+          deck={
+            transferConfirmOpen && deck
+              ? {
+                  id: deck.id,
+                  owner_name: deck.owner_name,
+                  owner_email: deck.owner_email,
+                }
+              : null
+          }
+          onTransferred={async (data) => {
+            setDeck(data as Deck);
+            if (session?.backendUserId) {
+              const cats = await getCategories(session.backendUserId);
+              setCategories(Array.isArray(cats) ? cats : []);
+            }
+            router.refresh();
+          }}
+        />
 
         {!isReadOnly && deckDeleteConfirm && (
           <div

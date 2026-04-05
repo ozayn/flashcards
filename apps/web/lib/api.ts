@@ -203,6 +203,71 @@ export async function deleteAdminUser(userId: string): Promise<void> {
   }
 }
 
+/** Platform admin: move a legacy-owned deck into the signed-in admin account. */
+export async function postAdminTransferDeckToMe(deckId: string): Promise<unknown> {
+  const res = await fetch(
+    `${API_BASE}/admin/decks/${encodeURIComponent(deckId)}/transfer-to-me`,
+    { method: "POST" }
+  );
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    const detail = err.detail;
+    throw new Error(
+      typeof detail === "string" ? detail : "Could not transfer deck"
+    );
+  }
+  return res.json();
+}
+
+export type LegacyBulkTransferPreview = {
+  source_user_id: string;
+  name: string;
+  email: string;
+  is_legacy_user: boolean;
+  deck_count: number;
+};
+
+/** Platform admin: legacy status and deck count before bulk transfer. */
+export async function getAdminLegacyBulkTransferPreview(
+  userId: string
+): Promise<LegacyBulkTransferPreview> {
+  const res = await fetch(
+    `${API_BASE}/admin/users/${encodeURIComponent(userId)}/legacy-bulk-transfer-preview`,
+    { cache: "no-store" }
+  );
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    const detail = err.detail;
+    throw new Error(
+      typeof detail === "string" ? detail : "Failed to load transfer preview"
+    );
+  }
+  return res.json();
+}
+
+export type BulkLegacyTransferResult = {
+  moved_count: number;
+  deck_ids: string[];
+};
+
+/** Platform admin: move every deck owned by a legacy user into the signed-in admin account. */
+export async function postAdminTransferAllLegacyDecksFromUser(
+  userId: string
+): Promise<BulkLegacyTransferResult> {
+  const res = await fetch(
+    `${API_BASE}/admin/users/${encodeURIComponent(userId)}/transfer-all-legacy-decks-to-me`,
+    { method: "POST" }
+  );
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    const detail = err.detail;
+    throw new Error(
+      typeof detail === "string" ? detail : "Could not transfer decks"
+    );
+  }
+  return res.json();
+}
+
 export async function createUser(data: {
   email: string;
   name: string;

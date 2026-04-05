@@ -10,7 +10,7 @@ from sqlalchemy import and_, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.product_admin import user_has_product_admin_access
+from app.core.platform_admin import assert_acting_user_is_platform_admin
 from app.core.user_access import (
     assert_may_act_as_user,
     assert_may_mutate_deck,
@@ -41,6 +41,11 @@ async def get_decks(
     decks = result.scalars().all()
     if not decks:
         return []
+    owner_result = await db.execute(select(User).where(User.id == user_id))
+    owner = owner_result.scalar_one_or_none()
+    owner_is_legacy = bool(owner and owner.google_sub is None)
+    owner_name = owner.name if owner else None
+    owner_email = owner.email if owner else None
     deck_ids = [d.id for d in decks]
     count_result = await db.execute(
         select(Flashcard.deck_id, func.count(Flashcard.id))
@@ -49,7 +54,14 @@ async def get_decks(
     )
     counts = {row[0]: row[1] for row in count_result.all()}
     return [
-        DeckResponse.model_validate(d).model_copy(update={"card_count": counts.get(d.id, 0)})
+        DeckResponse.model_validate(d).model_copy(
+            update={
+                "card_count": counts.get(d.id, 0),
+                "owner_is_legacy": owner_is_legacy,
+                "owner_name": owner_name,
+                "owner_email": owner_email,
+            }
+        )
         for d in decks
     ]
 
@@ -199,7 +211,17 @@ async def get_deck(
         select(func.count(Flashcard.id)).where(Flashcard.deck_id == deck_id)
     )
     card_count = count_result.scalar() or 0
-    return DeckResponse.model_validate(deck).model_copy(update={"card_count": card_count})
+    owner_result = await db.execute(select(User).where(User.id == deck.user_id))
+    owner = owner_result.scalar_one_or_none()
+    owner_is_legacy = bool(owner and owner.google_sub is None)
+    return DeckResponse.model_validate(deck).model_copy(
+        update={
+            "card_count": card_count,
+            "owner_is_legacy": owner_is_legacy,
+            "owner_name": owner.name if owner else None,
+            "owner_email": owner.email if owner else None,
+        }
+    )
 
 
 @router.get("/{deck_id}/related", response_model=List[DeckResponse])
@@ -275,10 +297,7 @@ async def update_deck(
         deck.archived = data.archived
 
     if data.is_public is not None:
-        owner_result = await db.execute(select(User).where(User.id == deck.user_id))
-        owner = owner_result.scalar_one_or_none()
-        if not user_has_product_admin_access(owner):
-            raise HTTPException(status_code=403, detail="Only admin users can change deck visibility.")
+        await assert_acting_user_is_platform_admin(db, trusted_id)
         deck.is_public = data.is_public
 
     if "category_id" in (data.model_dump(exclude_unset=True) or {}):
