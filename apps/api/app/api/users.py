@@ -1,11 +1,12 @@
 import hmac
+import json
 import logging
 import os
 import re
 import secrets
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,17 +21,27 @@ from app.core.login_email_allowlist import (
 )
 from app.core.user_access import (
     assert_may_act_as_user,
+    fetch_user,
     get_trusted_acting_user_id,
     list_users_visible_in_context,
+)
+from app.core.user_activity import list_user_activity, record_user_activity
+from app.core.user_tier import (
+    LIMITED_MAX_CARDS_PER_DECK,
+    LIMITED_MAX_DECKS,
+    count_active_decks_for_user,
+    user_has_elevated_tier,
 )
 from app.models import User
 from app.schemas.user import (
     GoogleOAuthSyncRequest,
+    UserActivityItem,
     UserCreate,
     UserProfileNameUpdate,
     UserResponse,
     UserSettingsResponse,
     UserSettingsUpdate,
+    UserUsageLimits,
 )
 
 logger = logging.getLogger(__name__)
@@ -123,6 +134,10 @@ async def sync_google_oauth_user(
             detail="This email is not authorized to sign in yet.",
         )
     user = await _upsert_google_oauth_user(db, payload)
+    try:
+        await record_user_activity(db, user.id, "signed_in", None)
+    except Exception:
+        logger.exception("record_user_activity signed_in failed for user id=%s", user.id)
     return UserResponse.model_validate(user)
 
 
@@ -157,6 +172,48 @@ async def create_user(
     return UserResponse.model_validate(user)
 
 
+@router.get("/{user_id}/activity", response_model=List[UserActivityItem])
+async def get_user_activity(
+    user_id: str,
+    db: AsyncSession = Depends(get_db),
+    trusted_id: Optional[str] = Depends(get_trusted_acting_user_id),
+    limit: int = Query(10, ge=1, le=50),
+):
+    """
+    Recent activity for this user only. Requires a verified session for the same user
+    (proxy-signed OAuth); avoids exposing sign-in history cross-account or for arbitrary UUIDs.
+    """
+    tid = (trusted_id or "").strip()
+    if not tid or tid != user_id.strip():
+        raise HTTPException(
+            status_code=403,
+            detail="Sign in to view activity",
+        )
+    user = await fetch_user(db, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    rows = await list_user_activity(db, user_id, limit=limit)
+    out: List[UserActivityItem] = []
+    for row in rows:
+        meta = None
+        if row.meta_json:
+            try:
+                meta = json.loads(row.meta_json)
+                if not isinstance(meta, dict):
+                    meta = None
+            except json.JSONDecodeError:
+                meta = None
+        out.append(
+            UserActivityItem(
+                id=row.id,
+                event_type=row.event_type,
+                created_at=row.created_at,
+                meta=meta,
+            )
+        )
+    return out
+
+
 @router.get("/{user_id}", response_model=UserResponse)
 async def get_user(
     user_id: str,
@@ -165,7 +222,15 @@ async def get_user(
 ):
     """Get one user by id (for profile and client UIs)."""
     user = await assert_may_act_as_user(db, trusted_id, user_id)
-    return UserResponse.model_validate(user)
+    active = await count_active_decks_for_user(db, user.id)
+    elevated = user_has_elevated_tier(user, trusted_id)
+    usage = UserUsageLimits(
+        limited_tier=not elevated,
+        max_active_decks=None if elevated else LIMITED_MAX_DECKS,
+        max_cards_per_deck=None if elevated else LIMITED_MAX_CARDS_PER_DECK,
+        active_deck_count=active,
+    )
+    return UserResponse.model_validate(user).model_copy(update={"usage": usage})
 
 
 @router.patch("/{user_id}/profile", response_model=UserResponse)

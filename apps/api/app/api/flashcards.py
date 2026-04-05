@@ -11,7 +11,14 @@ from app.core.user_access import (
     assert_may_read_deck,
     get_trusted_acting_user_id,
 )
-from app.models import Deck, Flashcard
+from app.core.user_tier import (
+    FREE_TIER_MAX_CARDS_DECK_MSG,
+    LIMITED_MAX_CARDS_PER_DECK,
+    assert_may_add_flashcards_to_deck,
+    count_flashcards_in_deck,
+    user_has_elevated_tier,
+)
+from app.models import Deck, Flashcard, User
 from app.schemas.flashcard import (
     DIFFICULTY_TO_INT,
     INT_TO_DIFFICULTY,
@@ -106,6 +113,10 @@ async def create_flashcard(
         raise HTTPException(status_code=404, detail="Deck not found")
     await assert_may_mutate_deck(db, trusted_id, deck)
 
+    owner_result = await db.execute(select(User).where(User.id == deck.user_id))
+    owner = owner_result.scalar_one_or_none()
+    await assert_may_add_flashcards_to_deck(db, payload.deck_id, owner, trusted_id, 1)
+
     flashcard = Flashcard(
         deck_id=payload.deck_id,
         question=payload.question,
@@ -159,15 +170,27 @@ async def import_flashcards(
         raise HTTPException(status_code=404, detail="Deck not found")
     await assert_may_mutate_deck(db, trusted_id, deck)
 
+    owner_result = await db.execute(select(User).where(User.id == deck.user_id))
+    owner = owner_result.scalar_one_or_none()
+
     existing = await db.execute(
         select(Flashcard.question).where(Flashcard.deck_id == payload.deck_id)
     )
     existing_questions = {row[0].strip().lower() for row in existing.all()}
 
+    slots_remaining: int | None = None
+    if not user_has_elevated_tier(owner, trusted_id):
+        current = await count_flashcards_in_deck(db, payload.deck_id)
+        slots_remaining = max(0, LIMITED_MAX_CARDS_PER_DECK - current)
+        if slots_remaining <= 0:
+            raise HTTPException(status_code=403, detail=FREE_TIER_MAX_CARDS_DECK_MSG)
+
     created = 0
     for card in payload.cards:
         if card.question.strip().lower() in existing_questions:
             continue
+        if slots_remaining is not None and created >= slots_remaining:
+            break
         db.add(Flashcard(
             deck_id=payload.deck_id,
             question=card.question,

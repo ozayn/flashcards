@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { ChevronLeft, ChevronRight, X, Settings } from "lucide-react";
+import { ChevronLeft, ChevronRight, MoreHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Flashcard } from "@/components/study/Flashcard";
@@ -62,11 +62,11 @@ export default function StudyPage({ params }: StudyPageProps) {
     card_style: "paper",
   });
   const [canFlip, setCanFlip] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
+  const [studyMenuOpen, setStudyMenuOpen] = useState(false);
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
   const [resetLoading, setResetLoading] = useState(false);
   const touchStartX = useRef(0);
-  const settingsRef = useRef<HTMLDivElement>(null);
+  const studyMenuRef = useRef<HTMLDivElement>(null);
 
   const isDev = process.env.NODE_ENV === "development";
 
@@ -228,15 +228,15 @@ export default function StudyPage({ params }: StudyPageProps) {
 
 
   useEffect(() => {
-    if (!showSettings) return;
+    if (!studyMenuOpen) return;
     function handleClickOutside(e: MouseEvent) {
-      if (settingsRef.current && !settingsRef.current.contains(e.target as Node)) {
-        setShowSettings(false);
+      if (studyMenuRef.current && !studyMenuRef.current.contains(e.target as Node)) {
+        setStudyMenuOpen(false);
       }
     }
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [showSettings]);
+  }, [studyMenuOpen]);
 
   useEffect(() => {
     if (loading || flashcards.length === 0) return;
@@ -442,20 +442,19 @@ export default function StudyPage({ params }: StudyPageProps) {
           </div>
         </div>
       )}
-      <div className="pt-3 sm:pt-4 landscape-mobile:py-1 shrink-0 w-full landscape-mobile:border-b landscape-mobile:border-border/50">
-        <div className="max-w-4xl mx-auto w-full px-4 sm:px-6 md:px-8 landscape-mobile:px-2">
-          {/* Mobile landscape: single compact control band */}
-          <div className="hidden landscape-mobile:flex landscape-mobile:items-center landscape-mobile:gap-1.5 landscape-mobile:min-h-8 landscape-mobile:max-h-9">
+      <header className="shrink-0 w-full border-b border-border/40 bg-background/90 backdrop-blur-sm">
+        <div className="mx-auto max-w-4xl px-3 py-2 sm:px-6 sm:py-2.5 md:px-8 landscape-mobile:py-1.5 landscape-mobile:pl-2 landscape-mobile:pr-2">
+          <div className="flex items-center gap-2 sm:gap-3">
             <Link
               href={`/decks/${params.deck_id}`}
-              className="inline-flex h-7 shrink-0 items-center justify-center rounded-md px-1.5 text-[11px] font-medium hover:bg-muted"
+              className="shrink-0 rounded-md px-1.5 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground sm:px-2 sm:text-sm"
             >
               ← Back
             </Link>
             <div
-              className="flex min-w-0 flex-1 items-center justify-center gap-0.5 rounded-md border border-border/60 p-0.5 bg-muted/20"
+              className="grid min-w-0 flex-1 grid-cols-3 gap-0.5 rounded-lg border border-border/50 bg-muted/20 p-0.5 sm:mx-auto sm:flex sm:max-w-[min(100%,19rem)] sm:flex-initial"
               role="tablist"
-              aria-label="Deck view"
+              aria-label="Study mode"
             >
               {(["read", "cards", "quiz"] as const).map((v) => (
                 <button
@@ -464,9 +463,9 @@ export default function StudyPage({ params }: StudyPageProps) {
                   role="tab"
                   aria-selected={deckView === v}
                   onClick={() => setDeckView(v)}
-                  className={`shrink-0 px-1.5 py-0.5 min-h-[26px] rounded text-[11px] font-medium leading-none transition-colors ${
+                  className={`rounded-md px-2 py-1.5 text-center text-[11px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:min-h-8 sm:flex-1 sm:px-2 sm:text-xs ${
                     deckView === v
-                      ? "bg-background text-foreground shadow-sm"
+                      ? "bg-background text-foreground shadow-sm ring-1 ring-border/50"
                       : "text-muted-foreground hover:text-foreground"
                   }`}
                 >
@@ -474,362 +473,242 @@ export default function StudyPage({ params }: StudyPageProps) {
                 </button>
               ))}
             </div>
-            <span className="shrink-0 text-[11px] text-muted-foreground tabular-nums">
-              {currentCardIndex + 1}/{flashcards.length}
-            </span>
-            <div className="ml-auto flex shrink-0 items-center gap-0.5">
-              <ThemeToggle className="size-6 text-muted-foreground hover:text-foreground [&_svg]:size-3.5" />
-              <div ref={settingsRef} className="relative">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => setShowSettings((s) => !s)}
-                  className="size-6 text-muted-foreground hover:text-foreground"
-                  aria-label="Flashcard style"
-                >
-                  <Settings className="size-3.5" />
-                </Button>
-                {showSettings && (
-                  <div className="absolute right-0 top-full z-50 mt-1 w-40 rounded-lg border border-border bg-popover p-2 shadow-lg">
-                    <p className="text-xs font-medium text-muted-foreground mb-1.5">Style</p>
-                    <div className="grid grid-cols-2 gap-1">
-                      {(["paper", "minimal", "modern", "anki"] as const).map((style) => (
-                        <button
-                          key={style}
-                          type="button"
-                          onClick={async () => {
-                            const userId = getStoredUserId();
-                            if (userId) {
-                              const updated = await updateUserSettings(userId, { card_style: style });
-                              setUserSettings(updated);
-                              setShowSettings(false);
-                            }
-                          }}
-                          className={`px-2 py-1 rounded text-xs font-medium capitalize ${userSettings.card_style === style ? "bg-accent" : "hover:bg-muted"}`}
-                        >
-                          {style}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-              <Link
-                href={`/decks/${params.deck_id}`}
-                className="inline-flex h-7 items-center gap-1 rounded-md border border-border bg-background px-2 text-[11px] font-medium text-foreground shadow-sm hover:bg-muted"
-                aria-label="Exit to deck"
+            <div ref={studyMenuRef} className="relative shrink-0">
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={() => setStudyMenuOpen((o) => !o)}
+                className="size-8 text-muted-foreground hover:text-foreground landscape-mobile:size-7"
+                aria-label="More options"
+                aria-expanded={studyMenuOpen}
               >
-                <X className="size-3 shrink-0" />
-                Exit
-              </Link>
-              {isDev && (
-                <button
-                  type="button"
-                  onClick={() => setResetConfirmOpen(true)}
-                  className="px-1 py-0.5 text-[10px] text-muted-foreground hover:text-foreground rounded hover:bg-muted/70"
-                >
-                  Reset
-                </button>
+                <MoreHorizontal className="size-4 landscape-mobile:size-3.5" />
+              </Button>
+              {studyMenuOpen && (
+                <div className="absolute right-0 top-full z-50 mt-1 w-52 rounded-lg border border-border bg-popover p-2 shadow-lg">
+                  <div className="flex items-center justify-between gap-2 px-1 py-1">
+                    <span className="text-xs text-muted-foreground">Theme</span>
+                    <ThemeToggle className="size-8 shrink-0 [&_svg]:size-4" />
+                  </div>
+                  <p className="px-1 pt-1 text-xs font-medium text-muted-foreground">Card style</p>
+                  <div className="mt-1 grid grid-cols-2 gap-1">
+                    {(["paper", "minimal", "modern", "anki"] as const).map((style) => (
+                      <button
+                        key={style}
+                        type="button"
+                        onClick={async () => {
+                          const userId = getStoredUserId();
+                          if (userId) {
+                            const updated = await updateUserSettings(userId, { card_style: style });
+                            setUserSettings(updated);
+                            setStudyMenuOpen(false);
+                          }
+                        }}
+                        className={`rounded px-2 py-1 text-xs font-medium capitalize ${
+                          userSettings.card_style === style ? "bg-accent" : "hover:bg-muted"
+                        }`}
+                      >
+                        {style}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="mt-2 border-t border-border pt-2">
+                    <Link
+                      href={`/decks/${params.deck_id}`}
+                      className="block rounded-md px-2 py-1.5 text-sm hover:bg-muted"
+                      onClick={() => setStudyMenuOpen(false)}
+                    >
+                      Exit to deck
+                    </Link>
+                    {isDev && (
+                      <button
+                        type="button"
+                        className="mt-0.5 w-full rounded-md px-2 py-1.5 text-left text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+                        onClick={() => {
+                          setStudyMenuOpen(false);
+                          setResetConfirmOpen(true);
+                        }}
+                      >
+                        Reset progress…
+                      </button>
+                    )}
+                  </div>
+                </div>
               )}
             </div>
           </div>
-
-          {/* Portrait & taller landscape: two-row chrome */}
-          <div className="space-y-2 landscape-mobile:hidden">
-            <div className="flex items-center justify-between">
-              <Link
-                href={`/decks/${params.deck_id}`}
-                className="inline-flex h-7 items-center justify-center rounded-lg px-2.5 text-sm font-medium hover:bg-muted"
-              >
-                ← Back
-              </Link>
-              <div className="flex items-center gap-2" />
-            </div>
-            <div className="flex items-center gap-3 flex-wrap">
-              <div
-                className="flex items-center gap-0.5 rounded-lg border border-border/60 p-0.5 bg-muted/20"
-                role="tablist"
-                aria-label="Deck view"
-              >
-                {(["read", "cards", "quiz"] as const).map((v) => (
-                  <button
-                    key={v}
-                    type="button"
-                    role="tab"
-                    aria-selected={deckView === v}
-                    onClick={() => setDeckView(v)}
-                    className={`px-2.5 sm:px-3 py-1 min-h-[32px] rounded-md text-sm font-medium transition-colors ${
-                      deckView === v
-                        ? "bg-background text-foreground shadow-sm"
-                        : "text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    {v === "read" ? "Read" : v === "cards" ? "Cards" : "Quiz"}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
         </div>
-      </div>
+      </header>
 
       {deckView === "read" ? (
         <div
           ref={readScrollRef}
-          className="flex-1 min-h-0 w-full overflow-y-auto touch-pan-y landscape-mobile:min-h-0"
+          className="min-h-0 w-full flex-1 touch-pan-y overflow-y-auto landscape-mobile:min-h-0"
         >
-          <div className="max-w-2xl sm:max-w-3xl mx-auto w-full px-5 sm:px-6 md:px-8 py-6 sm:py-10 landscape-mobile:py-2 landscape-mobile:px-3">
-            <article dir="auto" className="space-y-5 sm:space-y-8 landscape-mobile:space-y-2">
+          <div className="mx-auto w-full max-w-2xl px-4 py-5 sm:max-w-3xl sm:px-6 sm:py-7 md:px-8 landscape-mobile:px-3 landscape-mobile:py-3">
+            <article dir="auto" className="space-y-4 sm:space-y-6 landscape-mobile:space-y-3">
               <FormattedText
                 text={card.question}
-                className="text-2xl sm:text-3xl lg:text-4xl font-medium leading-snug sm:leading-relaxed landscape-mobile:text-2xl landscape-mobile:leading-snug"
+                className="text-2xl font-medium leading-snug sm:text-3xl sm:leading-relaxed lg:text-4xl landscape-mobile:text-2xl landscape-mobile:leading-snug"
               />
-              <hr className="border-border landscape-mobile:my-0" />
+              <hr className="border-border" />
               <FormattedText
                 text={card.answer_short}
-                className="whitespace-pre-line text-lg sm:text-2xl lg:text-[1.75rem] leading-relaxed landscape-mobile:text-xl landscape-mobile:leading-snug"
+                className="whitespace-pre-line text-lg leading-relaxed sm:text-2xl lg:text-[1.75rem] landscape-mobile:text-xl landscape-mobile:leading-snug"
               />
               {card.answer_detailed &&
                 card.answer_detailed.trim() !== card.answer_short.trim() && (
-                  <div className="border-l-2 border-border pl-4 sm:pl-5 landscape-mobile:pl-3">
+                  <div className="border-l-2 border-border pl-3 sm:pl-4">
                     <FormattedText
                       text={card.answer_detailed}
-                      className="whitespace-pre-line text-base sm:text-lg lg:text-xl text-muted-foreground leading-relaxed landscape-mobile:text-base landscape-mobile:leading-snug"
+                      className="whitespace-pre-line text-base leading-relaxed text-muted-foreground sm:text-lg lg:text-xl landscape-mobile:text-base"
                     />
                   </div>
                 )}
             </article>
-            <div className="flex items-center justify-center gap-4 mt-8 sm:mt-10 pb-4 landscape-mobile:hidden">
-              {!isFirst ? (
-                <Button
-                  variant="outline"
-                  size="icon"
-                  onClick={handlePrev}
-                  className="hidden sm:inline-flex h-10 w-10 lg:h-12 lg:w-12 shrink-0"
-                  aria-label="Previous card"
-                >
-                  <ChevronLeft className="size-5 lg:size-6" />
-                </Button>
-              ) : (
-                <span className="hidden sm:inline-block w-10 lg:w-12 shrink-0" aria-hidden />
-              )}
-              <span className="text-sm text-muted-foreground tabular-nums text-center min-w-[4.5rem]">
+            <nav
+              className="mt-5 flex items-center justify-center gap-5 pb-3 landscape-mobile:mt-4 landscape-mobile:gap-4 landscape-mobile:pb-2"
+              aria-label="Card navigation"
+            >
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={handlePrev}
+                disabled={isFirst}
+                className="h-9 w-9 shrink-0 text-muted-foreground hover:bg-muted/60 hover:text-foreground disabled:pointer-events-none disabled:opacity-20"
+                aria-label="Previous card"
+              >
+                <ChevronLeft className="size-5" />
+              </Button>
+              <span className="min-w-[3.5rem] text-center text-xs tabular-nums text-muted-foreground">
                 {currentCardIndex + 1} / {flashcards.length}
               </span>
-              {!isLast ? (
-                <Button
-                  variant="outline"
-                  size="icon"
-                  onClick={handleNext}
-                  className="hidden sm:inline-flex h-10 w-10 lg:h-12 lg:w-12 shrink-0"
-                  aria-label="Next card"
-                >
-                  <ChevronRight className="size-5 lg:size-6" />
-                </Button>
-              ) : (
-                <span className="hidden sm:inline-block w-10 lg:w-12 shrink-0" aria-hidden />
-              )}
-            </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={handleNext}
+                disabled={isLast}
+                className="h-9 w-9 shrink-0 text-muted-foreground hover:bg-muted/60 hover:text-foreground disabled:pointer-events-none disabled:opacity-20"
+                aria-label="Next card"
+              >
+                <ChevronRight className="size-5" />
+              </Button>
+            </nav>
           </div>
         </div>
       ) : (
-      <div className="flex flex-col flex-1 min-h-0 w-full min-w-0 landscape-mobile:overflow-hidden">
-        <div className="flex flex-1 min-h-0 flex flex-col justify-center items-stretch max-w-4xl mx-auto w-full px-4 sm:px-6 md:px-8 py-2 sm:py-3 min-h-0 landscape-mobile:justify-start landscape-mobile:py-0 landscape-mobile:px-2">
-        <div className="flex flex-1 min-h-0 min-h-[160px] landscape-mobile:min-h-0 flex flex-col landscape:flex-row landscape:items-center landscape-mobile:items-stretch landscape:min-h-0 justify-center items-center gap-2 landscape:gap-3 landscape-mobile:gap-1 w-full relative overflow-hidden [perspective:1000px]">
-          {!isFirst ? (
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={handlePrev}
-              className="hidden landscape:flex landscape-mobile:!hidden h-10 w-10 shrink-0 order-2 landscape:order-1"
-              aria-label="Previous card"
-            >
-              <ChevronLeft className="size-5" />
-            </Button>
-          ) : (
-            <span className="hidden landscape:block landscape-mobile:!hidden w-10 shrink-0 order-2 landscape:order-1" aria-hidden />
-          )}
-          <div className="flex justify-center items-center landscape-mobile:items-stretch flex-1 min-w-0 w-full order-1 landscape:order-2 px-2 min-h-0 landscape-mobile:px-0.5 landscape-mobile:min-h-0">
-            <div className="relative flex h-full min-h-0 w-full max-w-2xl sm:max-w-3xl mx-auto flex-col landscape-mobile:h-full landscape-mobile:min-h-0 landscape-mobile:self-stretch landscape-mobile:max-h-full landscape-mobile:max-w-none landscape-mobile:w-full landscape-mobile:flex-row landscape-mobile:items-center landscape-mobile:justify-center landscape-mobile:gap-1">
-              {/* Mobile landscape: arrows beside the card (not on the card) */}
-              <div className="hidden landscape-mobile:flex w-9 shrink-0 items-center justify-center self-stretch">
-                {!isFirst ? (
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    onClick={handlePrev}
-                    className="h-9 w-9 shrink-0 rounded-full border-border/80 bg-background shadow-sm"
-                    aria-label="Previous card"
-                  >
-                    <ChevronLeft className="size-4" />
-                  </Button>
-                ) : (
-                  <span className="inline-block h-9 w-9 shrink-0" aria-hidden />
-                )}
-              </div>
-
-              <div className="relative flex min-h-0 w-full flex-1 flex-col justify-center landscape-mobile:min-h-0 landscape-mobile:min-w-0 landscape-mobile:max-w-[min(100%,36rem)]">
-                <div
-                  onTouchStart={handleTouchStart}
-                  onTouchEnd={handleTouchEnd}
-                  dir="auto"
-                  className="flashcard relative w-full aspect-[3/2] landscape-mobile:aspect-auto landscape-mobile:h-[calc(100dvh-2.85rem-env(safe-area-inset-top,0px))] landscape-mobile:max-h-[calc(100dvh-2.85rem-env(safe-area-inset-top,0px))] landscape-mobile:min-h-[10rem] landscape-mobile:shrink-0 rounded-2xl shadow-lg overflow-hidden flex flex-col touch-pan-y transition-all duration-200 ease-out hover:-translate-y-1 hover:shadow-xl hover:rotate-[0.3deg] active:translate-y-0 active:shadow-md landscape-mobile:hover:translate-y-0 landscape-mobile:hover:rotate-0"
-                >
-                  <div className="absolute top-6 right-6 text-sm text-muted-foreground z-10 landscape-mobile:hidden">
-                    {currentCardIndex + 1} / {flashcards.length}
-                  </div>
-                  <Flashcard
-                    cardStyle={userSettings.card_style}
-                    front={
-                      <>
-                        <div className="flex-1 min-h-0 w-full overflow-y-auto">
-                          <FormattedText
-                            text={card.question}
-                            className="text-2xl sm:text-3xl lg:text-4xl font-medium leading-snug sm:leading-relaxed landscape-mobile:text-2xl landscape-mobile:leading-snug"
-                          />
-                        </div>
-                      </>
-                    }
-                    back={
-                      <>
-                        <div className="flex-1 min-h-0 flex flex-col items-stretch justify-start w-full overflow-y-auto cursor-pointer">
-                          <FormattedText
-                            text={card.answer_short}
-                            className="whitespace-pre-line text-xl sm:text-2xl lg:text-[1.75rem] leading-relaxed mt-6 sm:mt-8 landscape-mobile:mt-1 landscape-mobile:text-xl landscape-mobile:leading-snug"
-                          />
-                          {card.answer_detailed &&
-                            card.answer_detailed.trim() !== card.answer_short.trim() && (
-                              <FormattedText
-                                text={card.answer_detailed}
-                                className="whitespace-pre-line text-base sm:text-lg lg:text-xl text-muted-foreground mt-4 sm:mt-5 landscape-mobile:mt-1.5 landscape-mobile:text-base landscape-mobile:leading-snug"
-                              />
-                            )}
-                        </div>
-                        {deckView === "quiz" && showAnswer && (
-                          <div
-                            className="flex flex-row gap-1 landscape-mobile:gap-0.5 justify-center flex-wrap shrink-0 w-full landscape-mobile:py-0.5"
-                            onClick={(e) => e.stopPropagation()}
+        <div className="flex min-h-0 w-full min-w-0 flex-1 flex-col landscape-mobile:overflow-hidden">
+          <div className="mx-auto flex w-full max-w-4xl min-h-0 flex-1 flex-col px-3 pt-1 sm:px-6 sm:pt-2 md:px-8 landscape-mobile:px-2 landscape-mobile:pt-0">
+            <div className="flex min-h-[11rem] flex-1 flex-col justify-center landscape-mobile:min-h-0">
+              <div
+                onTouchStart={handleTouchStart}
+                onTouchEnd={handleTouchEnd}
+                dir="auto"
+                className="flashcard relative mx-auto flex w-full max-w-2xl touch-pan-y flex-col overflow-hidden rounded-2xl shadow-md sm:max-w-3xl aspect-[3/2] landscape-mobile:aspect-auto landscape-mobile:max-h-[min(28rem,calc(100dvh-6.75rem-env(safe-area-inset-top,0px)-env(safe-area-inset-bottom,0px)))] landscape-mobile:min-h-[11rem] landscape-mobile:w-full transition-shadow duration-200 hover:shadow-lg"
+              >
+                <Flashcard
+                  cardStyle={userSettings.card_style}
+                  front={
+                    <div className="min-h-0 w-full flex-1 overflow-y-auto">
+                      <FormattedText
+                        text={card.question}
+                        className="text-2xl font-medium leading-snug sm:text-3xl sm:leading-relaxed lg:text-4xl landscape-mobile:text-2xl landscape-mobile:leading-snug"
+                      />
+                    </div>
+                  }
+                  back={
+                    <>
+                      <div className="flex min-h-0 w-full flex-1 cursor-pointer flex-col items-stretch justify-start overflow-y-auto">
+                        <FormattedText
+                          text={card.answer_short}
+                          className="mt-5 whitespace-pre-line text-xl leading-relaxed sm:mt-7 sm:text-2xl lg:text-[1.75rem] landscape-mobile:mt-2 landscape-mobile:text-xl landscape-mobile:leading-snug"
+                        />
+                        {card.answer_detailed &&
+                          card.answer_detailed.trim() !== card.answer_short.trim() && (
+                            <FormattedText
+                              text={card.answer_detailed}
+                              className="mt-3 whitespace-pre-line text-base leading-relaxed text-muted-foreground sm:mt-4 sm:text-lg lg:text-xl landscape-mobile:mt-2 landscape-mobile:text-base landscape-mobile:leading-snug"
+                            />
+                          )}
+                      </div>
+                      {deckView === "quiz" && showAnswer && (
+                        <div
+                          className="flex w-full shrink-0 flex-row flex-wrap justify-center gap-1 landscape-mobile:gap-0.5 landscape-mobile:py-0.5"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <Button
+                            variant="ghost"
+                            onClick={() => rateCard("again")}
+                            className="shrink-0 !border-0 !bg-mondrian-red !text-white hover:!bg-mondrian-red/90 landscape-mobile:h-7 landscape-mobile:px-2 landscape-mobile:text-[11px]"
                           >
-                            <Button
-                              variant="ghost"
-                              onClick={() => rateCard("again")}
-                              className="shrink-0 !bg-mondrian-red !text-white hover:!bg-mondrian-red/90 border-0 landscape-mobile:h-7 landscape-mobile:px-2 landscape-mobile:text-[11px]"
-                            >
-                              Again
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              onClick={() => rateCard("hard")}
-                              className="shrink-0 !bg-mondrian-yellow !text-mondrian-black hover:!bg-mondrian-yellow/90 border-0 landscape-mobile:h-7 landscape-mobile:px-2 landscape-mobile:text-[11px]"
-                            >
-                              Hard
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              onClick={() => rateCard("good")}
-                              className="shrink-0 !bg-mondrian-blue !text-white hover:!bg-mondrian-blue/90 border-0 landscape-mobile:h-7 landscape-mobile:px-2 landscape-mobile:text-[11px]"
-                            >
-                              Good
-                            </Button>
-                            <Button
-                              variant="outline"
-                              onClick={() => rateCard("easy")}
-                              className="shrink-0 landscape-mobile:h-7 landscape-mobile:px-2 landscape-mobile:text-[11px]"
-                            >
-                              Easy
-                            </Button>
-                          </div>
-                        )}
-                      </>
-                    }
-                    flipped={showAnswer}
-                    onFlip={() => setShowAnswer((prev) => !prev)}
-                    canFlip={canFlip}
-                  />
-                  {/* Portrait only: midline arrows on the card; tall landscape uses outer row side buttons */}
-                  <div className="hidden portrait:flex absolute inset-0 z-20 items-center justify-between pointer-events-none">
-                    <div className="pointer-events-auto flex w-11 justify-start pl-0.5">
-                      {!isFirst ? (
-                        <Button
-                          variant="outline"
-                          size="icon"
-                          onClick={handlePrev}
-                          className="h-10 w-10 shrink-0 rounded-full border-border/80 bg-background/95 shadow-sm backdrop-blur-sm"
-                          aria-label="Previous card"
-                        >
-                          <ChevronLeft className="size-5" />
-                        </Button>
-                      ) : null}
-                    </div>
-                    <div className="pointer-events-auto flex w-11 justify-end pr-0.5">
-                      {!isLast ? (
-                        <Button
-                          variant="outline"
-                          size="icon"
-                          onClick={handleNext}
-                          className="h-10 w-10 shrink-0 rounded-full border-border/80 bg-background/95 shadow-sm backdrop-blur-sm"
-                          aria-label="Next card"
-                        >
-                          <ChevronRight className="size-5" />
-                        </Button>
-                      ) : null}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="hidden landscape-mobile:flex w-9 shrink-0 items-center justify-center self-stretch">
-                {!isLast ? (
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    onClick={handleNext}
-                    className="h-9 w-9 shrink-0 rounded-full border-border/80 bg-background shadow-sm"
-                    aria-label="Next card"
-                  >
-                    <ChevronRight className="size-4" />
-                  </Button>
-                ) : (
-                  <span className="inline-block h-9 w-9 shrink-0" aria-hidden />
-                )}
+                            Again
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            onClick={() => rateCard("hard")}
+                            className="shrink-0 !border-0 !bg-mondrian-yellow !text-mondrian-black hover:!bg-mondrian-yellow/90 landscape-mobile:h-7 landscape-mobile:px-2 landscape-mobile:text-[11px]"
+                          >
+                            Hard
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            onClick={() => rateCard("good")}
+                            className="shrink-0 !border-0 !bg-mondrian-blue !text-white hover:!bg-mondrian-blue/90 landscape-mobile:h-7 landscape-mobile:px-2 landscape-mobile:text-[11px]"
+                          >
+                            Good
+                          </Button>
+                          <Button
+                            variant="outline"
+                            onClick={() => rateCard("easy")}
+                            className="shrink-0 landscape-mobile:h-7 landscape-mobile:px-2 landscape-mobile:text-[11px]"
+                          >
+                            Easy
+                          </Button>
+                        </div>
+                      )}
+                    </>
+                  }
+                  flipped={showAnswer}
+                  onFlip={() => setShowAnswer((prev) => !prev)}
+                  canFlip={canFlip}
+                />
               </div>
             </div>
+            <nav
+              className="flex shrink-0 items-center justify-center gap-5 border-t border-border/30 py-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] landscape-mobile:gap-4 landscape-mobile:py-1.5"
+              aria-label="Card navigation"
+            >
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={handlePrev}
+                disabled={isFirst}
+                className="h-9 w-9 shrink-0 text-muted-foreground hover:bg-muted/60 hover:text-foreground disabled:pointer-events-none disabled:opacity-20"
+                aria-label="Previous card"
+              >
+                <ChevronLeft className="size-5" />
+              </Button>
+              <span className="min-w-[3.5rem] text-center text-xs tabular-nums text-muted-foreground">
+                {currentCardIndex + 1} / {flashcards.length}
+              </span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={handleNext}
+                disabled={isLast}
+                className="h-9 w-9 shrink-0 text-muted-foreground hover:bg-muted/60 hover:text-foreground disabled:pointer-events-none disabled:opacity-20"
+                aria-label="Next card"
+              >
+                <ChevronRight className="size-5" />
+              </Button>
+            </nav>
           </div>
-
-          {!isLast ? (
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={handleNext}
-              className="hidden landscape:flex landscape-mobile:!hidden h-10 w-10 shrink-0 order-3"
-              aria-label="Next card"
-            >
-              <ChevronRight className="size-5" />
-            </Button>
-          ) : (
-            <span className="hidden landscape:block landscape-mobile:!hidden w-10 shrink-0 order-3" aria-hidden />
-          )}
         </div>
-        </div>
-        <div className="shrink-0 max-w-4xl mx-auto w-full px-4 sm:px-6 md:px-8 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 mt-1 border-t border-border/50 flex flex-wrap items-center justify-end gap-2 landscape-mobile:hidden">
-          <Link
-            href={`/decks/${params.deck_id}`}
-            className="inline-flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-sm font-medium text-foreground shadow-sm hover:bg-muted transition-colors"
-          >
-            <X className="size-4 shrink-0" />
-            Exit
-          </Link>
-          {isDev && (
-            <button
-              type="button"
-              onClick={() => setResetConfirmOpen(true)}
-              className="text-xs text-muted-foreground hover:text-foreground px-2 py-1.5 rounded-md hover:bg-muted/70 transition-colors"
-            >
-              Reset
-            </button>
-          )}
-        </div>
-      </div>
       )}
     </main>
   );

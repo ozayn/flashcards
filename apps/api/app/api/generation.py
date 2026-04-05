@@ -14,6 +14,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db, AsyncSessionLocal
 from app.core.product_admin import user_has_product_admin_access
 from app.core.user_access import assert_may_mutate_deck, get_trusted_acting_user_id
+from app.core.user_tier import (
+    LIMITED_MAX_CARDS_PER_DECK,
+    generation_request_cap_exceeded_detail,
+    max_new_cards_allowed_for_deck,
+    user_has_elevated_tier,
+)
 from app.llm.json_truncation import analyze_llm_json_response
 from app.llm.router import generate_completion, _get_default_max_tokens, RateLimitError
 from app.models import Deck, Flashcard, User
@@ -133,19 +139,6 @@ TEXT_MAX_LENGTH = 50000
 
 MAX_CARDS_ADMIN = 50
 MAX_CARDS_USER = 25
-
-
-async def _get_max_cards_for_deck(deck_id: str, db: AsyncSession) -> int:
-    """Return the max allowed card count based on the deck owner's product admin access."""
-    result = await db.execute(select(Deck.user_id).where(Deck.id == deck_id))
-    row = result.first()
-    if not row:
-        return MAX_CARDS_USER
-    user_result = await db.execute(select(User).where(User.id == row[0]))
-    owner = user_result.scalar_one_or_none()
-    if user_has_product_admin_access(owner):
-        return MAX_CARDS_ADMIN
-    return MAX_CARDS_USER
 
 # TODO: Add rate limiting for generation endpoints (per user/IP, return 429 if exceeded).
 # Placeholder for future integration with shared FastAPI middleware.
@@ -3041,7 +3034,10 @@ RELAXED_TEXT_GROUNDING_RULES = """GROUNDING PREFERENCES (text-based generation):
 - Prefer questions that test understanding of what THIS specific text says, not general domain knowledge."""
 
 
-async def _run_generation_background(payload: GenerateFlashcardsRequest) -> None:
+async def _run_generation_background(
+    payload: GenerateFlashcardsRequest,
+    trusted_acting_user_id: Optional[str],
+) -> None:
     """Run flashcard generation in a background task with its own DB session.
 
     The generate_flashcards handler uses db.flush() for all status updates
@@ -3052,7 +3048,7 @@ async def _run_generation_background(payload: GenerateFlashcardsRequest) -> None
     deck_id_str = str(payload.deck_id)
     async with AsyncSessionLocal() as db:
         try:
-            await generate_flashcards(payload, db)
+            await generate_flashcards(payload, db, trusted_acting_user_id)
             logger.info("[bg-gen] Completed for deck %s", deck_id_str)
         except Exception as exc:
             logger.error("[bg-gen] Failed for deck %s: %s", deck_id_str, exc)
@@ -3077,12 +3073,19 @@ async def generate_flashcards_background(
         raise HTTPException(status_code=404, detail="Deck not found")
     await assert_may_mutate_deck(db, trusted_id, deck)
 
-    max_cards = await _get_max_cards_for_deck(deck_id_str, db)
+    owner_result = await db.execute(select(User).where(User.id == deck.user_id))
+    owner = owner_result.scalar_one_or_none()
+    base_cap = MAX_CARDS_ADMIN if user_has_product_admin_access(owner) else MAX_CARDS_USER
+    max_cards = await max_new_cards_allowed_for_deck(
+        db, deck_id_str, owner, trusted_id, base_cap=base_cap
+    )
     if payload.num_cards > max_cards:
-        raise HTTPException(
-            status_code=403,
-            detail=f"The maximum number of cards for this account is {max_cards}.",
+        detail = (
+            f"The maximum number of cards for this account is {max_cards}."
+            if user_has_elevated_tier(owner, trusted_id)
+            else generation_request_cap_exceeded_detail(max_cards)
         )
+        raise HTTPException(status_code=403, detail=detail)
 
     text_input: Optional[str] = None
     if payload.text:
@@ -3099,7 +3102,7 @@ async def generate_flashcards_background(
     deck.generation_status = GenerationStatus.queued.value
     await db.flush()
 
-    asyncio.create_task(_run_generation_background(payload))
+    asyncio.create_task(_run_generation_background(payload, trusted_id))
 
     return BackgroundGenerationResponse(deck_id=deck_id_str, status="queued")
 
@@ -3725,12 +3728,19 @@ async def generate_flashcards(
         raise HTTPException(status_code=404, detail="Deck not found")
     await assert_may_mutate_deck(db, trusted_id, deck)
 
-    max_cards = await _get_max_cards_for_deck(deck_id_str, db)
+    owner_result = await db.execute(select(User).where(User.id == deck.user_id))
+    owner = owner_result.scalar_one_or_none()
+    base_cap = MAX_CARDS_ADMIN if user_has_product_admin_access(owner) else MAX_CARDS_USER
+    max_cards = await max_new_cards_allowed_for_deck(
+        db, deck_id_str, owner, trusted_id, base_cap=base_cap
+    )
     if payload.num_cards > max_cards:
-        raise HTTPException(
-            status_code=403,
-            detail=f"The maximum number of cards for this account is {max_cards}.",
+        detail = (
+            f"The maximum number of cards for this account is {max_cards}."
+            if user_has_elevated_tier(owner, trusted_id)
+            else generation_request_cap_exceeded_detail(max_cards)
         )
+        raise HTTPException(status_code=403, detail=detail)
 
     # Validate and clean text input
     text_input: Optional[str] = None
@@ -3776,6 +3786,9 @@ async def generate_flashcards(
         existing_exact = set(existing_questions)
         batch_normalized: set[tuple[str, str]] = set()
 
+        tier_elevated = user_has_elevated_tier(owner, trusted_id)
+        deck_start_count = len(existing_questions)
+
         created = 0
         skipped_batch_dup = 0
         skipped_db_dup = 0
@@ -3813,6 +3826,12 @@ async def generate_flashcards(
                 continue
 
             batch_normalized.add(dup_key)
+
+            if (
+                not tier_elevated
+                and deck_start_count + created >= LIMITED_MAX_CARDS_PER_DECK
+            ):
+                break
 
             answer_detailed = raw_card.get("answer_detailed")
             difficulty_str = raw_card.get("difficulty", "medium")

@@ -40,7 +40,7 @@ import {
   parseYoutubeDeckSourceMetadata,
   updateDeck,
 } from "@/lib/api";
-import { getStoredUserId, useCardCountOptions } from "@/components/user-selector";
+import { getStoredUserId, useTierLimits } from "@/components/user-selector";
 import { GENERATION_TEXT_MAX_CHARS } from "@/lib/generation-text";
 import {
   peekDeckBackgroundGenerationPending,
@@ -321,12 +321,13 @@ export default function DeckPage({ params }: DeckPageProps) {
   const [importFiles, setImportFiles] = useState<{ name: string; pairCount: number; error?: string }[]>([]);
   const [importResult, setImportResult] = useState<{ created: number; skipped: number } | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
+  const [genActionError, setGenActionError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const genTextFileInputRef = useRef<HTMLInputElement>(null);
   const [genTextUploadStatus, setGenTextUploadStatus] = useState<string | null>(null);
   const [useNameAsTopic, setUseNameAsTopic] = useState(false);
   const [cardCount, setCardCount] = useState(10);
-  const cardCountOptions = useCardCountOptions();
+  const { cardCountOptions, usage: tierUsage } = useTierLimits();
   const { data: session, status: sessionStatus } = useSession();
   const isPlatformAdmin = Boolean(session?.isPlatformAdmin);
   const [cardView, setCardView] = useState<"list" | "grid">("grid");
@@ -350,6 +351,7 @@ export default function DeckPage({ params }: DeckPageProps) {
     Boolean(session?.backendUserId) &&
     deck?.user_id !== session.backendUserId;
   const [duplicating, setDuplicating] = useState(false);
+  const [dupError, setDupError] = useState<string | null>(null);
 
   const processedCards = useMemo(() => {
     let cards = [...flashcards];
@@ -541,6 +543,7 @@ export default function DeckPage({ params }: DeckPageProps) {
     if (genMode === "text" && !textTrimmed) return;
     setGenerating(true);
     setImportResult(null);
+    setGenActionError(null);
     try {
       if (genMode === "text") {
         await generateFlashcards({ deck_id: deck.id, text: textTrimmed, num_cards: cardCount, language: "en" });
@@ -552,8 +555,8 @@ export default function DeckPage({ params }: DeckPageProps) {
       setGenTextUploadStatus(null);
       const data = await getFlashcards(params.id);
       setFlashcards(Array.isArray(data) ? data : []);
-    } catch {
-      // ignore
+    } catch (e) {
+      setGenActionError(e instanceof Error ? e.message : "Generation failed.");
     } finally {
       setGenerating(false);
     }
@@ -564,6 +567,7 @@ export default function DeckPage({ params }: DeckPageProps) {
     setGenerating(true);
     setImportResult(null);
     setImportError(null);
+    setGenActionError(null);
     try {
       const result = await importFlashcards({ deck_id: deck.id, cards: importQAPairs });
       setImportResult(result);
@@ -572,8 +576,8 @@ export default function DeckPage({ params }: DeckPageProps) {
       if (fileInputRef.current) fileInputRef.current.value = "";
       const data = await getFlashcards(params.id);
       setFlashcards(Array.isArray(data) ? data : []);
-    } catch {
-      setImportError("Failed to import cards. Please try again.");
+    } catch (e) {
+      setImportError(e instanceof Error ? e.message : "Failed to import cards. Please try again.");
     } finally {
       setGenerating(false);
     }
@@ -723,10 +727,13 @@ export default function DeckPage({ params }: DeckPageProps) {
     const userId = getStoredUserId();
     if (!userId) return;
     setDuplicating(true);
+    setDupError(null);
     try {
       const copy = await duplicateDeck(deck.id, userId);
       router.push(`/decks/${(copy as { id: string }).id}`);
-    } catch {
+    } catch (e) {
+      setDupError(e instanceof Error ? e.message : "Could not duplicate deck.");
+    } finally {
       setDuplicating(false);
     }
   }
@@ -845,38 +852,40 @@ export default function DeckPage({ params }: DeckPageProps) {
 
   return (
     <PageContainer>
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-2">
           <Link
             href={isReadOnly ? "/library" : "/decks"}
-            className="inline-flex h-7 items-center justify-center rounded-lg px-2.5 text-sm font-medium hover:bg-muted"
+            className="inline-flex h-8 items-center justify-center rounded-lg px-2 text-sm text-muted-foreground hover:text-foreground hover:bg-muted/80 -ml-2"
           >
             ← Back
           </Link>
-          {!isReadOnly && <Button
-            variant="ghost"
-            size="icon"
-            onClick={async () => {
-              try {
-                await updateDeck(deck.id, { archived: !deck.archived });
-                router.push("/decks");
-              } catch {
-                // ignore
-              }
-            }}
-            className="text-muted-foreground hover:text-foreground"
-            aria-label={deck.archived ? "Unarchive deck" : "Archive deck"}
-          >
-            {deck.archived ? (
-              <ArchiveRestore className="size-4" />
-            ) : (
-              <Archive className="size-4" />
-            )}
-          </Button>}
+          {!isReadOnly && (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={async () => {
+                try {
+                  await updateDeck(deck.id, { archived: !deck.archived });
+                  router.push("/decks");
+                } catch {
+                  // ignore
+                }
+              }}
+              className="size-8 shrink-0 text-muted-foreground/70 hover:text-muted-foreground"
+              aria-label={deck.archived ? "Unarchive deck" : "Archive deck"}
+            >
+              {deck.archived ? (
+                <ArchiveRestore className="size-4" />
+              ) : (
+                <Archive className="size-4" />
+              )}
+            </Button>
+          )}
         </div>
 
-        <Card>
-          <div className="px-4 pt-4 pb-4">
-            <div className="flex flex-col gap-2 mb-4">
+        <Card className="overflow-hidden border-border/80 shadow-sm">
+          <div className="px-4 pt-4 pb-5 sm:px-5 sm:pt-5">
+            <div className="flex flex-col gap-2 mb-3">
               {editingTitle && !isReadOnly ? (
                 <input
                   id="deck-title"
@@ -1000,187 +1009,194 @@ export default function DeckPage({ params }: DeckPageProps) {
                 <p className="text-sm text-red-900/85 dark:text-red-100/85">Any cards below are still usable.</p>
               </div>
             )}
-            {isReadOnly ? (
-              <p className="mb-4 text-sm text-muted-foreground flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
-                <span className="font-medium text-foreground">Public</span>
-                <span className="text-muted-foreground/50" aria-hidden>
-                  ·
-                </span>
-                <span>Read-only</span>
-                {deckDateShort && (
+            <div className="mb-4 rounded-lg border border-border/70 bg-muted/20 px-3 py-2.5 sm:px-3.5 sm:py-3 space-y-2">
+              <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm text-muted-foreground">
+                {isReadOnly ? (
                   <>
-                    <span className="text-muted-foreground/50" aria-hidden>
+                    <span className="font-medium text-foreground">Public</span>
+                    <span className="text-muted-foreground/40" aria-hidden>
                       ·
                     </span>
-                    <span>{deckDateShort}</span>
+                    <span>Read-only</span>
+                    {deckDateShort && (
+                      <>
+                        <span className="text-muted-foreground/40" aria-hidden>
+                          ·
+                        </span>
+                        <span className="tabular-nums">{deckDateShort}</span>
+                      </>
+                    )}
                   </>
-                )}
-              </p>
-            ) : (
-              <div className="mb-4 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm text-muted-foreground">
-                <span className="font-medium text-foreground">
-                  {deck.category_id
-                    ? categories.find((c) => c.id === deck.category_id)?.name ?? "—"
-                    : "Uncategorized"}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setCategoryModalSelectedId(deck.category_id ?? UNCATEGORIZED);
-                    setShowNewCatInput(false);
-                    setNewCatName("");
-                    setNewCatError(null);
-                    setCategoryModalOpen(true);
-                  }}
-                  className="text-xs text-muted-foreground hover:text-foreground underline-offset-2 hover:underline px-0.5 -mx-0.5 min-h-[44px] sm:min-h-0 py-1 sm:py-0"
-                >
-                  Change
-                </button>
-                <>
-                  <span className="text-muted-foreground/50" aria-hidden>
-                    ·
-                  </span>
-                  {sessionStatus === "authenticated" && isPlatformAdmin ? (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={async () => {
-                        const next = !deck.is_public;
-                        try {
-                          await updateDeck(deck.id, { is_public: next });
-                          setDeck({ ...deck, is_public: next });
-                        } catch {
-                          /* ignore */
-                        }
-                      }}
-                      className="h-auto min-h-[44px] sm:min-h-0 py-1.5 sm:py-0 px-1.5 text-sm font-normal text-muted-foreground hover:text-foreground"
-                      aria-label={
-                        deck.is_public ? "Deck is public; remove from Library" : "Deck is private; add to Library"
-                      }
-                    >
-                      {deck.is_public ? (
-                        <span className="text-emerald-600 dark:text-emerald-400">Public</span>
-                      ) : (
-                        "Private"
-                      )}
-                    </Button>
-                  ) : (
-                    <span
-                      className={`text-sm ${
-                        deck.is_public
-                          ? "font-medium text-emerald-600 dark:text-emerald-400"
-                          : "text-muted-foreground"
-                      }`}
-                    >
-                      {deck.is_public ? "Public" : "Private"}
-                    </span>
-                  )}
-                </>
-                {deckDateShort && (
+                ) : (
                   <>
-                    <span className="text-muted-foreground/50" aria-hidden>
+                    <span className="font-medium text-foreground">
+                      {deck.category_id
+                        ? categories.find((c) => c.id === deck.category_id)?.name ?? "—"
+                        : "Uncategorized"}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCategoryModalSelectedId(deck.category_id ?? UNCATEGORIZED);
+                        setShowNewCatInput(false);
+                        setNewCatName("");
+                        setNewCatError(null);
+                        setCategoryModalOpen(true);
+                      }}
+                      className="text-xs text-muted-foreground hover:text-foreground underline-offset-2 hover:underline min-h-[44px] sm:min-h-0 inline-flex items-center"
+                    >
+                      Edit
+                    </button>
+                    <span className="text-muted-foreground/40" aria-hidden>
                       ·
                     </span>
-                    <span>{deckDateShort}</span>
+                    {sessionStatus === "authenticated" && isPlatformAdmin ? (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const next = !deck.is_public;
+                          try {
+                            await updateDeck(deck.id, { is_public: next });
+                            setDeck({ ...deck, is_public: next });
+                          } catch {
+                            /* ignore */
+                          }
+                        }}
+                        className="text-xs text-muted-foreground hover:text-foreground underline-offset-2 hover:underline min-h-[44px] sm:min-h-0 inline-flex items-center"
+                        aria-label={
+                          deck.is_public ? "Remove from Library" : "Add to Library"
+                        }
+                      >
+                        {deck.is_public ? (
+                          <span className="text-emerald-700 dark:text-emerald-400">In library</span>
+                        ) : (
+                          "Private"
+                        )}
+                      </button>
+                    ) : (
+                      <span
+                        className={
+                          deck.is_public
+                            ? "text-xs font-medium text-emerald-700 dark:text-emerald-400"
+                            : "text-xs text-muted-foreground"
+                        }
+                      >
+                        {deck.is_public ? "In library" : "Private"}
+                      </span>
+                    )}
+                    {deckDateShort && (
+                      <>
+                        <span className="text-muted-foreground/40" aria-hidden>
+                          ·
+                        </span>
+                        <span className="tabular-nums text-xs sm:text-sm">{deckDateShort}</span>
+                      </>
+                    )}
                   </>
                 )}
               </div>
-            )}
-            {deck.source_type === "youtube" && deck.source_url ? (
-              <div className="mb-4 space-y-1.5">
-                <p className="text-sm text-muted-foreground flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
-                  <span>YouTube</span>
-                  <span className="text-muted-foreground/50" aria-hidden>
+
+              {deck.source_type === "youtube" && deck.source_url ? (
+                <div className="space-y-1.5 pt-1 border-t border-border/50">
+                  <p className="text-sm text-muted-foreground flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
+                    <span>YouTube</span>
+                    <span className="text-muted-foreground/40" aria-hidden>
+                      ·
+                    </span>
+                    <a
+                      href={deck.source_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-foreground font-medium underline underline-offset-2 decoration-border hover:decoration-foreground/40 min-w-0 break-words"
+                    >
+                      {deck.source_topic?.trim() || deck.source_url}
+                    </a>
+                  </p>
+                  {(() => {
+                    const ym = parseYoutubeDeckSourceMetadata(deck.source_metadata);
+                    if (!ym) return null;
+                    const parts: string[] = [];
+                    if (
+                      ym.duration_seconds != null &&
+                      Number.isFinite(ym.duration_seconds) &&
+                      ym.duration_seconds >= 0
+                    ) {
+                      const d = formatYoutubeDuration(ym.duration_seconds);
+                      if (d) parts.push(d);
+                    }
+                    const cap = ym.caption_language?.trim();
+                    if (cap) {
+                      parts.push(/caption/i.test(cap) ? cap : `${cap} captions`);
+                    }
+                    if (!parts.length) return null;
+                    return (
+                      <p className="text-xs text-muted-foreground/75 leading-snug">
+                        {parts.join(" · ")}
+                      </p>
+                    );
+                  })()}
+                  <p className="text-[11px] sm:text-xs text-muted-foreground/60 leading-relaxed">
+                    <a
+                      href={`/api/proxy/decks/${deck.id}/transcript`}
+                      download
+                      className="underline decoration-muted-foreground/30 underline-offset-2 hover:text-muted-foreground"
+                    >
+                      Transcript
+                    </a>
+                    {deck.has_timestamps && (
+                      <>
+                        <span className="text-muted-foreground/35 mx-1.5" aria-hidden>
+                          ·
+                        </span>
+                        <a
+                          href={`/api/proxy/decks/${deck.id}/transcript/timestamped`}
+                          download
+                          className="underline decoration-muted-foreground/30 underline-offset-2 hover:text-muted-foreground"
+                        >
+                          Timestamps
+                        </a>
+                      </>
+                    )}
+                  </p>
+                </div>
+              ) : deck.source_url ? (
+                <div className="pt-1 border-t border-border/50 text-sm text-muted-foreground flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
+                  <span>
+                    {deck.source_type
+                      ? _SOURCE_TYPE_LABELS[deck.source_type] ??
+                        deck.source_type.charAt(0).toUpperCase() + deck.source_type.slice(1)
+                      : "Link"}
+                  </span>
+                  <span className="text-muted-foreground/40" aria-hidden>
                     ·
                   </span>
                   <a
                     href={deck.source_url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="font-medium text-foreground underline underline-offset-2 hover:text-muted-foreground min-w-0 break-words"
+                    className="text-foreground font-medium underline underline-offset-2 decoration-border hover:decoration-foreground/40 min-w-0 break-words"
                   >
                     {deck.source_topic?.trim() || deck.source_url}
                   </a>
-                </p>
-                {(() => {
-                  const ym = parseYoutubeDeckSourceMetadata(deck.source_metadata);
-                  if (!ym) return null;
-                  const parts: string[] = [];
-                  if (
-                    ym.duration_seconds != null &&
-                    Number.isFinite(ym.duration_seconds) &&
-                    ym.duration_seconds >= 0
-                  ) {
-                    const d = formatYoutubeDuration(ym.duration_seconds);
-                    if (d) parts.push(d);
-                  }
-                  const cap = ym.caption_language?.trim();
-                  if (cap) {
-                    parts.push(/caption/i.test(cap) ? cap : `${cap} captions`);
-                  }
-                  if (!parts.length) return null;
-                  return (
-                    <p className="text-xs text-muted-foreground/80 leading-snug max-mobile:text-[11px]">
-                      {parts.join(" · ")}
-                    </p>
-                  );
-                })()}
-                <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                  <a
-                    href={`/api/proxy/decks/${deck.id}/transcript`}
-                    download
-                    className="hover:text-foreground underline underline-offset-2 transition-colors"
-                  >
-                    Transcript
-                  </a>
-                  {deck.has_timestamps && (
-                    <a
-                      href={`/api/proxy/decks/${deck.id}/transcript/timestamped`}
-                      download
-                      className="hover:text-foreground underline underline-offset-2 transition-colors"
-                    >
-                      Timestamps
-                    </a>
-                  )}
                 </div>
-              </div>
-            ) : deck.source_url ? (
-              <p className="text-sm text-muted-foreground mb-4 flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
-                <span>
-                  {deck.source_type
-                    ? _SOURCE_TYPE_LABELS[deck.source_type] ??
-                      deck.source_type.charAt(0).toUpperCase() + deck.source_type.slice(1)
-                    : "URL"}
-                </span>
-                <span className="text-muted-foreground/50" aria-hidden>
-                  ·
-                </span>
-                <a
-                  href={deck.source_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="font-medium text-foreground underline underline-offset-2 hover:text-muted-foreground min-w-0 break-words"
-                >
-                  {deck.source_topic?.trim() || deck.source_url}
-                </a>
-              </p>
-            ) : deck.source_topic?.trim() ? (
-              <p className="text-sm text-muted-foreground mb-4 flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
-                <span>
-                  {deck.source_type === "text"
-                    ? "Text"
-                    : deck.source_type === "topic"
-                      ? "Topic"
-                      : deck.source_type
-                        ? (_SOURCE_TYPE_LABELS[deck.source_type] ?? "Topic")
-                        : "Topic"}
-                </span>
-                <span className="text-muted-foreground/50" aria-hidden>
-                  ·
-                </span>
-                <span className="font-medium text-foreground">{deck.source_topic.trim()}</span>
-              </p>
-            ) : null}
+              ) : deck.source_topic?.trim() ? (
+                <div className="pt-1 border-t border-border/50 text-sm text-muted-foreground flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
+                  <span>
+                    {deck.source_type === "text"
+                      ? "Text"
+                      : deck.source_type === "topic"
+                        ? "Topic"
+                        : deck.source_type
+                          ? (_SOURCE_TYPE_LABELS[deck.source_type] ?? "Topic")
+                          : "Topic"}
+                  </span>
+                  <span className="text-muted-foreground/40" aria-hidden>
+                    ·
+                  </span>
+                  <span className="font-medium text-foreground">{deck.source_topic.trim()}</span>
+                </div>
+              ) : null}
+            </div>
             {!isReadOnly && categoryModalOpen && (
               <div
                 className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
@@ -1273,23 +1289,24 @@ export default function DeckPage({ params }: DeckPageProps) {
                 </div>
               </div>
             )}
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap items-center gap-2 gap-y-2">
               {flashcards.length > 0 ? (
                 <Link
                   href={`/study/${deck.id}`}
-                  className="inline-flex h-10 items-center justify-center rounded-lg bg-neutral-900 text-white hover:bg-neutral-800 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200 px-4 text-sm font-medium max-mobile:min-h-[44px]"
+                  className="inline-flex h-10 min-w-[7.5rem] items-center justify-center rounded-lg bg-neutral-900 px-5 text-sm font-semibold text-white shadow-sm hover:bg-neutral-800 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200 max-mobile:min-h-11"
                 >
                   Explore
                 </Link>
               ) : (
-                <span className="inline-flex h-10 items-center justify-center rounded-lg bg-neutral-900/40 text-white/60 dark:bg-neutral-100/40 dark:text-neutral-900/60 px-4 text-sm font-medium cursor-not-allowed max-mobile:min-h-[44px]">
+                <span className="inline-flex h-10 min-w-[7.5rem] items-center justify-center rounded-lg bg-neutral-900/35 px-5 text-sm font-medium text-white/55 dark:bg-neutral-100/35 dark:text-neutral-900/50 max-mobile:min-h-11 cursor-not-allowed">
                   Explore
                 </span>
               )}
               <Button
-                variant="ghost"
-                size="icon"
-                className="h-10 w-10 text-muted-foreground hover:text-foreground"
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-9 text-muted-foreground border-border/80"
                 disabled={flashcards.length === 0}
                 onClick={() => {
                   const catName = deck.category_id
@@ -1297,22 +1314,29 @@ export default function DeckPage({ params }: DeckPageProps) {
                     : null;
                   exportDeckAsTxt(deck, catName, flashcards);
                 }}
-                aria-label="Export as .txt"
+                aria-label="Export deck as .txt"
               >
-                <Download className="size-4" />
+                <Download className="size-3.5 shrink-0 mr-1.5 opacity-70" aria-hidden />
+                Export
               </Button>
               {isReadOnly && (
                 <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-9 text-muted-foreground border-border/80"
                   onClick={handleDuplicate}
                   disabled={duplicating}
-                  className="max-mobile:min-h-[44px]"
                 >
-                  {duplicating ? "Saving…" : "Save to my decks"}
+                  {duplicating ? "Saving…" : "Save copy"}
                 </Button>
               )}
             </div>
+            {dupError ? (
+              <p className="text-sm text-destructive mt-1.5 max-w-md">{dupError}</p>
+            ) : null}
             {!isReadOnly && (hasFlashcards && !genPanelExpanded ? (
-              <div className="mt-4 pt-4 border-t border-border/80">
+              <div className="mt-5 pt-4 border-t border-border/60">
                 <button
                   type="button"
                   onClick={() => setGenPanelExpanded(true)}
@@ -1324,9 +1348,9 @@ export default function DeckPage({ params }: DeckPageProps) {
               </div>
             ) : (
               <div
-                className={`generate-box mt-4 pt-4 border-t border-border space-y-4 ${
+                className={`generate-box mt-5 pt-4 border-t border-border/60 space-y-4 ${
                   hasFlashcards
-                    ? "rounded-lg border border-border/50 bg-muted/20 px-4 py-4 max-mobile:px-3 max-mobile:py-3"
+                    ? "rounded-lg border border-border/50 bg-muted/15 px-4 py-4 max-mobile:px-3 max-mobile:py-3"
                     : "max-mobile:p-3.5"
                 }`}
               >
@@ -1363,7 +1387,10 @@ export default function DeckPage({ params }: DeckPageProps) {
                       type="button"
                       role="radio"
                       aria-checked={genMode === value}
-                      onClick={() => setGenMode(value)}
+                      onClick={() => {
+                        setGenMode(value);
+                        setGenActionError(null);
+                      }}
                       className={`min-w-[5.5rem] rounded-md px-4 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
                         genMode === value
                           ? "bg-background text-foreground shadow-sm ring-1 ring-border/60"
@@ -1585,12 +1612,32 @@ export default function DeckPage({ params }: DeckPageProps) {
                   </div>
                 )}
 
+                {tierUsage?.limited_tier &&
+                  tierUsage.max_cards_per_deck != null &&
+                  flashcards.length >= tierUsage.max_cards_per_deck && (
+                    <p className="text-xs text-muted-foreground">
+                      Free plan: {tierUsage.max_cards_per_deck} cards per deck. Remove cards to add
+                      more.
+                    </p>
+                  )}
+
+                {genActionError && (
+                  <p className="text-sm text-destructive">{genActionError}</p>
+                )}
+
                 <div className="flex flex-wrap items-center gap-3">
                   {genMode === "import" ? (
                     <Button
                       type="button"
                       onClick={handleImport}
-                      disabled={generating || !importQAPairs || importQAPairs.length === 0}
+                      disabled={
+                        generating ||
+                        !importQAPairs ||
+                        importQAPairs.length === 0 ||
+                        (tierUsage?.limited_tier === true &&
+                          tierUsage.max_cards_per_deck != null &&
+                          flashcards.length >= tierUsage.max_cards_per_deck)
+                      }
                       className="w-full sm:w-auto"
                     >
                       {generating
@@ -1603,32 +1650,47 @@ export default function DeckPage({ params }: DeckPageProps) {
                     <Button
                       type="button"
                       onClick={handleGenerate}
-                      disabled={generating || (genMode === "text" && genText.length > GENERATION_TEXT_MAX_CHARS)}
+                      disabled={
+                        generating ||
+                        (genMode === "text" && genText.length > GENERATION_TEXT_MAX_CHARS) ||
+                        (tierUsage?.limited_tier === true &&
+                          tierUsage.max_cards_per_deck != null &&
+                          flashcards.length >= tierUsage.max_cards_per_deck)
+                      }
                       className="w-full sm:w-auto"
                     >
                       {generating ? "Generating…" : "Generate Cards"}
                     </Button>
                   )}
-                  <Link
-                    href={`/decks/${deck.id}/add-card`}
-                    className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
-                  >
-                    <Plus className="size-3.5" />
-                    Add manually
-                  </Link>
+                  {tierUsage?.limited_tier === true &&
+                  tierUsage.max_cards_per_deck != null &&
+                  flashcards.length >= tierUsage.max_cards_per_deck ? (
+                    <span className="inline-flex items-center gap-1.5 text-sm text-muted-foreground/50 cursor-not-allowed">
+                      <Plus className="size-3.5" />
+                      Add manually
+                    </span>
+                  ) : (
+                    <Link
+                      href={`/decks/${deck.id}/add-card`}
+                      className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      <Plus className="size-3.5" />
+                      Add manually
+                    </Link>
+                  )}
                 </div>
               </div>
             ))}
           </div>
         </Card>
 
-        <section className="section space-y-4 mt-10">
+        <section className="section space-y-4 mt-6 sm:mt-8">
           <div className="flex items-center justify-between gap-3">
-            <h2 className="text-xl font-semibold tracking-tight">
-              Flashcards
+            <h2 className="text-lg font-semibold tracking-tight">
+              Cards
               {flashcards.length > 0 && (
-                <span className="ml-2 text-sm font-normal text-muted-foreground">
-                  {flashcards.length}
+                <span className="ml-1.5 text-sm font-normal text-muted-foreground tabular-nums">
+                  · {flashcards.length}
                 </span>
               )}
             </h2>
@@ -1884,22 +1946,24 @@ export default function DeckPage({ params }: DeckPageProps) {
         </section>
 
         {canOfferAdminTransfer && deck && (
-          <section className="section space-y-3 pt-8 border-t border-border">
-            <h2 className="text-lg font-semibold">Admin</h2>
-            <p className="text-sm text-muted-foreground leading-relaxed max-w-xl">
-              This deck belongs to a public/legacy account. You can move it into your
-              Google-linked account. Cards and source data stay the same; it will no
-              longer appear under the original owner.
-            </p>
-            <Button
-              type="button"
-              variant="secondary"
-              className="gap-2"
-              onClick={() => setTransferConfirmOpen(true)}
-            >
-              <ArrowRightLeft className="size-4 shrink-0" aria-hidden />
-              Move to my account
-            </Button>
+          <section className="section pt-6 border-t border-border/60">
+            <div className="rounded-lg border border-dashed border-border/80 bg-muted/10 px-3 py-3 sm:px-4 sm:py-3.5">
+              <p className="text-xs text-muted-foreground leading-relaxed max-w-xl mb-2.5">
+                <span className="font-medium text-foreground/80">Admin</span>
+                {" — "}
+                Legacy owner deck. Move into your linked account; cards and source are unchanged.
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 text-xs text-muted-foreground gap-1.5 border-border/70"
+                onClick={() => setTransferConfirmOpen(true)}
+              >
+                <ArrowRightLeft className="size-3.5 shrink-0 opacity-70" aria-hidden />
+                Move to my account
+              </Button>
+            </div>
           </section>
         )}
 
@@ -1923,22 +1987,25 @@ export default function DeckPage({ params }: DeckPageProps) {
           </section>
         )}
 
-        {!isReadOnly && <section className="section space-y-4 pt-8 border-t border-border">
-          <h2 className="text-lg font-semibold">Danger Zone</h2>
-          <div className="rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3">
-            <p className="font-medium mb-1">Delete deck</p>
-            <p className="text-sm text-muted-foreground mb-3">
-              This will permanently delete the deck and all flashcards.
-            </p>
-            <Button
-              type="button"
-              variant="destructive"
-              onClick={() => setDeckDeleteConfirm(true)}
-            >
-              Delete Deck
-            </Button>
-          </div>
-        </section>}
+        {!isReadOnly && (
+          <section className="section pt-6 border-t border-border/60">
+            <div className="rounded-lg border border-destructive/20 bg-destructive/[0.03] dark:bg-destructive/5 px-3 py-3 sm:px-4">
+              <p className="text-xs font-medium text-muted-foreground mb-2">Delete deck</p>
+              <p className="text-xs text-muted-foreground/90 mb-3 leading-relaxed">
+                Permanently removes this deck and all cards.
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 text-xs border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                onClick={() => setDeckDeleteConfirm(true)}
+              >
+                Delete deck
+              </Button>
+            </div>
+          </section>
+        )}
 
         <FlashcardModal
           cards={processedCards}

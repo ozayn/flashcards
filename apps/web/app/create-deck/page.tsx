@@ -18,7 +18,7 @@ import {
   parseQAPairs,
   TranscriptFetchError,
 } from "@/lib/api";
-import { getStoredUserId, useCardCountOptions } from "@/components/user-selector";
+import { getStoredUserId, useTierLimits } from "@/components/user-selector";
 import { GENERATION_TEXT_MAX_CHARS } from "@/lib/generation-text";
 import { markDeckBackgroundGenerationNavigation } from "@/lib/deck-pending-generation";
 import { Upload } from "lucide-react";
@@ -46,7 +46,7 @@ function CreateDeckForm() {
   const [emptyDeckMode, setEmptyDeckMode] = useState(false);
   const [useNameAsTopic, setUseNameAsTopic] = useState(false);
   const [cardCount, setCardCount] = useState(10);
-  const cardCountOptions = useCardCountOptions();
+  const { cardCountOptions, usage } = useTierLimits();
   const [loading, setLoading] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
@@ -103,32 +103,6 @@ function CreateDeckForm() {
 
   const topicForGeneration =
     topicTrimmed || (useNameAsTopic && !topicTrimmed ? nameTrimmed : "");
-
-  const willGenerate =
-    !emptyDeckMode &&
-    (generationMode === "topic"
-      ? Boolean(topicForGeneration)
-      : generationMode === "text"
-        ? Boolean(textTrimmed)
-        : generationMode === "url"
-          ? Boolean(articleUrlTrimmed)
-          : generationMode === "import"
-            ? Boolean(importQAPairs && importQAPairs.length > 0)
-            : Boolean(youtubeUrlTrimmed));
-
-  const submitLabel = loading
-    ? loadingMessage || "Creating..."
-    : emptyDeckMode
-      ? "Create Empty Deck"
-      : generationMode === "import" && importQAPairs && importQAPairs.length > 0
-        ? `Create Deck and Import ${importQAPairs.length} Cards`
-        : generationMode === "youtube" && youtubeUrlTrimmed
-          ? "Create Deck from Video"
-          : generationMode === "url" && articleUrlTrimmed
-            ? "Create Deck from Article"
-            : willGenerate
-              ? "Create Deck and Generate Cards"
-              : "Create Deck";
 
   function handleImportFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const files = e.target.files;
@@ -294,19 +268,18 @@ function CreateDeckForm() {
       }
 
       if (generationMode === "import" && importQAPairs) {
-        setLoadingMessage("Creating deck…");
+        setLoadingMessage("Saving…");
         const deck = await createDeck({
           user_id: userId,
           name: nameTrimmed,
           source_type: "text",
         });
         const deckId = (deck as { id: string }).id;
-        setLoadingMessage(`Importing ${importQAPairs.length} cards…`);
+        setLoadingMessage("Importing…");
         try {
           await importFlashcards({ deck_id: deckId, cards: importQAPairs });
         } catch {
-          router.push(`/decks/${deckId}`);
-          return;
+          /* Deck exists; user can import again from the deck page. */
         }
         router.push(`/decks/${deckId}`);
         return;
@@ -324,7 +297,7 @@ function CreateDeckForm() {
           if (err instanceof TranscriptFetchError && err.title) {
             if (!nameTrimmed) setName(err.title);
           }
-          setFormError("We couldn\u2019t fetch the transcript. You can paste it manually below.");
+          setFormError("Couldn\u2019t fetch transcript — paste text below.");
           setLoading(false);
           setLoadingMessage("");
           return;
@@ -332,7 +305,7 @@ function CreateDeckForm() {
 
         const videoTitle = transcript.title || null;
         const deckName = nameTrimmed || videoTitle || "YouTube Deck";
-        setLoadingMessage("Creating deck…");
+        setLoadingMessage("Saving…");
 
         const deck = await createDeck({
           user_id: userId,
@@ -372,7 +345,7 @@ function CreateDeckForm() {
 
         const articleTitle = article.title || null;
         const deckName = nameTrimmed || articleTitle || "Wikipedia Deck";
-        setLoadingMessage("Creating deck…");
+        setLoadingMessage("Saving…");
 
         const deck = await createDeck({
           user_id: userId,
@@ -403,7 +376,7 @@ function CreateDeckForm() {
       const effectiveTopic =
         generationMode === "topic" ? topicForGeneration : "";
 
-      setLoadingMessage("Creating deck…");
+      setLoadingMessage("Saving…");
       const deck = await createDeck({
         user_id: userId,
         name: effectiveDeckName,
@@ -437,8 +410,8 @@ function CreateDeckForm() {
       }
 
       router.push(`/decks/${deckId}`);
-    } catch {
-      setFormError("Failed to create deck. Please try again.");
+    } catch (e) {
+      setFormError(e instanceof Error ? e.message : "Failed to create deck. Please try again.");
     } finally {
       setLoading(false);
       setLoadingMessage("");
@@ -446,30 +419,34 @@ function CreateDeckForm() {
   };
 
   return (
-    <PageContainer>
-      <div className="flex items-center gap-4">
+    <PageContainer className="mx-auto w-full max-w-2xl">
+      <div>
         <Link
           href="/decks"
-          className="inline-flex h-7 items-center justify-center rounded-lg px-2.5 text-sm font-medium hover:bg-muted"
+          className="inline-flex h-7 items-center rounded-md px-1 -ml-1 text-xs text-muted-foreground hover:text-foreground"
         >
           ← Back
         </Link>
       </div>
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Create Deck</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Create a deck and optionally generate cards with AI.
-        </p>
-      </div>
 
-      <form onSubmit={handleSubmit} className="space-y-6">
+      <h1 className="text-2xl font-semibold tracking-tight">Create deck</h1>
+
+      <form onSubmit={handleSubmit} className="space-y-5">
         <div className="space-y-2">
           <label htmlFor="name" className="text-sm font-medium">
-            Deck Name
+            Deck name
           </label>
           <Input
             id="name"
-            placeholder={generationMode === "youtube" ? "Auto-filled from video title if empty" : generationMode === "url" ? "Auto-filled from article title if empty" : generationMode === "import" ? "e.g. Biology Final Exam" : "e.g. Spanish Vocabulary"}
+            placeholder={
+              generationMode === "youtube"
+                ? "Optional — uses video title if empty"
+                : generationMode === "url"
+                  ? "Optional — uses article title if empty"
+                  : generationMode === "import"
+                    ? "e.g. Biology final"
+                    : "e.g. Spanish vocabulary"
+            }
             value={name}
             onChange={(e) => setName(e.target.value)}
             autoComplete="off"
@@ -477,399 +454,422 @@ function CreateDeckForm() {
           />
         </div>
 
-        <label className="flex cursor-pointer items-center gap-2.5 text-sm">
-          <input
-            type="checkbox"
-            checked={emptyDeckMode}
-            onChange={(e) => {
-              setEmptyDeckMode(e.target.checked);
-            }}
-            className="rounded border-input"
-            disabled={loading}
-          />
-          <span className="text-muted-foreground">
-            Create empty deck (add cards later)
-          </span>
-        </label>
+        <details className="rounded-lg border border-border/50 bg-muted/10 [&_summary::-webkit-details-marker]:hidden">
+          <summary className="cursor-pointer px-3 py-2.5 text-sm text-muted-foreground hover:text-foreground">
+            More options
+          </summary>
+          <div className="space-y-3 border-t border-border/40 px-3 pb-3 pt-3">
+            <label className="flex cursor-pointer items-center gap-2.5 text-sm">
+              <input
+                type="checkbox"
+                checked={emptyDeckMode}
+                onChange={(e) => {
+                  setEmptyDeckMode(e.target.checked);
+                }}
+                className="rounded border-input"
+                disabled={loading}
+              />
+              <span className="text-muted-foreground">Empty deck (no cards yet)</span>
+            </label>
+            {!emptyDeckMode && generationMode === "topic" && !topicTrimmed && (
+              <label className="flex cursor-pointer items-center gap-2.5 text-sm">
+                <input
+                  type="checkbox"
+                  checked={useNameAsTopic}
+                  onChange={(e) => setUseNameAsTopic(e.target.checked)}
+                  className="rounded border-input"
+                  disabled={loading}
+                />
+                <span className="text-muted-foreground">Use deck name as topic</span>
+              </label>
+            )}
+          </div>
+        </details>
 
         {!emptyDeckMode && (
-          <section className="space-y-4 pt-2 border-t border-border/40">
-            <h2 className="text-sm font-semibold tracking-tight text-foreground pt-4">
-              Generate cards
-            </h2>
+          <div className="space-y-4 rounded-xl border border-border/60 bg-card/40 p-4 shadow-sm sm:p-5">
+            <div
+              className="grid grid-cols-3 gap-1 rounded-lg border border-border/50 bg-muted/25 p-1 sm:grid-cols-5"
+              role="radiogroup"
+              aria-label="Source"
+            >
+              {(
+                [
+                  { value: "topic" as const, label: "Topic" },
+                  { value: "text" as const, label: "Text" },
+                  { value: "youtube" as const, label: "YouTube" },
+                  { value: "url" as const, label: "URL" },
+                  { value: "import" as const, label: "Import" },
+                ] as const
+              ).map(({ value, label }) => (
+                <button
+                  key={value}
+                  type="button"
+                  role="radio"
+                  aria-checked={generationMode === value}
+                  onClick={() => {
+                    setGenerationMode(value);
+                    setFormError(null);
+                  }}
+                  disabled={loading}
+                  className={`rounded-md px-2 py-2 text-center text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:text-sm ${
+                    generationMode === value
+                      ? "bg-background text-foreground shadow-sm ring-1 ring-border/60"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            {autoSwitchHint && (
+              <p className="text-xs text-muted-foreground">{autoSwitchHint}</p>
+            )}
 
-                  <div
-                    className="inline-flex rounded-lg border border-border/50 bg-muted/30 p-0.5"
-                    role="radiogroup"
-                    aria-label="Generation source"
+            {generationMode === "topic" && (
+              <div className="space-y-3">
+                <div className="space-y-2">
+                  <label htmlFor="topic" className="text-sm font-medium">
+                    Topic
+                  </label>
+                  <Input
+                    id="topic"
+                    placeholder="Optional — or add cards after creating"
+                    value={topic}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      const detected = _detectUrlMode(v);
+                      if (detected) {
+                        setTopic("");
+                        setFormError(null);
+                        if (detected === "youtube") {
+                          setYoutubeUrl(normalizeYouTubeUrl(v));
+                          setGenerationMode("youtube");
+                          setAutoSwitchHint("Switched to YouTube");
+                        } else {
+                          setArticleUrl(v.trim());
+                          setGenerationMode("url");
+                          setAutoSwitchHint("Switched to URL");
+                        }
+                        setTimeout(() => setAutoSwitchHint(null), 2500);
+                      } else {
+                        setTopic(v);
+                        setAutoSwitchHint(null);
+                      }
+                    }}
+                    className="min-w-0"
+                    disabled={loading}
+                  />
+                </div>
+                <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+                  <span className="shrink-0">Cards</span>
+                  <select
+                    id="cardCount-topic"
+                    value={cardCount}
+                    onChange={(e) => setCardCount(Number(e.target.value))}
+                    disabled={loading}
+                    aria-label="Number of cards to generate"
+                    className="h-9 min-w-[4.5rem] rounded-md border border-input bg-background px-2.5 text-sm text-foreground ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                   >
-                    {(
-                      [
-                        { value: "topic" as const, label: "Topic" },
-                        { value: "text" as const, label: "Text" },
-                        { value: "youtube" as const, label: "YouTube" },
-                        { value: "url" as const, label: "URL" },
-                        { value: "import" as const, label: "Import" },
-                      ] as const
-                    ).map(({ value, label }) => (
-                      <button
-                        key={value}
-                        type="button"
-                        role="radio"
-                        aria-checked={generationMode === value}
-                        onClick={() => { setGenerationMode(value); setFormError(null); }}
+                    {cardCountOptions.map((n) => (
+                      <option key={n} value={n}>
+                        {n}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            )}
+
+            {generationMode === "text" && (
+              <div className="space-y-3">
+                {ytFallbackUrl && (
+                  <div className="rounded-lg border border-border/50 bg-muted/20 px-3 py-2.5">
+                    <p className="text-xs font-medium text-foreground">Transcript not fetched — paste manually</p>
+                    <ol className="mt-1.5 list-inside list-decimal space-y-0.5 text-xs text-muted-foreground">
+                      <li>
+                        <a
+                          href={ytFallbackUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="underline underline-offset-2 hover:text-foreground"
+                        >
+                          Open video
+                        </a>
+                      </li>
+                      <li>
+                        ⋯ → Show transcript → copy
+                      </li>
+                    </ol>
+                  </div>
+                )}
+                <div className="space-y-2">
+                  <label htmlFor="text" className="text-sm font-medium">
+                    Text
+                  </label>
+                  <textarea
+                    id="text"
+                    placeholder={
+                      ytFallbackUrl
+                        ? "Paste transcript…"
+                        : "Notes, article text, etc."
+                    }
+                    value={text}
+                    onChange={(e) => {
+                      setText(e.target.value);
+                      if (textUploadStatus) setTextUploadStatus(null);
+                    }}
+                    maxLength={GENERATION_TEXT_MAX_CHARS}
+                    disabled={loading}
+                    className="w-full min-h-[140px] max-mobile:min-h-[120px] rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  />
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                      <input
+                        id="create-deck-text-upload"
+                        type="file"
+                        accept=".txt,text/plain"
+                        onChange={handleTextTabFileUpload}
                         disabled={loading}
-                        className={`min-w-[5rem] rounded-md px-3.5 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
-                          generationMode === value
-                            ? "bg-background text-foreground shadow-sm ring-1 ring-border/60"
-                            : "text-muted-foreground hover:text-foreground"
-                        }`}
+                        className="sr-only"
+                      />
+                      <label
+                        htmlFor="create-deck-text-upload"
+                        className={`inline-flex items-center gap-1 underline-offset-2 hover:underline ${loading ? "pointer-events-none opacity-50" : "cursor-pointer"}`}
                       >
-                        {label}
-                      </button>
+                        <Upload className="size-3.5 shrink-0" />
+                        .txt
+                      </label>
+                      {textUploadStatus && (
+                        <span
+                          className={
+                            textUploadStatus.startsWith("Only ") ||
+                            textUploadStatus.startsWith("That ") ||
+                            textUploadStatus.startsWith("Could ")
+                              ? "text-destructive"
+                              : ""
+                          }
+                        >
+                          {textUploadStatus}
+                        </span>
+                      )}
+                    </div>
+                    <span>
+                      {text.length.toLocaleString()}
+                      {text.length >= GENERATION_TEXT_MAX_CHARS && (
+                        <span className="ml-1 text-destructive"> · limit</span>
+                      )}
+                    </span>
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+                  <span className="shrink-0">Cards</span>
+                  <select
+                    id="cardCount-text"
+                    value={cardCount}
+                    onChange={(e) => setCardCount(Number(e.target.value))}
+                    disabled={loading}
+                    aria-label="Number of cards to generate"
+                    className="h-9 min-w-[4.5rem] rounded-md border border-input bg-background px-2.5 text-sm text-foreground ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  >
+                    {cardCountOptions.map((n) => (
+                      <option key={n} value={n}>
+                        {n}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            )}
+
+            {generationMode === "youtube" && (
+              <div className="space-y-3">
+                <div className="space-y-2">
+                  <label htmlFor="youtube-url" className="text-sm font-medium">
+                    Video URL
+                  </label>
+                  <Input
+                    id="youtube-url"
+                    type="url"
+                    placeholder="youtube.com/watch?v=…"
+                    value={youtubeUrl}
+                    onChange={(e) => {
+                      setYoutubeUrl(e.target.value);
+                      setFormError(null);
+                    }}
+                    disabled={loading}
+                    className="min-w-0"
+                  />
+                </div>
+                <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+                  <span className="shrink-0">Cards</span>
+                  <select
+                    id="cardCount-yt"
+                    value={cardCount}
+                    onChange={(e) => setCardCount(Number(e.target.value))}
+                    disabled={loading}
+                    aria-label="Number of cards to generate"
+                    className="h-9 min-w-[4.5rem] rounded-md border border-input bg-background px-2.5 text-sm text-foreground ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  >
+                    {cardCountOptions.map((n) => (
+                      <option key={n} value={n}>
+                        {n}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            )}
+
+            {generationMode === "url" && (
+              <div className="space-y-3">
+                <div className="space-y-2">
+                  <label htmlFor="article-url" className="text-sm font-medium">
+                    URL
+                  </label>
+                  <Input
+                    id="article-url"
+                    type="url"
+                    placeholder="Wikipedia article URL"
+                    value={articleUrl}
+                    onChange={(e) => {
+                      setArticleUrl(e.target.value);
+                      setFormError(null);
+                    }}
+                    disabled={loading}
+                    className="min-w-0"
+                  />
+                </div>
+                <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+                  <span className="shrink-0">Cards</span>
+                  <select
+                    id="cardCount-url"
+                    value={cardCount}
+                    onChange={(e) => setCardCount(Number(e.target.value))}
+                    disabled={loading}
+                    aria-label="Number of cards to generate"
+                    className="h-9 min-w-[4.5rem] rounded-md border border-input bg-background px-2.5 text-sm text-foreground ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  >
+                    {cardCountOptions.map((n) => (
+                      <option key={n} value={n}>
+                        {n}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            )}
+
+            {generationMode === "import" && (
+              <div className="space-y-3">
+                <div className="space-y-2">
+                  <label htmlFor="import-text" className="text-sm font-medium">
+                    Import
+                  </label>
+                  <textarea
+                    id="import-text"
+                    placeholder={"Q: …\nA: …"}
+                    value={importText}
+                    onChange={(e) => {
+                      setImportText(e.target.value);
+                      setImportError(null);
+                      setImportFiles([]);
+                    }}
+                    disabled={loading}
+                    className="w-full min-h-[140px] max-mobile:min-h-[120px] rounded-md border border-input bg-background px-3 py-2 font-mono text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  />
+                  <div className="flex flex-wrap items-center gap-3">
+                    <input
+                      ref={importFileRef}
+                      id="import-file-upload"
+                      type="file"
+                      accept=".txt,text/plain"
+                      multiple
+                      onChange={handleImportFileUpload}
+                      disabled={loading}
+                      className="sr-only"
+                    />
+                    <label
+                      htmlFor="import-file-upload"
+                      className="inline-flex cursor-pointer items-center gap-1 text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                    >
+                      <Upload className="size-3.5" />
+                      Upload .txt
+                    </label>
+                    <details className="text-xs text-muted-foreground">
+                      <summary className="cursor-pointer hover:text-foreground [&::-webkit-details-marker]:hidden">
+                        Format
+                      </summary>
+                      <p className="mt-2 border-l-2 border-border/60 pl-2 text-[11px] leading-relaxed">
+                        One card per Q:/A: block. Imported as-is (no AI).
+                      </p>
+                    </details>
+                  </div>
+                </div>
+                {importFiles.length > 0 && (
+                  <div className="space-y-0.5 text-xs">
+                    {importFiles.map((f) => (
+                      <p
+                        key={f.name}
+                        className={
+                          f.error ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground"
+                        }
+                      >
+                        {f.name}
+                        {f.error ? ` — ${f.error}` : ` — ${f.pairCount} pair${f.pairCount === 1 ? "" : "s"}`}
+                      </p>
                     ))}
                   </div>
-                  {autoSwitchHint && (
-                    <p className="text-xs text-muted-foreground animate-in fade-in duration-200">
-                      {autoSwitchHint}
-                    </p>
-                  )}
-
-                  {generationMode === "topic" && (
-                    <div className="space-y-3 pt-1">
-                      <div className="space-y-2">
-                        <label htmlFor="topic" className="text-sm font-medium">
-                          Topic
-                        </label>
-                        <Input
-                          id="topic"
-                          placeholder="e.g. Photosynthesis, Spanish verbs"
-                          value={topic}
-                          onChange={(e) => {
-                            const v = e.target.value;
-                            const detected = _detectUrlMode(v);
-                            if (detected) {
-                              setTopic("");
-                              setFormError(null);
-                              if (detected === "youtube") {
-                                setYoutubeUrl(normalizeYouTubeUrl(v));
-                                setGenerationMode("youtube");
-                                setAutoSwitchHint("Moved to YouTube");
-                              } else {
-                                setArticleUrl(v.trim());
-                                setGenerationMode("url");
-                                setAutoSwitchHint("Moved to URL");
-                              }
-                              setTimeout(() => setAutoSwitchHint(null), 3000);
-                            } else {
-                              setTopic(v);
-                              setAutoSwitchHint(null);
-                            }
-                          }}
-                          className="min-w-0"
-                          disabled={loading}
-                        />
-                        <p className="text-xs text-muted-foreground">
-                          Leave empty to skip generation.
-                        </p>
-                      </div>
-                      {!topicTrimmed && (
-                        <label className="flex cursor-pointer items-center gap-2 text-sm">
-                          <input
-                            type="checkbox"
-                            checked={useNameAsTopic}
-                            onChange={(e) => setUseNameAsTopic(e.target.checked)}
-                            className="rounded border-input"
-                            disabled={loading}
-                          />
-                          <span className="text-muted-foreground">
-                            Use deck name as topic for generation
-                          </span>
-                        </label>
-                      )}
-                      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-                        <label
-                          htmlFor="cardCount-topic"
-                          className="text-sm font-medium shrink-0"
-                        >
-                          Number of cards
-                        </label>
-                        <select
-                          id="cardCount-topic"
-                          value={cardCount}
-                          onChange={(e) => setCardCount(Number(e.target.value))}
-                          disabled={loading}
-                          className="h-9 min-w-[4.5rem] rounded-md border border-input bg-background px-2.5 py-1 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                        >
-                          {cardCountOptions.map((n) => (
-                            <option key={n} value={n}>
-                              {n}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    </div>
-                  )}
-
-                  {generationMode === "text" && (
-                    <div className="space-y-3 pt-1">
-                      {ytFallbackUrl && (
-                        <div className="rounded-lg border border-border/60 bg-muted/20 px-3.5 py-3 space-y-1.5">
-                          <p className="text-sm font-medium text-foreground">
-                            How to copy the transcript from YouTube
-                          </p>
-                          <ol className="text-xs text-muted-foreground space-y-0.5 list-decimal list-inside">
-                            <li>
-                              Open the video on{" "}
-                              <a
-                                href={ytFallbackUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="underline underline-offset-2 hover:text-foreground"
-                              >
-                                YouTube
-                              </a>
-                            </li>
-                            <li>Click <strong>⋯</strong> (more) below the video → <strong>Show transcript</strong></li>
-                            <li>Select all the transcript text, copy, and paste below</li>
-                          </ol>
-                        </div>
-                      )}
-                      <div className="space-y-2">
-                        <label htmlFor="text" className="text-sm font-medium">
-                          Paste notes or transcript
-                        </label>
-                        <textarea
-                          id="text"
-                          placeholder={ytFallbackUrl ? "Paste the YouTube transcript here…" : "Paste notes, lecture content, or any text to generate flashcards from…"}
-                          value={text}
-                          onChange={(e) => {
-                            setText(e.target.value);
-                            if (textUploadStatus) setTextUploadStatus(null);
-                          }}
-                          maxLength={GENERATION_TEXT_MAX_CHARS}
-                          disabled={loading}
-                          className="w-full min-h-[160px] max-mobile:min-h-[120px] rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                        />
-                        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
-                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                            <input
-                              id="create-deck-text-upload"
-                              type="file"
-                              accept=".txt,text/plain"
-                              onChange={handleTextTabFileUpload}
-                              disabled={loading}
-                              className="sr-only"
-                            />
-                            <label
-                              htmlFor="create-deck-text-upload"
-                              className={`inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground ${loading ? "pointer-events-none opacity-50" : "cursor-pointer"}`}
-                            >
-                              <Upload className="size-3.5 shrink-0" />
-                              Upload .txt
-                            </label>
-                            {textUploadStatus && (
-                              <span
-                                className={`text-xs ${textUploadStatus.startsWith("Only ") || textUploadStatus.startsWith("That ") || textUploadStatus.startsWith("Could ") ? "text-destructive" : "text-muted-foreground"}`}
-                              >
-                                {textUploadStatus}
-                              </span>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-2 sm:ml-auto">
-                            <span className="text-xs text-muted-foreground">
-                              {text.length} / {GENERATION_TEXT_MAX_CHARS.toLocaleString()} characters
-                            </span>
-                            {text.length >= GENERATION_TEXT_MAX_CHARS && (
-                              <span className="text-xs text-destructive">
-                                Text is too long
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-                        <label
-                          htmlFor="cardCount-text"
-                          className="text-sm font-medium shrink-0"
-                        >
-                          Number of cards
-                        </label>
-                        <select
-                          id="cardCount-text"
-                          value={cardCount}
-                          onChange={(e) => setCardCount(Number(e.target.value))}
-                          disabled={loading}
-                          className="h-9 min-w-[4.5rem] rounded-md border border-input bg-background px-2.5 py-1 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                        >
-                          {cardCountOptions.map((n) => (
-                            <option key={n} value={n}>
-                              {n}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    </div>
-                  )}
-
-                  {generationMode === "youtube" && (
-                    <div className="space-y-3 pt-1">
-                      <div className="space-y-2">
-                        <label htmlFor="youtube-url" className="text-sm font-medium">
-                          YouTube link
-                        </label>
-                        <Input
-                          id="youtube-url"
-                          type="url"
-                          placeholder="https://www.youtube.com/watch?v=..."
-                          value={youtubeUrl}
-                          onChange={(e) => { setYoutubeUrl(e.target.value); setFormError(null); }}
-                          disabled={loading}
-                          className="min-w-0"
-                        />
-                        <p className="text-xs text-muted-foreground">
-                          We&apos;ll pull the transcript and generate flashcards from it.
-                        </p>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-                        <label
-                          htmlFor="cardCount-yt"
-                          className="text-sm font-medium shrink-0"
-                        >
-                          Number of cards
-                        </label>
-                        <select
-                          id="cardCount-yt"
-                          value={cardCount}
-                          onChange={(e) => setCardCount(Number(e.target.value))}
-                          disabled={loading}
-                          className="h-9 min-w-[4.5rem] rounded-md border border-input bg-background px-2.5 py-1 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                        >
-                          {cardCountOptions.map((n) => (
-                            <option key={n} value={n}>
-                              {n}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    </div>
-                  )}
-
-                  {generationMode === "url" && (
-                    <div className="space-y-3 pt-1">
-                      <div className="space-y-2">
-                        <label htmlFor="article-url" className="text-sm font-medium">
-                          Wikipedia URL
-                        </label>
-                        <Input
-                          id="article-url"
-                          type="url"
-                          placeholder="https://en.wikipedia.org/wiki/..."
-                          value={articleUrl}
-                          onChange={(e) => { setArticleUrl(e.target.value); setFormError(null); }}
-                          disabled={loading}
-                          className="min-w-0"
-                        />
-                        <p className="text-xs text-muted-foreground">
-                          We&apos;ll extract the article text and generate flashcards from it.
-                        </p>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-                        <label
-                          htmlFor="cardCount-url"
-                          className="text-sm font-medium shrink-0"
-                        >
-                          Number of cards
-                        </label>
-                        <select
-                          id="cardCount-url"
-                          value={cardCount}
-                          onChange={(e) => setCardCount(Number(e.target.value))}
-                          disabled={loading}
-                          className="h-9 min-w-[4.5rem] rounded-md border border-input bg-background px-2.5 py-1 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                        >
-                          {cardCountOptions.map((n) => (
-                            <option key={n} value={n}>
-                              {n}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    </div>
-                  )}
-
-                  {generationMode === "import" && (
-                    <div className="space-y-3 pt-1">
-                      <div className="space-y-2">
-                        <label htmlFor="import-text" className="text-sm font-medium">
-                          Paste Q/A text or upload a .txt file
-                        </label>
-                        <textarea
-                          id="import-text"
-                          placeholder={"Q: What is photosynthesis?\nA: The process by which plants convert light energy into chemical energy.\n\nQ: What is mitosis?\nA: A type of cell division that results in two identical daughter cells."}
-                          value={importText}
-                          onChange={(e) => { setImportText(e.target.value); setImportError(null); setImportFiles([]); }}
-                          disabled={loading}
-                          className="w-full min-h-[160px] max-mobile:min-h-[120px] rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 font-mono"
-                        />
-                        <div className="flex items-center gap-3">
-                          <label
-                            htmlFor="import-file-upload"
-                            className="inline-flex items-center gap-1.5 cursor-pointer text-sm text-muted-foreground hover:text-foreground transition-colors"
-                          >
-                            <Upload className="size-3.5" />
-                            Upload .txt files
-                          </label>
-                          <input
-                            ref={importFileRef}
-                            id="import-file-upload"
-                            type="file"
-                            accept=".txt,text/plain"
-                            multiple
-                            onChange={handleImportFileUpload}
-                            disabled={loading}
-                            className="sr-only"
-                          />
-                        </div>
-                      </div>
-                      {importFiles.length > 0 && (
-                        <div className="text-xs space-y-0.5">
-                          {importFiles.map((f) => (
-                            <p key={f.name} className={f.error ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground"}>
-                              {f.name}{f.error ? ` — ${f.error}` : ` — ${f.pairCount} pair${f.pairCount === 1 ? "" : "s"}`}
-                            </p>
-                          ))}
-                        </div>
-                      )}
-                      {importQAPairs && importQAPairs.length > 0 && (
-                        <p className="text-xs text-emerald-600 dark:text-emerald-400">
-                          {importQAPairs.length} Q/A pair{importQAPairs.length === 1 ? "" : "s"} detected — will be imported directly, no AI.
-                        </p>
-                      )}
-                      {importTextTrimmed && !importQAPairs && importFiles.length === 0 && (
-                        <p className="text-xs text-amber-600 dark:text-amber-400">
-                          No valid Q:/A: pairs found. Each card needs a Q: and A: line.
-                        </p>
-                      )}
-                      {importError && (
-                        <p className="text-xs text-destructive">{importError}</p>
-                      )}
-                      <p className="text-xs text-muted-foreground">
-                        Cards are imported exactly as written — no AI generation or paraphrasing.
-                      </p>
-                    </div>
-                  )}
-          </section>
+                )}
+                {importQAPairs && importQAPairs.length > 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    Ready: {importQAPairs.length} card{importQAPairs.length === 1 ? "" : "s"}
+                  </p>
+                )}
+                {importTextTrimmed && !importQAPairs && importFiles.length === 0 && (
+                  <p className="text-xs text-amber-600 dark:text-amber-400">
+                    Need Q: and A: lines per card.
+                  </p>
+                )}
+                {importError && <p className="text-xs text-destructive">{importError}</p>}
+              </div>
+            )}
+          </div>
         )}
 
-        {formError && (
-          <p className="text-sm text-destructive">{formError}</p>
-        )}
+        {usage?.limited_tier &&
+          usage.max_active_decks != null &&
+          usage.active_deck_count >= usage.max_active_decks && (
+            <p className="text-sm text-muted-foreground">
+              Free plan: {usage.max_active_decks} active decks max. Archive or delete one to create
+              another.
+            </p>
+          )}
 
-        <div className="pt-4 border-t border-border/40">
-          <Button type="submit" disabled={loading} className="w-full sm:w-auto">
-            {submitLabel}
+        {formError && <p className="text-sm text-destructive">{formError}</p>}
+
+        <div className="space-y-2 pt-1">
+          <Button
+            type="submit"
+            disabled={
+              loading ||
+              (usage?.limited_tier === true &&
+                usage.max_active_decks != null &&
+                usage.active_deck_count >= usage.max_active_decks)
+            }
+            size="lg"
+            className="w-full font-semibold sm:w-auto sm:min-w-[10rem]"
+          >
+            {loading ? loadingMessage || "Creating…" : "Create deck"}
           </Button>
+          {loading && (
+            <div
+              className="h-0.5 w-full max-w-[11rem] overflow-hidden rounded-full bg-muted sm:max-w-[10rem]"
+              aria-hidden
+            >
+              <div className="deck-load-indeterminate-fill h-full w-[38%] rounded-full bg-primary/45" />
+            </div>
+          )}
         </div>
       </form>
     </PageContainer>
@@ -880,8 +880,8 @@ export default function CreateDeckPage() {
   return (
     <Suspense
       fallback={
-        <PageContainer>
-          <p className="text-muted-foreground">Loading...</p>
+        <PageContainer className="mx-auto max-w-2xl w-full">
+          <p className="text-sm text-muted-foreground">Loading…</p>
         </PageContainer>
       }
     >

@@ -175,8 +175,8 @@ export function GenerateInput({
 
         router.push(`/decks/${deckId}`);
       }
-    } catch {
-      setError("Failed to create deck. Please try again.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to create deck. Please try again.");
       setLoading(false);
       setLoadingMessage("");
     }

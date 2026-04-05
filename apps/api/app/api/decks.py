@@ -11,12 +11,19 @@ from sqlalchemy import and_, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.user_activity import record_user_activity
 from app.core.platform_admin import assert_acting_user_is_platform_admin
 from app.core.user_access import (
     assert_may_act_as_user,
     assert_may_mutate_deck,
     assert_may_read_deck,
     get_trusted_acting_user_id,
+)
+from app.core.user_tier import (
+    FREE_TIER_DUPLICATE_DECK_TOO_MANY_CARDS_MSG,
+    LIMITED_MAX_CARDS_PER_DECK,
+    assert_may_create_deck_for_user,
+    user_has_elevated_tier,
 )
 from app.models import Category, Deck, Flashcard, Review, User
 from app.schemas.deck import DeckCreate, DeckMoveRequest, DeckResponse, DeckUpdate
@@ -108,6 +115,19 @@ async def duplicate_deck(
     await assert_may_read_deck(db, trusted_id, source)
     await assert_may_act_as_user(db, trusted_id, user_id)
 
+    owner_result = await db.execute(select(User).where(User.id == user_id))
+    owner = owner_result.scalar_one_or_none()
+    if not owner:
+        raise HTTPException(status_code=404, detail="User not found")
+    await assert_may_create_deck_for_user(db, owner, trusted_id)
+
+    cards_result = await db.execute(
+        select(Flashcard).where(Flashcard.deck_id == deck_id).order_by(Flashcard.created_at)
+    )
+    cards = cards_result.scalars().all()
+    if not user_has_elevated_tier(owner, trusted_id) and len(cards) > LIMITED_MAX_CARDS_PER_DECK:
+        raise HTTPException(status_code=403, detail=FREE_TIER_DUPLICATE_DECK_TOO_MANY_CARDS_MSG)
+
     new_deck = Deck(
         user_id=user_id,
         name=source.name,
@@ -121,10 +141,6 @@ async def duplicate_deck(
     db.add(new_deck)
     await db.flush()
 
-    cards_result = await db.execute(
-        select(Flashcard).where(Flashcard.deck_id == deck_id).order_by(Flashcard.created_at)
-    )
-    cards = cards_result.scalars().all()
     card_count = 0
     for card in cards:
         db.add(Flashcard(
@@ -418,6 +434,11 @@ async def create_deck(
 ):
     """Create a new deck."""
     await assert_may_act_as_user(db, trusted_id, payload.user_id)
+    owner_result = await db.execute(select(User).where(User.id == payload.user_id))
+    owner = owner_result.scalar_one_or_none()
+    if not owner:
+        raise HTTPException(status_code=404, detail="User not found")
+    await assert_may_create_deck_for_user(db, owner, trusted_id)
     deck = Deck(
         user_id=payload.user_id,
         name=payload.name,
@@ -432,6 +453,18 @@ async def create_deck(
     db.add(deck)
     await db.flush()
     await db.refresh(deck)
+    try:
+        await record_user_activity(
+            db,
+            payload.user_id,
+            "deck_created",
+            {
+                "deck_id": str(deck.id),
+                "deck_name": (deck.name or "")[:200],
+            },
+        )
+    except Exception:
+        pass
     return DeckResponse.model_validate(deck)
 
 

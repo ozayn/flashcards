@@ -1,12 +1,21 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { getStoredUserId } from "@/components/user-selector";
-import { getUser, patchUserProfileName } from "@/lib/api";
+import {
+  getUser,
+  getUserActivity,
+  patchUserProfileName,
+  type UserActivityEntry,
+} from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import PageContainer from "@/components/layout/page-container";
+
+/** Short list for profile; keep in sync with getUserActivity default. */
+const RECENT_ACTIVITY_LIMIT = 10;
 
 /** Keep in sync with user-selector localStorage key for display name. */
 const FLASHCARD_USER_NAME_KEY = "flashcard_user_name";
@@ -36,6 +45,55 @@ function profileInitials(name: string, email: string): string {
   return "?";
 }
 
+function formatRelativeTime(iso: string): string {
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return "";
+  const diffMs = Date.now() - t;
+  const sec = Math.floor(diffMs / 1000);
+  if (sec < 45) return "now";
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const day = Math.floor(hr / 24);
+  if (day < 7) return `${day}d ago`;
+  return new Date(iso).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+  });
+}
+
+function activityRowPrimary(row: UserActivityEntry): ReactNode {
+  switch (row.event_type) {
+    case "signed_in":
+      return "Signed in";
+    case "deck_created": {
+      const raw = row.meta?.deck_name;
+      const name = typeof raw === "string" && raw.trim() ? raw.trim() : "Deck";
+      const short =
+        name.length > 36 ? `${name.slice(0, 33)}…` : name;
+      const deckId =
+        typeof row.meta?.deck_id === "string" && row.meta.deck_id.trim()
+          ? row.meta.deck_id.trim()
+          : null;
+      const text = `Created deck · ${short}`;
+      if (deckId) {
+        return (
+          <Link
+            href={`/decks/${encodeURIComponent(deckId)}`}
+            className="text-foreground underline-offset-2 hover:underline"
+          >
+            {text}
+          </Link>
+        );
+      }
+      return text;
+    }
+    default:
+      return row.event_type.replace(/_/g, " ");
+  }
+}
+
 export default function ProfilePage() {
   const { data: session, status } = useSession();
   const [userId, setUserId] = useState<string | null>(null);
@@ -43,11 +101,14 @@ export default function ProfilePage() {
     null
   );
   const [draftName, setDraftName] = useState("");
+  const [editingName, setEditingName] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [avatarLoadFailed, setAvatarLoadFailed] = useState(false);
+  const [activity, setActivity] = useState<UserActivityEntry[]>([]);
+  const [activityLoading, setActivityLoading] = useState(false);
 
   useEffect(() => {
     if (status === "loading") return;
@@ -70,6 +131,7 @@ export default function ProfilePage() {
         if (cancelled) return;
         setUser({ name: row.name, email: row.email });
         setDraftName(row.name);
+        setEditingName(false);
       } catch {
         if (!cancelled) {
           setUser(null);
@@ -83,6 +145,29 @@ export default function ProfilePage() {
       cancelled = true;
     };
   }, [session?.backendUserId, status]);
+
+  useEffect(() => {
+    if (status !== "authenticated" || !userId || !user) return;
+    if (session?.backendUserId !== userId) {
+      setActivity([]);
+      return;
+    }
+    let cancelled = false;
+    setActivityLoading(true);
+    void (async () => {
+      try {
+        const rows = await getUserActivity(userId, RECENT_ACTIVITY_LIMIT);
+        if (!cancelled) setActivity(rows);
+      } catch {
+        if (!cancelled) setActivity([]);
+      } finally {
+        if (!cancelled) setActivityLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [status, session?.backendUserId, userId, user]);
 
   const rawGoogleImage = (
     session?.backendUserId &&
@@ -114,6 +199,7 @@ export default function ProfilePage() {
       const row = await patchUserProfileName(userId, draftName.trim());
       setUser({ name: row.name, email: row.email });
       setDraftName(row.name);
+      setEditingName(false);
       if (typeof window !== "undefined" && getStoredUserId() === userId) {
         localStorage.setItem(FLASHCARD_USER_NAME_KEY, row.name);
         window.dispatchEvent(
@@ -130,141 +216,190 @@ export default function ProfilePage() {
   function handleCancel() {
     if (user) setDraftName(user.name);
     setSaveError(null);
+    setEditingName(false);
+  }
+
+  function startEditName() {
+    if (user) setDraftName(user.name);
+    setSaveError(null);
+    setEditingName(true);
   }
 
   if (status === "loading" || (loading && userId)) {
     return (
-      <div className="max-w-md mx-auto py-16 text-center text-sm text-muted-foreground px-4">
-        Loading profile…
-      </div>
+      <PageContainer className="mx-auto max-w-sm px-4 py-12 text-center text-sm text-muted-foreground">
+        Loading…
+      </PageContainer>
     );
   }
 
   if (!userId) {
     return (
-      <div className="max-w-md mx-auto py-12 text-center space-y-4 px-4">
-        <h1 className="text-xl font-semibold tracking-tight">Profile</h1>
-        <p className="text-sm text-muted-foreground leading-relaxed">
-          Sign in with Google or choose a user in the header to view and edit
-          your display name here.
+      <PageContainer className="mx-auto max-w-sm space-y-3 px-4 py-10 text-center">
+        <h1 className="text-lg font-semibold tracking-tight">Profile</h1>
+        <p className="text-sm text-muted-foreground">
+          Sign in or pick a user in the header to see your profile.
         </p>
-        <div className="flex flex-wrap justify-center gap-4 pt-2">
+        <div className="flex flex-wrap justify-center gap-x-4 gap-y-1 pt-1 text-sm">
           <Link
             href="/signin"
-            className="text-sm text-foreground underline-offset-4 hover:underline"
+            className="text-foreground underline-offset-4 hover:underline"
           >
             Sign in
           </Link>
           <Link
             href="/decks"
-            className="text-sm text-muted-foreground underline-offset-4 hover:underline"
+            className="text-muted-foreground underline-offset-4 hover:underline"
           >
-            My decks
+            Decks
           </Link>
         </div>
-      </div>
+      </PageContainer>
     );
   }
 
   if (loadError || !user) {
     return (
-      <div className="max-w-md mx-auto py-12 text-center space-y-4 px-4">
-        <h1 className="text-xl font-semibold tracking-tight">Profile</h1>
+      <PageContainer className="mx-auto max-w-sm space-y-3 px-4 py-10 text-center">
+        <h1 className="text-lg font-semibold tracking-tight">Profile</h1>
         <p className="text-sm text-destructive">{loadError ?? "Unknown error."}</p>
         <Link
           href="/decks"
-          className="text-sm text-muted-foreground underline-offset-4 hover:underline inline-block"
+          className="inline-block text-sm text-muted-foreground underline-offset-4 hover:underline"
         >
           Back to decks
         </Link>
-      </div>
+      </PageContainer>
     );
   }
 
   const initials = profileInitials(user.name, user.email);
+  const displayName = user.name.trim() || "No name";
 
   return (
-    <div className="max-w-md mx-auto w-full px-4 sm:px-6 md:px-0 py-8 sm:py-10">
-      <h1 className="text-xl font-semibold tracking-tight mb-6">Profile</h1>
+    <PageContainer className="mx-auto w-full max-w-sm px-4 py-8 sm:py-10">
+      <div className="mb-4">
+        <Link
+          href="/decks"
+          className="inline-flex h-7 items-center rounded-md px-1 -ml-1 text-xs text-muted-foreground hover:text-foreground"
+        >
+          ← Decks
+        </Link>
+      </div>
+      <h1 className="mb-6 text-lg font-semibold tracking-tight">Profile</h1>
 
-      <div className="rounded-xl border border-border/80 bg-card/40 p-6 sm:p-8 space-y-8 shadow-sm">
-        <div className="flex flex-col items-center gap-3">
-          <div
-            className="flex size-[4.5rem] sm:size-20 shrink-0 items-center justify-center overflow-hidden rounded-full border border-border/60 bg-muted"
-            aria-hidden
-          >
-            {showGooglePhoto ? (
-              // eslint-disable-next-line @next/next/no-img-element -- Google URLs need referrerPolicy + reliable onError; next/image sizing was clipping/breaking loads
-              <img
-                src={googleAvatarUrl}
-                alt=""
-                width={80}
-                height={80}
-                decoding="async"
-                referrerPolicy="no-referrer"
-                className="h-full w-full object-cover object-center"
-                onError={() => setAvatarLoadFailed(true)}
+      <div className="flex flex-col items-center gap-5 text-center">
+        <div
+          className="flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-full bg-muted ring-1 ring-border/50 sm:size-[4.5rem]"
+          aria-hidden
+        >
+          {showGooglePhoto ? (
+            // eslint-disable-next-line @next/next/no-img-element -- Google URLs need referrerPolicy + onError; initials fallback avoids broken UI
+            <img
+              src={googleAvatarUrl}
+              alt=""
+              width={72}
+              height={72}
+              decoding="async"
+              referrerPolicy="no-referrer"
+              className="h-full w-full object-cover object-center"
+              onError={() => setAvatarLoadFailed(true)}
+            />
+          ) : (
+            <span className="text-sm font-medium text-muted-foreground sm:text-base">
+              {initials}
+            </span>
+          )}
+        </div>
+
+        <div className="w-full space-y-1">
+          {editingName ? (
+            <div className="mx-auto w-full max-w-[18rem] space-y-2 text-left">
+              <Input
+                id="profile-name"
+                value={draftName}
+                onChange={(e) => setDraftName(e.target.value)}
+                maxLength={255}
+                autoComplete="name"
+                aria-label="Name"
+                className="h-9"
+                autoFocus
               />
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={saving || !dirty || !draftName.trim()}
+                  onClick={() => void handleSave()}
+                >
+                  {saving ? "Saving…" : "Save"}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={saving}
+                  onClick={handleCancel}
+                >
+                  Cancel
+                </Button>
+              </div>
+              {saveError ? (
+                <p className="text-xs text-destructive" role="alert">
+                  {saveError}
+                </p>
+              ) : null}
+            </div>
+          ) : (
+            <>
+              <p className="text-base font-medium text-foreground">{displayName}</p>
+              <button
+                type="button"
+                onClick={startEditName}
+                className="text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+              >
+                Edit name
+              </button>
+            </>
+          )}
+        </div>
+
+        <div className="w-full border-t border-border/40 pt-4">
+          <p className="break-all text-sm text-muted-foreground">{user.email}</p>
+        </div>
+
+        {session?.backendUserId === userId ? (
+          <div className="w-full border-t border-border/40 pt-4 text-left">
+            <h2 className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+              Recent activity
+            </h2>
+            {activityLoading ? (
+              <p className="text-xs text-muted-foreground">Loading…</p>
+            ) : activity.length === 0 ? (
+              <p className="text-xs text-muted-foreground">No activity yet.</p>
             ) : (
-              <span className="text-base sm:text-lg font-medium text-muted-foreground">
-                {initials}
-              </span>
+              <ul className="space-y-1" aria-label="Recent activity">
+                {activity.map((a) => (
+                  <li
+                    key={a.id}
+                    className="flex items-baseline justify-between gap-2 text-xs leading-snug"
+                  >
+                    <span className="min-w-0 flex-1 truncate text-foreground">
+                      {activityRowPrimary(a)}
+                    </span>
+                    <time
+                      className="shrink-0 tabular-nums text-muted-foreground"
+                      dateTime={a.created_at}
+                    >
+                      {formatRelativeTime(a.created_at)}
+                    </time>
+                  </li>
+                ))}
+              </ul>
             )}
           </div>
-          <p className="text-sm font-medium text-foreground">
-            {draftName.trim() || user.name}
-          </p>
-        </div>
-
-        <div className="space-y-2">
-          <label htmlFor="profile-name" className="text-sm font-medium">
-            Display name
-          </label>
-          <Input
-            id="profile-name"
-            value={draftName}
-            onChange={(e) => setDraftName(e.target.value)}
-            maxLength={255}
-            autoComplete="name"
-            className="h-10"
-          />
-          <div className="flex flex-wrap gap-2 pt-2">
-            <Button
-              type="button"
-              size="sm"
-              disabled={saving || !dirty || !draftName.trim()}
-              onClick={() => void handleSave()}
-            >
-              {saving ? "Saving…" : "Save"}
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              disabled={!dirty || saving}
-              onClick={handleCancel}
-            >
-              Cancel
-            </Button>
-          </div>
-        </div>
-
-        <div className="space-y-1.5 pt-2 border-t border-border/60">
-          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-            Email
-          </p>
-          <p className="text-sm text-foreground break-all">{user.email}</p>
-          <p className="text-xs text-muted-foreground">
-            Email is read-only for now.
-          </p>
-        </div>
-
-        {saveError && (
-          <p className="text-sm text-destructive" role="alert">
-            {saveError}
-          </p>
-        )}
+        ) : null}
       </div>
-    </div>
+    </PageContainer>
   );
 }

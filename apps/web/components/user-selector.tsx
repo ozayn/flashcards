@@ -7,12 +7,14 @@ import { signOut, useSession } from "next-auth/react";
 import { Plus } from "lucide-react";
 import {
   getUsers,
+  getUser,
   createUser,
   waitForApiReadiness,
   apiUrl,
   getUserSettings,
   updateUserSettings,
   type UserSettings,
+  type UserUsageLimits,
 } from "@/lib/api";
 import { userIsProductAdmin } from "@/lib/product-admin";
 import { cn } from "@/lib/utils";
@@ -610,27 +612,59 @@ export function isStoredUserAdmin(): boolean {
 export const MAX_CARDS_ADMIN = 50;
 export const MAX_CARDS_USER = 25;
 
-export function getCardCountOptions(admin?: boolean): number[] {
+export function getCardCountOptions(
+  admin?: boolean,
+  maxCardsPerDeck?: number | null
+): number[] {
   const isAdmin = admin ?? isStoredUserAdmin();
-  const max = isAdmin ? MAX_CARDS_ADMIN : MAX_CARDS_USER;
+  let max = isAdmin ? MAX_CARDS_ADMIN : MAX_CARDS_USER;
+  if (maxCardsPerDeck != null && maxCardsPerDeck > 0) {
+    max = Math.min(max, maxCardsPerDeck);
+  }
   return [5, 10, 15, 20, 25, 30, 40, 50].filter((n) => n <= max);
 }
 
 /**
- * Card-count dropdown options for generation UIs. First paint matches SSR (non-admin list);
- * after mount, syncs from localStorage so admins see full range without hydration mismatch.
+ * Free-tier caps and card-count choices for generation UIs (from GET /users/:id when acting as self).
  */
-export function useCardCountOptions(): number[] {
-  const [opts, setOpts] = useState<number[]>(() => getCardCountOptions(false));
+export function useTierLimits(): {
+  cardCountOptions: number[];
+  usage: UserUsageLimits | null;
+} {
+  const [cardCountOptions, setCardCountOptions] = useState<number[]>(() =>
+    getCardCountOptions(false)
+  );
+  const [usage, setUsage] = useState<UserUsageLimits | null>(null);
+
   useEffect(() => {
     function sync() {
-      setOpts(getCardCountOptions());
+      const uid = getStoredUserId();
+      if (!uid) {
+        setCardCountOptions(getCardCountOptions(false));
+        setUsage(null);
+        return;
+      }
+      getUser(uid)
+        .then((u) => {
+          const uu = u.usage ?? null;
+          setUsage(uu);
+          const cap =
+            uu?.limited_tier === true && uu.max_cards_per_deck != null
+              ? uu.max_cards_per_deck
+              : null;
+          setCardCountOptions(getCardCountOptions(undefined, cap));
+        })
+        .catch(() => {
+          setUsage(null);
+          setCardCountOptions(getCardCountOptions(false));
+        });
     }
     sync();
     window.addEventListener("flashcard_user_changed", sync);
     return () => window.removeEventListener("flashcard_user_changed", sync);
   }, []);
-  return opts;
+
+  return { cardCountOptions, usage };
 }
 
 /**

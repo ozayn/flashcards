@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef, useCallback } from "react";
 import Link from "next/link";
-import { ChevronLeft, ChevronRight, X } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Flashcard } from "@/components/study/Flashcard";
 import FormattedText from "@/components/FormattedText";
@@ -426,119 +426,91 @@ export default function CategoryStudyPage({ params }: CategoryStudyPageProps) {
       className="h-full min-h-0 flex flex-col items-center overflow-hidden relative"
       data-study
     >
-      <Link
-        href={backHref}
-        className="fixed bottom-4 right-4 sm:bottom-8 sm:right-[max(0.5rem,calc(50vw-min(50vw,18rem)))] z-50 inline-flex items-center gap-1.5 rounded-full bg-background/95 backdrop-blur border border-border shadow-lg px-3 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm font-medium hover:bg-muted active:opacity-80 transition-colors landscape-mobile:bottom-2 landscape-mobile:right-2 landscape-mobile:px-2.5 landscape-mobile:py-1 landscape-mobile:text-xs landscape-mobile:gap-1"
-      >
-        <X className="size-3.5 sm:size-4 landscape-mobile:size-3" />
-        <span className="hidden sm:inline landscape-mobile:hidden">Exit category quiz</span>
-        <span className="sm:hidden">Exit</span>
-      </Link>
-
-      <div className="pt-4 sm:pt-6 landscape-mobile:pt-2 shrink-0 w-full">
-        <div className="max-w-4xl mx-auto w-full px-4 sm:px-6 md:px-8">
+      <header className="shrink-0 border-b border-border/40 bg-background/90 backdrop-blur-sm">
+        <div className="mx-auto max-w-4xl px-3 py-2 sm:px-6 sm:py-2.5 md:px-8 landscape-mobile:py-1.5 landscape-mobile:pl-2 landscape-mobile:pr-2">
           <Link
             href={backHref}
-            className="inline-flex h-7 items-center justify-center rounded-lg px-2.5 text-sm font-medium hover:bg-muted landscape-mobile:h-6 landscape-mobile:text-xs landscape-mobile:px-1.5"
+            className="inline-flex rounded-md px-1.5 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground sm:px-2 sm:text-sm"
           >
             ← Back
           </Link>
-          <div className="mt-1.5 space-y-1 landscape-mobile:mt-1 landscape-mobile:space-y-0.5">
-            <p className="text-sm font-medium text-muted-foreground truncate">
+          <div className="mt-1.5 space-y-1 landscape-mobile:mt-1">
+            <p className="truncate text-xs font-medium text-muted-foreground sm:text-sm">
               {categoryName ?? "Category review"}
             </p>
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="text-xs text-muted-foreground whitespace-nowrap">
+            <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+              <span className="whitespace-nowrap tabular-nums">
                 Deck {currentDeckIndex + 1}/{decks.length}
               </span>
-              <span className="text-xs text-muted-foreground">·</span>
-              <span className="text-xs font-medium truncate">
-                {currentDeck?.name}
-              </span>
+              <span>·</span>
+              <span className="truncate font-medium text-foreground">{currentDeck?.name}</span>
             </div>
             <DeckProgressBar current={currentDeckIndex} total={decks.length} />
           </div>
         </div>
-      </div>
+      </header>
 
-      <div className="flex flex-col items-center justify-center flex-1 min-h-0 w-full mt-2 sm:mt-0 landscape-mobile:mt-1">
-        <div className="flex-1 min-h-0 min-h-[200px] flex flex-col landscape:flex-row landscape:items-stretch landscape:min-h-0 justify-center items-center gap-2 w-full max-w-4xl mx-auto relative overflow-hidden [perspective:1000px]">
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={handlePrev}
-            disabled={isFirst}
-            className="hidden landscape:flex h-10 w-10 shrink-0 order-2 landscape:order-1"
-            aria-label="Previous card"
-          >
-            <ChevronLeft className="size-5" />
-          </Button>
-          <div className="flex justify-center items-center flex-1 min-w-0 w-full order-1 landscape:order-2 px-2 sm:px-2">
+      <div className="flex min-h-0 w-full min-w-0 flex-1 flex-col landscape-mobile:overflow-hidden">
+        <div className="mx-auto flex w-full max-w-4xl min-h-0 flex-1 flex-col px-3 pt-1 sm:px-6 sm:pt-2 md:px-8 landscape-mobile:px-2 landscape-mobile:pt-0">
+          <div className="flex min-h-[11rem] flex-1 flex-col justify-center landscape-mobile:min-h-0">
             <div
               onTouchStart={handleTouchStart}
               onTouchEnd={handleTouchEnd}
               dir="auto"
-              className="flashcard relative w-full max-w-2xl sm:max-w-3xl aspect-[3/2] rounded-2xl shadow-lg overflow-hidden flex flex-col touch-pan-y transition-all duration-200 ease-out hover:-translate-y-1 hover:shadow-xl hover:rotate-[0.3deg] active:translate-y-0 active:shadow-md"
+              className="flashcard relative mx-auto flex w-full max-w-2xl touch-pan-y flex-col overflow-hidden rounded-2xl shadow-md sm:max-w-3xl aspect-[3/2] landscape-mobile:aspect-auto landscape-mobile:max-h-[min(28rem,calc(100dvh-6.75rem-env(safe-area-inset-top,0px)-env(safe-area-inset-bottom,0px)))] landscape-mobile:min-h-[11rem] landscape-mobile:w-full transition-shadow duration-200 hover:shadow-lg"
             >
-              <div className="absolute top-4 right-4 sm:top-6 sm:right-6 text-xs sm:text-sm text-muted-foreground z-10">
-                {currentCardIndex + 1} / {flashcards.length}
-              </div>
               <Flashcard
                 cardStyle={userSettings.card_style}
                 front={
-                  <div className="flex-1 min-h-0 w-full overflow-y-auto">
+                  <div className="min-h-0 w-full flex-1 overflow-y-auto">
                     <FormattedText
                       text={card.question}
-                      className="text-2xl sm:text-3xl lg:text-4xl font-medium leading-snug sm:leading-relaxed"
+                      className="text-2xl font-medium leading-snug sm:text-3xl sm:leading-relaxed lg:text-4xl"
                     />
                   </div>
                 }
                 back={
                   <>
-                    <div className="flex-1 min-h-0 flex flex-col items-stretch justify-start w-full overflow-y-auto cursor-pointer">
+                    <div className="flex min-h-0 w-full flex-1 cursor-pointer flex-col items-stretch justify-start overflow-y-auto">
                       <FormattedText
                         text={card.answer_short}
-                        className="whitespace-pre-line text-xl sm:text-2xl lg:text-[1.75rem] leading-relaxed mt-6 sm:mt-8"
+                        className="mt-5 whitespace-pre-line text-xl leading-relaxed sm:mt-7 sm:text-2xl lg:text-[1.75rem] landscape-mobile:mt-2 landscape-mobile:text-xl"
                       />
                       {card.answer_detailed &&
                         card.answer_detailed.trim() !== card.answer_short.trim() && (
                           <FormattedText
                             text={card.answer_detailed}
-                            className="whitespace-pre-line text-base sm:text-lg lg:text-xl text-muted-foreground mt-4 sm:mt-5"
+                            className="mt-3 whitespace-pre-line text-base leading-relaxed text-muted-foreground sm:mt-4 sm:text-lg lg:text-xl landscape-mobile:mt-2"
                           />
                         )}
                     </div>
                     {showAnswer && (
                       <div
-                        className="flex flex-row gap-2 justify-center flex-wrap shrink-0 w-full"
+                        className="flex w-full shrink-0 flex-row flex-wrap justify-center gap-1"
                         onClick={(e) => e.stopPropagation()}
                       >
                         <Button
                           variant="ghost"
                           onClick={() => rateCard("again")}
-                          className="shrink-0 !bg-mondrian-red !text-white hover:!bg-mondrian-red/90 border-0"
+                          className="shrink-0 !border-0 !bg-mondrian-red !text-white hover:!bg-mondrian-red/90"
                         >
                           Again
                         </Button>
                         <Button
                           variant="ghost"
                           onClick={() => rateCard("hard")}
-                          className="shrink-0 !bg-mondrian-yellow !text-mondrian-black hover:!bg-mondrian-yellow/90 border-0"
+                          className="shrink-0 !border-0 !bg-mondrian-yellow !text-mondrian-black hover:!bg-mondrian-yellow/90"
                         >
                           Hard
                         </Button>
                         <Button
                           variant="ghost"
                           onClick={() => rateCard("good")}
-                          className="shrink-0 !bg-mondrian-blue !text-white hover:!bg-mondrian-blue/90 border-0"
+                          className="shrink-0 !border-0 !bg-mondrian-blue !text-white hover:!bg-mondrian-blue/90"
                         >
                           Good
                         </Button>
-                        <Button
-                          variant="outline"
-                          onClick={() => rateCard("easy")}
-                          className="shrink-0"
-                        >
+                        <Button variant="outline" onClick={() => rateCard("easy")} className="shrink-0">
                           Easy
                         </Button>
                       </div>
@@ -551,40 +523,36 @@ export default function CategoryStudyPage({ params }: CategoryStudyPageProps) {
               />
             </div>
           </div>
-
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={handleNext}
-            disabled={isLast}
-            className="hidden landscape:flex h-10 w-10 shrink-0 order-3"
-            aria-label="Next card"
+          <nav
+            className="flex shrink-0 items-center justify-center gap-5 border-t border-border/30 py-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] landscape-mobile:gap-4 landscape-mobile:py-1.5"
+            aria-label="Card navigation"
           >
-            <ChevronRight className="size-5" />
-          </Button>
-        </div>
-
-        <div className="shrink-0 flex justify-center gap-4 mt-2 pb-2 landscape:hidden">
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={handlePrev}
-            disabled={isFirst}
-            className="h-11 w-11 shrink-0 lg:h-12 lg:w-12"
-            aria-label="Previous card"
-          >
-            <ChevronLeft className="size-5 lg:size-6" />
-          </Button>
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={handleNext}
-            disabled={isLast}
-            className="h-11 w-11 shrink-0 lg:h-12 lg:w-12"
-            aria-label="Next card"
-          >
-            <ChevronRight className="size-5 lg:size-6" />
-          </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={handlePrev}
+              disabled={isFirst}
+              className="h-9 w-9 shrink-0 text-muted-foreground hover:bg-muted/60 hover:text-foreground disabled:pointer-events-none disabled:opacity-20"
+              aria-label="Previous card"
+            >
+              <ChevronLeft className="size-5" />
+            </Button>
+            <span className="min-w-[3.5rem] text-center text-xs tabular-nums text-muted-foreground">
+              {currentCardIndex + 1} / {flashcards.length}
+            </span>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={handleNext}
+              disabled={isLast}
+              className="h-9 w-9 shrink-0 text-muted-foreground hover:bg-muted/60 hover:text-foreground disabled:pointer-events-none disabled:opacity-20"
+              aria-label="Next card"
+            >
+              <ChevronRight className="size-5" />
+            </Button>
+          </nav>
         </div>
       </div>
     </main>

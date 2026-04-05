@@ -237,7 +237,6 @@ export default function DecksPage() {
   const [openDeckMenuId, setOpenDeckMenuId] = useState<string | null>(null);
   const [openCategoryActionsId, setOpenCategoryActionsId] = useState<string | null>(null);
   const [filtersMenuOpen, setFiltersMenuOpen] = useState(false);
-  const [pageMenuOpen, setPageMenuOpen] = useState(false);
   const [moveModalDeckId, setMoveModalDeckId] = useState<string | null>(null);
   const [moveModalCategoryId, setMoveModalCategoryId] = useState<string | null>(null);
   const [moveModalSaving, setMoveModalSaving] = useState(false);
@@ -682,13 +681,12 @@ export default function DecksPage() {
       setOpenDeckMenuId(null);
       setOpenCategoryActionsId(null);
       setFiltersMenuOpen(false);
-      setPageMenuOpen(false);
     }
-    if (openDeckMenuId || openCategoryActionsId || filtersMenuOpen || pageMenuOpen) {
+    if (openDeckMenuId || openCategoryActionsId || filtersMenuOpen) {
       document.addEventListener("click", handleClickOutside);
       return () => document.removeEventListener("click", handleClickOutside);
     }
-  }, [openDeckMenuId, openCategoryActionsId, filtersMenuOpen, pageMenuOpen]);
+  }, [openDeckMenuId, openCategoryActionsId, filtersMenuOpen]);
 
   const categoryNameMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -733,7 +731,7 @@ export default function DecksPage() {
       <DeckActionsMenu
         open={menuOpen}
         onOpenChange={(next) => setOpenDeckMenuId(next ? deck.id : null)}
-        triggerClassName={`relative deck-menu-button opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100 max-mobile:opacity-100 ${menuOpen ? "!opacity-100" : ""}`}
+        triggerClassName={`relative deck-menu-button opacity-70 hover:opacity-100 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100 max-mobile:opacity-100 ${menuOpen ? "!opacity-100" : ""}`}
       >
             <button
               type="button"
@@ -772,7 +770,7 @@ export default function DecksPage() {
                 <span>Move to my account</span>
               </button>
             )}
-            {sessionStatus === "authenticated" && isPlatformAdmin && (
+            {sessionStatus === "authenticated" && (
               <button
                 type="button"
                 role="menuitem"
@@ -824,6 +822,10 @@ export default function DecksPage() {
   function renderDeckRow(deck: Deck) {
     const dateShort =
       showDeckDates ? formatDeckCreatedCalendarDate(deck.created_at) : null;
+    const categoryLabel =
+      viewMode === "all" && deck.category_id && categoryNameMap.has(deck.category_id)
+        ? categoryNameMap.get(deck.category_id)
+        : null;
     return (
       <div
         role="link"
@@ -835,29 +837,35 @@ export default function DecksPage() {
             router.push(`/decks/${deck.id}`);
           }
         }}
-        className="deck-card group rounded-lg border border-border px-4 py-3.5 flex items-center justify-between gap-3 hover:bg-muted/40 transition-colors cursor-pointer max-mobile:px-3 max-mobile:py-2.5 max-mobile:gap-2"
+        className="deck-card group rounded-lg border border-border px-4 py-3 flex items-center justify-between gap-3 hover:bg-muted/40 transition-colors cursor-pointer max-mobile:px-3 max-mobile:py-2.5 max-mobile:gap-2"
       >
         <div className="flex items-center gap-3 flex-1 min-w-0 max-mobile:gap-2">
-          <div className="flex flex-col gap-0.5 min-w-0">
-            <div className="flex flex-wrap items-center gap-2 min-w-0">
-              <span className="font-semibold text-sm leading-snug truncate max-mobile:text-base max-mobile:font-semibold">
-                {deck.name}
+          <div className="flex flex-col gap-1 min-w-0">
+            <span className="font-semibold text-sm leading-snug truncate max-mobile:text-base">
+              {deck.name}
+            </span>
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
+              <span className="tabular-nums shrink-0">
+                {deck.card_count ?? 0} {deck.card_count === 1 ? "card" : "cards"}
               </span>
               <DeckGenerationBadge status={deck.generation_status} />
-            </div>
-            <span className="text-xs text-muted-foreground break-words max-mobile:leading-snug">
-              {deck.card_count ?? 0} {deck.card_count === 1 ? "card" : "cards"}
-              {viewMode === "all" && deck.category_id && categoryNameMap.has(deck.category_id) && (
-                <> · {categoryNameMap.get(deck.category_id)}</>
-              )}
-              {deck.is_public && <> · <span className="text-emerald-600 dark:text-emerald-400">Public</span></>}
-              {dateShort && (
+              {categoryLabel && (
                 <>
-                  {" "}
-                  · <span className="text-muted-foreground/75">{dateShort}</span>
+                  <span className="text-muted-foreground/40" aria-hidden>
+                    ·
+                  </span>
+                  <span className="min-w-0 truncate">{categoryLabel}</span>
                 </>
               )}
-            </span>
+              {dateShort && (
+                <>
+                  <span className="text-muted-foreground/40" aria-hidden>
+                    ·
+                  </span>
+                  <span className="text-muted-foreground/80 shrink-0">{dateShort}</span>
+                </>
+              )}
+            </div>
           </div>
         </div>
         <div className="shrink-0 flex items-center gap-0.5 max-mobile:opacity-100">
@@ -877,36 +885,27 @@ export default function DecksPage() {
         : null;
 
     const metaRow = (
-      <div className="flex min-w-0 flex-nowrap items-center gap-x-0.5 overflow-hidden text-muted-foreground text-[9px] leading-tight sm:gap-x-1 sm:text-[10px] sm:leading-tight md:text-[11px]">
+      <div className="flex min-w-0 flex-wrap items-center gap-x-1 gap-y-0.5 text-muted-foreground text-[10px] leading-tight sm:text-[11px]">
         <span className="shrink-0 tabular-nums">
           {deck.card_count ?? 0} {(deck.card_count ?? 0) === 1 ? "card" : "cards"}
         </span>
+        <DeckGenerationBadge status={deck.generation_status} />
         {categoryLabel && (
           <>
-            <span className="shrink-0 text-muted-foreground/40" aria-hidden>
+            <span className="text-muted-foreground/40" aria-hidden>
               ·
             </span>
-            <span className="min-w-0 truncate" title={categoryLabel}>
+            <span className="min-w-0 truncate max-w-full" title={categoryLabel}>
               {categoryLabel}
-            </span>
-          </>
-        )}
-        {deck.is_public && (
-          <>
-            <span className="shrink-0 text-muted-foreground/40" aria-hidden>
-              ·
-            </span>
-            <span className="shrink-0 whitespace-nowrap text-emerald-600 dark:text-emerald-400">
-              Public
             </span>
           </>
         )}
         {dateShort && (
           <>
-            <span className="shrink-0 text-muted-foreground/40" aria-hidden>
+            <span className="text-muted-foreground/40" aria-hidden>
               ·
             </span>
-            <span className="min-w-0 truncate text-muted-foreground/80" title={dateShort}>
+            <span className="truncate text-muted-foreground/80" title={dateShort}>
               {dateShort}
             </span>
           </>
@@ -925,27 +924,24 @@ export default function DecksPage() {
             router.push(`/decks/${deck.id}`);
           }
         }}
-        className="group relative flex w-full min-w-0 cursor-pointer flex-col rounded-md border border-border bg-background p-1.5 transition-colors hover:bg-muted/30 sm:rounded-lg sm:p-2"
+        className="group relative flex w-full min-w-0 cursor-pointer flex-col rounded-md border border-border bg-background p-2 transition-colors hover:bg-muted/30 sm:rounded-lg sm:p-2.5"
       >
-        <div className="absolute right-0.5 top-0.5 z-10 sm:right-1 sm:top-1">
-          <div className="shrink-0 [&_button]:h-6 [&_button]:w-6 sm:[&_button]:h-7 sm:[&_button]:w-7">
+        <div className="absolute right-1 top-1 z-10">
+          <div className="shrink-0 [&_button]:h-7 [&_button]:w-7">
             {renderDeckMenu(deck)}
           </div>
         </div>
 
-        <div className="flex min-h-0 min-w-0 flex-col gap-0.5 pr-7 sm:pr-8">
+        <div className="flex min-h-0 min-w-0 flex-col gap-1 pr-8">
           <h3
-            className={`min-w-0 break-words font-semibold leading-[1.2] text-foreground line-clamp-2 ${
+            className={`min-w-0 break-words font-semibold leading-snug text-foreground line-clamp-2 ${
               narrowGrid
-                ? "text-[10px] sm:text-[11px] md:text-xs"
-                : "text-[11px] sm:text-xs md:text-sm"
+                ? "text-[11px] sm:text-xs md:text-sm"
+                : "text-xs sm:text-sm md:text-base"
             }`}
           >
             {deck.name}
           </h3>
-          <div className="min-w-0 max-w-full leading-none [&_span]:py-0 max-mobile:[&_span]:text-[9px] sm:[&_span]:text-[10px]">
-            <DeckGenerationBadge status={deck.generation_status} />
-          </div>
           <div className="min-w-0">{metaRow}</div>
         </div>
       </div>
@@ -985,87 +981,48 @@ export default function DecksPage() {
 
   return (
     <PageContainer className="max-mobile:space-y-3">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between max-mobile:gap-2">
-          <div className="flex flex-col gap-1 min-w-0 sm:flex-row sm:items-center sm:gap-3">
-            <h1 className="text-2xl font-semibold tracking-tight max-mobile:text-xl shrink-0 min-w-0">
-              Decks
-            </h1>
-            {bulkPreviewLoading &&
-            isPlatformAdmin &&
-            sessionStatus === "authenticated" &&
-            userId &&
-            session?.backendUserId &&
-            userId !== session.backendUserId ? (
-              <span className="text-xs text-muted-foreground whitespace-nowrap sm:sr-only">
-                Checking admin actions…
-              </span>
-            ) : null}
-          </div>
-          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 flex-wrap justify-end sm:justify-start">
-            {showBulkLegacyTransferAction ? (
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                className="whitespace-nowrap max-mobile:min-h-10 w-full justify-center sm:w-auto sm:justify-start"
-                onClick={() => setBulkLegacyTransferModalOpen(true)}
-              >
-                Move all decks to my account
-              </Button>
-            ) : null}
-            <button
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+          <h1 className="text-2xl font-semibold tracking-tight max-mobile:text-xl min-w-0">
+            My Decks
+          </h1>
+          <Link
+            href="/create-deck"
+            className="inline-flex w-full sm:w-auto shrink-0 items-center justify-center rounded-md bg-neutral-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-neutral-800 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200 max-mobile:min-h-11 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          >
+            New Deck
+          </Link>
+        </div>
+
+        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-3 sm:gap-y-2 text-sm border-b border-border/60 pb-3 -mt-1">
+          <button
+            type="button"
+            onClick={() => {
+              setCategoryModalOpen(true);
+              setCategoryCreateError(null);
+            }}
+            className="text-left text-muted-foreground hover:text-foreground transition-colors w-fit text-sm"
+          >
+            + New category
+          </button>
+          {bulkPreviewLoading &&
+          isPlatformAdmin &&
+          sessionStatus === "authenticated" &&
+          userId &&
+          session?.backendUserId &&
+          userId !== session.backendUserId ? (
+            <span className="text-xs text-muted-foreground">Checking admin tools…</span>
+          ) : null}
+          {showBulkLegacyTransferAction ? (
+            <Button
               type="button"
-              onClick={() => {
-                setCategoryModalOpen(true);
-                setCategoryCreateError(null);
-              }}
-              className="hidden sm:inline text-sm text-muted-foreground hover:text-foreground transition-colors"
+              variant="outline"
+              size="sm"
+              className="h-8 text-xs text-muted-foreground border-dashed w-fit"
+              onClick={() => setBulkLegacyTransferModalOpen(true)}
             >
-              + Category
-            </button>
-            <div className="relative sm:hidden">
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="h-9 w-9 text-muted-foreground"
-                aria-label="More deck list actions"
-                aria-expanded={pageMenuOpen}
-                onPointerDown={(e) => e.stopPropagation()}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  e.preventDefault();
-                  setPageMenuOpen((o) => !o);
-                }}
-              >
-                <MoreVertical className="size-4" />
-              </Button>
-              {pageMenuOpen && (
-                <div
-                  className="absolute right-0 top-full z-50 mt-1 min-w-[11rem] rounded-lg border border-border bg-popover py-1 shadow-lg"
-                  onClick={(e: MouseEvent) => e.stopPropagation()}
-                >
-                  <button
-                    type="button"
-                    className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm hover:bg-muted max-mobile:min-h-[44px]"
-                    onClick={() => {
-                      setPageMenuOpen(false);
-                      setCategoryModalOpen(true);
-                      setCategoryCreateError(null);
-                    }}
-                  >
-                    Create category
-                  </button>
-                </div>
-              )}
-            </div>
-            <Link
-              href="/create-deck"
-              className="inline-flex h-9 items-center justify-center rounded-lg bg-neutral-900 text-white hover:bg-neutral-800 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200 px-4 text-sm font-medium max-mobile:px-3 max-mobile:text-sm"
-            >
-              New Deck
-            </Link>
-          </div>
+              Admin: move all decks to my account
+            </Button>
+          ) : null}
         </div>
 
         {categoryModalOpen && (
@@ -1374,7 +1331,7 @@ export default function DecksPage() {
           </div>
         )}
 
-        <div className="space-y-2 sm:space-y-3">
+        <div className="rounded-lg border border-border/70 bg-muted/10 p-2 sm:p-2.5 space-y-2">
           <div className="relative w-full">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none" />
             <input
@@ -1383,25 +1340,31 @@ export default function DecksPage() {
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search decks…"
               autoComplete="off"
-              className="w-full rounded-lg border border-border bg-background pl-9 pr-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 max-mobile:py-1.5 max-mobile:text-sm"
+              className="w-full rounded-md border border-border bg-background pl-9 pr-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 max-mobile:py-2"
             />
           </div>
-          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:gap-x-3 sm:gap-y-2">
-            <div className="flex w-full min-w-0 flex-row flex-wrap items-center gap-2 sm:w-auto sm:flex-nowrap sm:items-center sm:gap-2">
-              <div className="flex shrink-0 items-stretch rounded-lg border border-border/50 bg-muted/30 p-0.5 max-mobile:h-7 sm:inline-flex sm:h-auto">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+            <div className="flex flex-wrap items-center gap-2 min-w-0">
+              <div
+                className="inline-flex shrink-0 items-stretch rounded-md border border-border/60 bg-background/80 p-0.5"
+                role="tablist"
+                aria-label="Deck grouping"
+              >
                 {(
                   [
-                    { value: "grouped" as const, label: "Grouped" },
-                    { value: "all" as const, label: "All" },
+                    { value: "grouped" as const, label: "By category" },
+                    { value: "all" as const, label: "All decks" },
                   ] as const
                 ).map(({ value, label }) => (
                   <button
                     key={value}
                     type="button"
+                    role="tab"
+                    aria-selected={viewMode === value}
                     onClick={() => setViewMode(value)}
-                    className={`inline-flex flex-none items-center justify-center rounded-md font-medium transition-colors max-mobile:min-h-0 max-mobile:px-2.5 max-mobile:py-0 max-mobile:text-[11px] sm:px-3 sm:py-1.5 sm:text-xs ${
+                    className={`rounded px-2.5 py-1.5 text-xs font-medium transition-colors sm:px-3 sm:text-sm ${
                       viewMode === value
-                        ? "bg-background text-foreground shadow-sm ring-1 ring-border/60"
+                        ? "bg-muted text-foreground shadow-sm"
                         : "text-muted-foreground hover:text-foreground"
                     }`}
                   >
@@ -1410,7 +1373,7 @@ export default function DecksPage() {
                 ))}
               </div>
               <div
-                className="flex h-7 shrink-0 items-stretch rounded-lg border border-border/50 bg-muted/30 p-0.5 sm:h-auto sm:min-w-0 sm:flex-none"
+                className="inline-flex shrink-0 items-stretch rounded-md border border-border/60 bg-background/80 p-0.5"
                 role="tablist"
                 aria-label="List or grid layout"
               >
@@ -1419,140 +1382,99 @@ export default function DecksPage() {
                   role="tab"
                   aria-selected={deckLayout === "list"}
                   onClick={() => switchDeckLayout("list")}
-                  className={`inline-flex min-w-0 flex-none items-center justify-center gap-1 rounded-md font-medium transition-colors max-mobile:min-h-0 max-mobile:px-1.5 max-mobile:py-0 max-mobile:text-[11px] sm:flex-none sm:gap-1.5 sm:p-1.5 sm:text-xs ${
+                  className={`inline-flex items-center justify-center rounded p-1.5 sm:p-2 ${
                     deckLayout === "list"
-                      ? "bg-background text-foreground shadow-sm ring-1 ring-border/60"
+                      ? "bg-muted text-foreground shadow-sm"
                       : "text-muted-foreground hover:text-foreground"
                   }`}
                   aria-label="List view"
                 >
-                  <List className="size-3.5 shrink-0" />
-                  <span className="sm:sr-only">List</span>
+                  <List className="size-4 shrink-0" />
                 </button>
                 <button
                   type="button"
                   role="tab"
                   aria-selected={deckLayout === "grid"}
-                  title="Grid view"
                   onClick={() => switchDeckLayout("grid")}
-                  className={`inline-flex min-w-0 flex-none items-center justify-center gap-1 rounded-md font-medium transition-colors max-mobile:min-h-0 max-mobile:px-1.5 max-mobile:py-0 max-mobile:text-[11px] sm:flex-none sm:gap-1.5 sm:p-1.5 sm:text-xs ${
+                  className={`inline-flex items-center justify-center rounded p-1.5 sm:p-2 ${
                     deckLayout === "grid"
-                      ? "bg-background text-foreground shadow-sm ring-1 ring-border/60"
+                      ? "bg-muted text-foreground shadow-sm"
                       : "text-muted-foreground hover:text-foreground"
                   }`}
                   aria-label="Grid view"
                 >
-                  <LayoutGrid className="size-3.5 shrink-0" />
-                  <span className="sm:sr-only">Grid</span>
+                  <LayoutGrid className="size-4 shrink-0" />
                 </button>
               </div>
-              <div className="relative ml-auto shrink-0 sm:ml-0 sm:hidden">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-7 gap-1 px-2 text-[11px] shrink-0"
-                  aria-expanded={filtersMenuOpen}
-                  onPointerDown={(e) => e.stopPropagation()}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    e.preventDefault();
-                    setFiltersMenuOpen((o) => !o);
-                  }}
-                >
-                  <SlidersHorizontal className="size-3 shrink-0" />
-                  Filters
-                </Button>
-                {filtersMenuOpen && (
-                  <div
-                    className="absolute right-0 top-full z-50 mt-1 w-[min(100vw-2rem,16rem)] rounded-lg border border-border bg-popover p-3 shadow-lg space-y-3"
-                    onClick={(e: MouseEvent) => e.stopPropagation()}
-                  >
-                    {viewMode === "all" && (
-                      <div className="space-y-1">
-                        <label htmlFor="deck-sort-mobile" className="text-xs font-medium text-muted-foreground">
-                          Sort
-                        </label>
-                        <select
-                          id="deck-sort-mobile"
-                          value={sortMode}
-                          onChange={(e) => setSortMode(e.target.value as "newest" | "oldest" | "az")}
-                          className="w-full h-9 rounded-md border border-border bg-background px-2 text-sm"
-                        >
-                          <option value="newest">Newest</option>
-                          <option value="oldest">Oldest</option>
-                          <option value="az">A–Z</option>
-                        </select>
-                      </div>
-                    )}
-                    <label className="flex items-center gap-2 text-sm text-foreground cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={showArchived}
-                        onChange={(e) => setShowArchived(e.target.checked)}
-                        className="rounded border-input size-4 shrink-0"
-                      />
-                      Show archived
-                    </label>
-                    <label className="flex items-center gap-2 text-sm text-foreground cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={showDeckDates}
-                        onChange={(e) => {
-                          const v = e.target.checked;
-                          setShowDeckDates(v);
-                          try {
-                            localStorage.setItem(SHOW_DECK_DATES_STORAGE_KEY, v ? "1" : "0");
-                          } catch {
-                            /* ignore */
-                          }
-                        }}
-                        className="rounded border-input size-4 shrink-0"
-                      />
-                      Show dates on cards
-                    </label>
-                  </div>
-                )}
-              </div>
             </div>
-            <div className="hidden sm:flex flex-wrap items-center justify-end gap-x-3 gap-y-2">
-              {viewMode === "all" && (
-                <select
-                  value={sortMode}
-                  onChange={(e) => setSortMode(e.target.value as "newest" | "oldest" | "az")}
-                  className="h-7 rounded-md border border-border/50 bg-background px-2 text-xs text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+            <div className="relative shrink-0 sm:ml-auto">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-9 gap-2 text-xs sm:text-sm"
+                aria-expanded={filtersMenuOpen}
+                aria-haspopup="dialog"
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  e.preventDefault();
+                  setFiltersMenuOpen((o) => !o);
+                }}
+              >
+                <SlidersHorizontal className="size-3.5 shrink-0" />
+                Sort & display
+              </Button>
+              {filtersMenuOpen && (
+                <div
+                  className="absolute right-0 top-full z-50 mt-1 w-[min(100vw-2rem,17rem)] rounded-lg border border-border bg-popover p-3 shadow-lg space-y-3"
+                  onClick={(e: MouseEvent) => e.stopPropagation()}
                 >
-                  <option value="newest">Newest</option>
-                  <option value="oldest">Oldest</option>
-                  <option value="az">A–Z</option>
-                </select>
+                  {viewMode === "all" && (
+                    <div className="space-y-1">
+                      <label htmlFor="deck-sort-options" className="text-xs font-medium text-muted-foreground">
+                        Sort
+                      </label>
+                      <select
+                        id="deck-sort-options"
+                        value={sortMode}
+                        onChange={(e) => setSortMode(e.target.value as "newest" | "oldest" | "az")}
+                        className="w-full h-9 rounded-md border border-border bg-background px-2 text-sm"
+                      >
+                        <option value="newest">Newest first</option>
+                        <option value="oldest">Oldest first</option>
+                        <option value="az">Name A–Z</option>
+                      </select>
+                    </div>
+                  )}
+                  <label className="flex items-center gap-2 text-sm text-foreground cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={showArchived}
+                      onChange={(e) => setShowArchived(e.target.checked)}
+                      className="rounded border-input size-4 shrink-0"
+                    />
+                    Show archived decks
+                  </label>
+                  <label className="flex items-center gap-2 text-sm text-foreground cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={showDeckDates}
+                      onChange={(e) => {
+                        const v = e.target.checked;
+                        setShowDeckDates(v);
+                        try {
+                          localStorage.setItem(SHOW_DECK_DATES_STORAGE_KEY, v ? "1" : "0");
+                        } catch {
+                          /* ignore */
+                        }
+                      }}
+                      className="rounded border-input size-4 shrink-0"
+                    />
+                    Show created dates on cards
+                  </label>
+                </div>
               )}
-              <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer whitespace-nowrap shrink-0">
-                <input
-                  type="checkbox"
-                  checked={showArchived}
-                  onChange={(e) => setShowArchived(e.target.checked)}
-                  className="rounded border-input"
-                />
-                Archived
-              </label>
-              <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer whitespace-nowrap shrink-0">
-                <input
-                  type="checkbox"
-                  checked={showDeckDates}
-                  onChange={(e) => {
-                    const v = e.target.checked;
-                    setShowDeckDates(v);
-                    try {
-                      localStorage.setItem(SHOW_DECK_DATES_STORAGE_KEY, v ? "1" : "0");
-                    } catch {
-                      /* ignore */
-                    }
-                  }}
-                  className="rounded border-input"
-                />
-                Show dates
-              </label>
             </div>
           </div>
         </div>
@@ -1647,128 +1569,80 @@ export default function DecksPage() {
                         </span>
                       </div>
                       {group.categoryId !== UNCATEGORIZED && (
-                        <>
-                          <div className="hidden sm:flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity shrink-0">
-                            {group.decks.length > 0 && (
-                              <>
-                                <Link
-                                  href={`/explore/category/${group.categoryId}`}
-                                  onClick={(e: MouseEvent) => e.stopPropagation()}
-                                  className="p-1.5 rounded hover:bg-muted/60 transition-colors"
-                                  aria-label="Explore this category"
-                                  title="Explore cards"
-                                >
-                                  <Eye className="w-4 h-4 text-muted-foreground" />
-                                </Link>
-                                <Link
-                                  href={`/study/category/${group.categoryId}`}
-                                  onClick={(e: MouseEvent) => e.stopPropagation()}
-                                  className="p-1.5 rounded hover:bg-primary/10 transition-colors"
-                                  aria-label="Quiz this category"
-                                  title="Quiz category"
-                                >
-                                  <BookOpen className="w-4 h-4 text-muted-foreground" />
-                                </Link>
-                              </>
-                            )}
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                openRenameModal(group.categoryId, group.categoryName);
-                              }}
-                              className="p-1.5 rounded hover:bg-muted/60"
-                              aria-label="Rename category"
+                        <div className="relative shrink-0 opacity-80 hover:opacity-100 transition-opacity">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-muted-foreground"
+                            aria-label="Category actions"
+                            aria-expanded={openCategoryActionsId === group.categoryId}
+                            onPointerDown={(e) => e.stopPropagation()}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              e.preventDefault();
+                              setOpenCategoryActionsId((prev) =>
+                                prev === group.categoryId ? null : group.categoryId
+                              );
+                            }}
+                          >
+                            <MoreVertical className="size-4" />
+                          </Button>
+                          {openCategoryActionsId === group.categoryId && (
+                            <div
+                              className="absolute right-0 top-full z-50 mt-0.5 w-max min-w-[15rem] max-w-[calc(100vw-1.5rem)] rounded-lg border border-border bg-popover py-1 shadow-lg"
+                              onClick={(e: MouseEvent) => e.stopPropagation()}
+                              role="menu"
                             >
-                              <Pencil className="w-4 h-4 text-muted-foreground" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setDeleteConfirmId(group.categoryId);
-                              }}
-                              className="p-1.5 rounded hover:bg-muted/60"
-                              aria-label="Delete category"
-                            >
-                              <Trash2 className="w-4 h-4 text-muted-foreground" />
-                            </button>
-                          </div>
-                          <div className="relative sm:hidden shrink-0">
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8 text-muted-foreground"
-                              aria-label="Category actions"
-                              aria-expanded={openCategoryActionsId === group.categoryId}
-                              onPointerDown={(e) => e.stopPropagation()}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                e.preventDefault();
-                                setOpenCategoryActionsId((prev) =>
-                                  prev === group.categoryId ? null : group.categoryId
-                                );
-                              }}
-                            >
-                              <MoreVertical className="size-4" />
-                            </Button>
-                            {openCategoryActionsId === group.categoryId && (
-                              <div
-                                className="absolute right-0 top-full z-50 mt-0.5 w-max min-w-[15rem] max-w-[calc(100vw-1.5rem)] rounded-lg border border-border bg-popover py-1 shadow-lg"
-                                onClick={(e: MouseEvent) => e.stopPropagation()}
-                                role="menu"
+                              {group.decks.length > 0 && (
+                                <>
+                                  <Link
+                                    href={`/explore/category/${group.categoryId}`}
+                                    role="menuitem"
+                                    className="flex w-full items-center justify-start gap-2.5 whitespace-nowrap px-3 py-2.5 text-left text-sm hover:bg-muted focus-visible:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background min-h-[44px]"
+                                    onClick={() => setOpenCategoryActionsId(null)}
+                                  >
+                                    <Eye className="size-4 shrink-0" aria-hidden />
+                                    <span>Explore category</span>
+                                  </Link>
+                                  <Link
+                                    href={`/study/category/${group.categoryId}`}
+                                    role="menuitem"
+                                    className="flex w-full items-center justify-start gap-2.5 whitespace-nowrap px-3 py-2.5 text-left text-sm hover:bg-muted focus-visible:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background min-h-[44px]"
+                                    onClick={() => setOpenCategoryActionsId(null)}
+                                  >
+                                    <BookOpen className="size-4 shrink-0" aria-hidden />
+                                    <span>Quiz category</span>
+                                  </Link>
+                                </>
+                              )}
+                              <button
+                                type="button"
+                                role="menuitem"
+                                className="flex w-full items-center justify-start gap-2.5 whitespace-nowrap px-3 py-2.5 text-left text-sm hover:bg-muted focus-visible:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background min-h-[44px]"
+                                onClick={() => {
+                                  setOpenCategoryActionsId(null);
+                                  openRenameModal(group.categoryId, group.categoryName);
+                                }}
                               >
-                                {group.decks.length > 0 && (
-                                  <>
-                                    <Link
-                                      href={`/explore/category/${group.categoryId}`}
-                                      role="menuitem"
-                                      className="flex w-full items-center justify-start gap-2.5 whitespace-nowrap px-3 py-2.5 text-left text-sm hover:bg-muted focus-visible:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background min-h-[44px]"
-                                      onClick={() => setOpenCategoryActionsId(null)}
-                                    >
-                                      <Eye className="size-4 shrink-0" aria-hidden />
-                                      <span>Explore category</span>
-                                    </Link>
-                                    <Link
-                                      href={`/study/category/${group.categoryId}`}
-                                      role="menuitem"
-                                      className="flex w-full items-center justify-start gap-2.5 whitespace-nowrap px-3 py-2.5 text-left text-sm hover:bg-muted focus-visible:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background min-h-[44px]"
-                                      onClick={() => setOpenCategoryActionsId(null)}
-                                    >
-                                      <BookOpen className="size-4 shrink-0" aria-hidden />
-                                      <span>Quiz category</span>
-                                    </Link>
-                                  </>
-                                )}
-                                <button
-                                  type="button"
-                                  role="menuitem"
-                                  className="flex w-full items-center justify-start gap-2.5 whitespace-nowrap px-3 py-2.5 text-left text-sm hover:bg-muted focus-visible:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background min-h-[44px]"
-                                  onClick={() => {
-                                    setOpenCategoryActionsId(null);
-                                    openRenameModal(group.categoryId, group.categoryName);
-                                  }}
-                                >
-                                  <Pencil className="size-4 shrink-0" aria-hidden />
-                                  <span>Rename category</span>
-                                </button>
-                                <button
-                                  type="button"
-                                  role="menuitem"
-                                  className="flex w-full items-center justify-start gap-2.5 whitespace-nowrap px-3 py-2.5 text-left text-sm text-destructive hover:bg-destructive/10 focus-visible:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/60 focus-visible:ring-offset-2 focus-visible:ring-offset-background min-h-[44px]"
-                                  onClick={() => {
-                                    setOpenCategoryActionsId(null);
-                                    setDeleteConfirmId(group.categoryId);
-                                  }}
-                                >
-                                  <Trash2 className="size-4 shrink-0" aria-hidden />
-                                  <span>Delete category</span>
-                                </button>
-                              </div>
-                            )}
-                          </div>
-                        </>
+                                <Pencil className="size-4 shrink-0" aria-hidden />
+                                <span>Rename category</span>
+                              </button>
+                              <button
+                                type="button"
+                                role="menuitem"
+                                className="flex w-full items-center justify-start gap-2.5 whitespace-nowrap px-3 py-2.5 text-left text-sm text-destructive hover:bg-destructive/10 focus-visible:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/60 focus-visible:ring-offset-2 focus-visible:ring-offset-background min-h-[44px]"
+                                onClick={() => {
+                                  setOpenCategoryActionsId(null);
+                                  setDeleteConfirmId(group.categoryId);
+                                }}
+                              >
+                                <Trash2 className="size-4 shrink-0" aria-hidden />
+                                <span>Delete category</span>
+                              </button>
+                            </div>
+                          )}
+                        </div>
                       )}
                     </div>
                   </div>

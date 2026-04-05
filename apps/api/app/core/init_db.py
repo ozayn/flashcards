@@ -2,7 +2,7 @@ import logging
 
 from sqlalchemy import text
 from app.core.database import engine, Base, DATABASE_URL
-from app.models import User, Deck, Flashcard, Review, Category  # noqa: F401 - register models
+from app.models import User, UserActivity, Deck, Flashcard, Review, Category  # noqa: F401 - register models
 
 logger = logging.getLogger(__name__)
 

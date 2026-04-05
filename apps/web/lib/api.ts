@@ -4,6 +4,24 @@
  */
 const API_BASE = "/api/proxy";
 
+/** Parse FastAPI `detail` (string or validation list) for user-facing errors. */
+export async function readApiErrorMessage(
+  res: Response,
+  fallback: string
+): Promise<string> {
+  try {
+    const j = (await res.json()) as { detail?: unknown };
+    const d = j?.detail;
+    if (typeof d === "string") return d;
+    if (Array.isArray(d) && d[0] && typeof (d[0] as { msg?: string }).msg === "string") {
+      return String((d[0] as { msg: string }).msg);
+    }
+  } catch {
+    /* ignore */
+  }
+  return fallback;
+}
+
 /** For display only (e.g. error messages). Public URL, not used for requests. */
 export const apiUrl =
   (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080").replace(/\/$/, "");
@@ -62,6 +80,13 @@ export async function waitForApiReadiness(options?: {
   return false;
 }
 
+export type UserUsageLimits = {
+  limited_tier: boolean;
+  max_active_decks: number | null;
+  max_cards_per_deck: number | null;
+  active_deck_count: number;
+};
+
 export type UserRow = {
   id: string;
   email: string;
@@ -69,6 +94,7 @@ export type UserRow = {
   role: string;
   plan: string;
   created_at: string;
+  usage?: UserUsageLimits | null;
 };
 
 export async function getUser(userId: string): Promise<UserRow> {
@@ -76,6 +102,27 @@ export async function getUser(userId: string): Promise<UserRow> {
     cache: "no-store",
   });
   if (!res.ok) throw new Error("Failed to fetch user");
+  return res.json();
+}
+
+export type UserActivityEntry = {
+  id: string;
+  event_type: string;
+  created_at: string;
+  meta: Record<string, unknown> | null;
+};
+
+/** Signed-in user's recent events (same user as session only). Returns [] if forbidden or empty. */
+export async function getUserActivity(
+  userId: string,
+  limit = 10
+): Promise<UserActivityEntry[]> {
+  const res = await fetch(
+    `${API_BASE}/users/${encodeURIComponent(userId)}/activity?limit=${encodeURIComponent(String(limit))}`,
+    { cache: "no-store" }
+  );
+  if (res.status === 403) return [];
+  if (!res.ok) throw new Error("Failed to load activity");
   return res.json();
 }
 
@@ -315,8 +362,7 @@ export async function duplicateDeck(deckId: string, userId: string) {
     method: "POST",
   });
   if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail ?? "Failed to duplicate deck");
+    throw new Error(await readApiErrorMessage(res, "Failed to duplicate deck"));
   }
   return res.json();
 }
@@ -412,7 +458,9 @@ export async function createDeck(data: {
       signal: controller.signal,
     });
     clearTimeout(timeout);
-    if (!res.ok) throw new Error("Failed to create deck");
+    if (!res.ok) {
+      throw new Error(await readApiErrorMessage(res, "Failed to create deck"));
+    }
     return res.json();
   } catch (e) {
     clearTimeout(timeout);
@@ -633,7 +681,9 @@ export async function createFlashcard(data: {
     body: JSON.stringify(data),
   });
 
-  if (!res.ok) throw new Error("Failed to create flashcard");
+  if (!res.ok) {
+    throw new Error(await readApiErrorMessage(res, "Failed to create flashcard"));
+  }
 
   return res.json();
 }
@@ -647,7 +697,9 @@ export async function importFlashcards(data: {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
   });
-  if (!res.ok) throw new Error("Failed to import flashcards");
+  if (!res.ok) {
+    throw new Error(await readApiErrorMessage(res, "Failed to import flashcards"));
+  }
   return res.json();
 }
 
@@ -743,7 +795,9 @@ export async function generateFlashcards(data: {
     }),
   });
 
-  if (!res.ok) throw new Error("Failed to generate flashcards");
+  if (!res.ok) {
+    throw new Error(await readApiErrorMessage(res, "Failed to generate flashcards"));
+  }
 
   return res.json();
 }
@@ -765,7 +819,9 @@ export async function generateFlashcardsBackground(data: {
     }),
   });
 
-  if (!res.ok) throw new Error("Failed to start generation");
+  if (!res.ok) {
+    throw new Error(await readApiErrorMessage(res, "Failed to start generation"));
+  }
   return res.json() as Promise<{ deck_id: string; status: string }>;
 }
 

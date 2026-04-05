@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Optional
+from typing import Any, Dict, Optional
 
 from pydantic import BaseModel, EmailStr, Field, model_validator
 
@@ -21,6 +21,15 @@ class UserCreate(BaseModel):
     plan: Plan = Field(default=Plan.free)
 
 
+class UserUsageLimits(BaseModel):
+    """Included on GET /users/{id} when the caller is acting as that user (self-view)."""
+
+    limited_tier: bool
+    max_active_decks: int | None
+    max_cards_per_deck: int | None
+    active_deck_count: int
+
+
 class UserResponse(BaseModel):
     id: str
     email: str
@@ -28,6 +37,7 @@ class UserResponse(BaseModel):
     role: UserRole
     plan: Plan
     created_at: datetime
+    usage: Optional[UserUsageLimits] = None
 
     model_config = {"from_attributes": True}
 
@@ -63,6 +73,15 @@ class UserAdminUpdate(BaseModel):
         if self.name is None and self.email is None:
             raise ValueError("At least one of name or email must be provided")
         return self
+
+
+class UserActivityItem(BaseModel):
+    """Single row for the signed-in user's recent activity (not a global feed)."""
+
+    id: str
+    event_type: str
+    created_at: datetime
+    meta: Optional[Dict[str, Any]] = None
 
 
 class UserDeletePreviewResponse(BaseModel):
