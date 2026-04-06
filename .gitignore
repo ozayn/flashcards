@@ -40,3 +40,6 @@ npm-debug.log*
 # Database
 *.db
 dev.db
+*.db-journal
+*.db-wal
+*.db-shm
