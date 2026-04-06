@@ -516,11 +516,33 @@ export function isYouTubePlaylistUrl(url: string): boolean {
   return false;
 }
 
+export type TranscriptFetchErrorFields = {
+  title?: string | null;
+  videoId?: string | null;
+  durationSeconds?: number | null;
+  watchMetadataOk?: boolean;
+  code?: string | null;
+  transcriptOk?: boolean;
+};
+
+/** YouTube /transcript failures may include watch metadata even when captions fail. */
 export class TranscriptFetchError extends Error {
   title: string | null;
-  constructor(message: string, title: string | null = null) {
+  videoId: string | null;
+  durationSeconds: number | null;
+  watchMetadataOk: boolean;
+  code: string | null;
+  transcriptOk: boolean;
+
+  constructor(message: string, fields: TranscriptFetchErrorFields = {}) {
     super(message);
-    this.title = title;
+    this.title = fields.title ?? null;
+    this.videoId = fields.videoId ?? null;
+    this.durationSeconds =
+      typeof fields.durationSeconds === "number" ? fields.durationSeconds : null;
+    this.watchMetadataOk = Boolean(fields.watchMetadataOk);
+    this.code = fields.code ?? null;
+    this.transcriptOk = Boolean(fields.transcriptOk);
   }
 }
 
@@ -541,14 +563,24 @@ export async function fetchYouTubeTranscript(url: string): Promise<{
   if (!res.ok) {
     const body = await res.json().catch(() => null);
     const detail = body?.detail;
-    if (detail && typeof detail === "object") {
+    if (detail && typeof detail === "object" && !Array.isArray(detail)) {
+      const d = detail as Record<string, unknown>;
       throw new TranscriptFetchError(
-        detail.message || "Failed to fetch transcript",
-        detail.title || null,
+        typeof d.message === "string" ? d.message : "Failed to fetch transcript",
+        {
+          title: typeof d.title === "string" ? d.title : null,
+          videoId: typeof d.video_id === "string" ? d.video_id : null,
+          durationSeconds:
+            typeof d.duration_seconds === "number" ? d.duration_seconds : null,
+          watchMetadataOk: Boolean(d.watch_metadata_ok),
+          code: typeof d.code === "string" ? d.code : null,
+          transcriptOk: Boolean(d.transcript_ok),
+        }
       );
     }
     throw new TranscriptFetchError(
       typeof detail === "string" ? detail : "Failed to fetch transcript",
+      { watchMetadataOk: false }
     );
   }
   return res.json();

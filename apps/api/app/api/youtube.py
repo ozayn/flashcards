@@ -415,6 +415,57 @@ def fetch_video_watch_meta(video_id: str) -> tuple[Optional[str], Optional[int]]
         return None, None
 
 
+def _watch_metadata_succeeded(title: Optional[str], duration_seconds: Optional[int]) -> bool:
+    """True if the watch-page scrape yielded a title and/or duration."""
+    if duration_seconds is not None:
+        return True
+    if title and str(title).strip():
+        return True
+    return False
+
+
+def _youtube_ingestion_error_detail(
+    *,
+    code: str,
+    message: str,
+    video_id: Optional[str] = None,
+    title: Optional[str] = None,
+    duration_seconds: Optional[int] = None,
+    transcript_ok: bool = False,
+) -> dict[str, Any]:
+    """Structured error body for /youtube/transcript (client + logging)."""
+    return {
+        "code": code,
+        "message": message,
+        "video_id": video_id,
+        "title": title,
+        "duration_seconds": duration_seconds,
+        "watch_metadata_ok": _watch_metadata_succeeded(title, duration_seconds),
+        "transcript_ok": transcript_ok,
+    }
+
+
+def _log_transcript_failed_after_watch_metadata_ok(
+    video_id: str,
+    *,
+    title: Optional[str],
+    duration_seconds: Optional[int],
+    code: str,
+    detail: str,
+) -> None:
+    if not _watch_metadata_succeeded(title, duration_seconds):
+        return
+    logger.warning(
+        "[youtube] transcript failed after watch_metadata_ok video_id=%s code=%s "
+        "title=%r duration_seconds=%s detail=%s",
+        video_id,
+        code,
+        title,
+        duration_seconds,
+        detail,
+    )
+
+
 class TranscriptRequest(BaseModel):
     url: str = Field(..., min_length=5, description="YouTube video URL")
 
@@ -579,13 +630,33 @@ def _transcript_language_fetch_order(available: list[tuple[str, str, bool]]) -> 
 async def get_transcript(payload: TranscriptRequest):
     video_id = extract_video_id(payload.url)
     if not video_id:
-        raise HTTPException(status_code=400, detail="Invalid YouTube URL. Please paste a valid video link.")
+        raise HTTPException(
+            status_code=400,
+            detail=_youtube_ingestion_error_detail(
+                code="INVALID_YOUTUBE_URL",
+                message="Invalid YouTube URL. Please paste a valid video link.",
+            ),
+        )
 
     title, duration_seconds = fetch_video_watch_meta(video_id)
-    print(
-        f"[youtube] Watch meta for {video_id}: title={'ok → ' + repr(title) if title else 'failed'}, "
-        f"duration_seconds={duration_seconds if duration_seconds is not None else 'unknown'}"
+    meta_ok = _watch_metadata_succeeded(title, duration_seconds)
+    logger.info(
+        "[youtube] watch_metadata video_id=%s outcome=%s title_present=%s duration_seconds=%s",
+        video_id,
+        "ok" if meta_ok else "none",
+        bool(title and str(title).strip()),
+        duration_seconds if duration_seconds is not None else None,
     )
+    print(
+        f"[youtube] Watch meta for {video_id}: "
+        f"{'ok' if meta_ok else 'none'} "
+        f"(title={'set' if title else 'missing'}, duration={duration_seconds if duration_seconds is not None else 'missing'})"
+    )
+    if not meta_ok:
+        logger.info(
+            "[youtube] watch_metadata video_id=%s note=continuing_transcript_attempt_without_watch_meta",
+            video_id,
+        )
 
     attempts = _proxy_configs if _proxy_configs else [None]
     n_attempts = len(attempts)
@@ -658,18 +729,36 @@ async def get_transcript(payload: TranscriptRequest):
                 f"[youtube] Transcript fetch for {video_id}: ok "
                 f"(proxy_index={attempt_idx + 1}/{n_attempts}, language={getattr(picked, 'language_code', '?')})"
             )
+            logger.info(
+                "[youtube] transcript video_id=%s outcome=ok proxy_index=%d/%d language_code=%s watch_metadata_was_ok=%s",
+                video_id,
+                attempt_idx + 1,
+                n_attempts,
+                getattr(picked, "language_code", None),
+                meta_ok,
+            )
             break
         except HTTPException:
             raise
         except NoTranscriptFound as exc:
             print(f"[youtube] Transcript fetch for {video_id}: FAILED — {exc}")
             logger.warning("Transcript fetch for %s: no matching language — %s", video_id, exc)
+            _log_transcript_failed_after_watch_metadata_ok(
+                video_id,
+                title=title,
+                duration_seconds=duration_seconds,
+                code="NO_TRANSCRIPT_LANGUAGE",
+                detail=str(exc),
+            )
             raise HTTPException(
                 status_code=422,
-                detail={
-                    "message": "No transcript available in a supported language for this video.",
-                    "title": title,
-                },
+                detail=_youtube_ingestion_error_detail(
+                    code="NO_TRANSCRIPT_LANGUAGE",
+                    message="No transcript available in a supported language for this video.",
+                    video_id=video_id,
+                    title=title,
+                    duration_seconds=duration_seconds,
+                ),
             )
         except Exception as exc:
             last_exc = exc
@@ -732,19 +821,39 @@ async def get_transcript(payload: TranscriptRequest):
                 f"[youtube] transcript: all {n_attempts} proxies exhausted (last: {type(exc).__name__})"
             )
         if _is_ip_block_error(exc):
+            _log_transcript_failed_after_watch_metadata_ok(
+                video_id,
+                title=title,
+                duration_seconds=duration_seconds,
+                code="TRANSCRIPT_BLOCKED",
+                detail=type(exc).__name__ + ": " + str(exc),
+            )
             raise HTTPException(
                 status_code=503,
-                detail={
-                    "message": "We couldn\u2019t fetch the transcript from YouTube right now.",
-                    "title": title,
-                },
+                detail=_youtube_ingestion_error_detail(
+                    code="TRANSCRIPT_BLOCKED",
+                    message="We couldn\u2019t fetch the transcript from YouTube right now.",
+                    video_id=video_id,
+                    title=title,
+                    duration_seconds=duration_seconds,
+                ),
             )
+        _log_transcript_failed_after_watch_metadata_ok(
+            video_id,
+            title=title,
+            duration_seconds=duration_seconds,
+            code="NO_TRANSCRIPT",
+            detail=type(exc).__name__ + ": " + str(exc),
+        )
         raise HTTPException(
             status_code=422,
-            detail={
-                "message": "No transcript available for this video. It may not have captions enabled.",
-                "title": title,
-            },
+            detail=_youtube_ingestion_error_detail(
+                code="NO_TRANSCRIPT",
+                message="No transcript available for this video. It may not have captions enabled.",
+                video_id=video_id,
+                title=title,
+                duration_seconds=duration_seconds,
+            ),
         )
 
     segments: list[TranscriptSegment] = []
@@ -766,7 +875,23 @@ async def get_transcript(payload: TranscriptRequest):
         pass
 
     if len(text.strip()) < 50:
-        raise HTTPException(status_code=422, detail="Transcript is too short to generate useful flashcards.")
+        logger.warning(
+            "[youtube] transcript video_id=%s outcome=too_short chars=%d watch_metadata_was_ok=%s",
+            video_id,
+            len(text.strip()),
+            meta_ok,
+        )
+        raise HTTPException(
+            status_code=422,
+            detail=_youtube_ingestion_error_detail(
+                code="TRANSCRIPT_TOO_SHORT",
+                message="Transcript is too short to generate useful flashcards.",
+                video_id=video_id,
+                title=title,
+                duration_seconds=duration_seconds,
+                transcript_ok=True,
+            ),
+        )
 
     if len(text) > MAX_TRANSCRIPT_CHARS:
         text = text[:MAX_TRANSCRIPT_CHARS]

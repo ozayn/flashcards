@@ -34,6 +34,17 @@ def _active_proxy_env_names() -> list[str]:
     return sorted({n for n in _PROXY_ENV_NAMES if (os.environ.get(n) or "").strip()})
 
 
+def describe_llm_proxy_env_for_logs() -> str:
+    """
+    One line for diagnostics: whether standard proxy env vars exist (names only).
+    LLM clients still ignore them via trust_env=False; this helps spot accidental env leakage confusion.
+    """
+    found = _active_proxy_env_names()
+    if found:
+        return "HTTP(S)_PROXY env present in process (not applied to LLM httpx): " + ", ".join(found)
+    return "no HTTP_PROXY/HTTPS_PROXY/ALL_PROXY in process env"
+
+
 def log_llm_outbound_isolation_once() -> None:
     """Once per process: explain that LLM calls ignore standard proxy env vars."""
     global _llm_isolation_logged

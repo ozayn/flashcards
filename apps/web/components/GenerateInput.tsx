@@ -45,7 +45,12 @@ export function GenerateInput({
   const [loading, setLoading] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [ytFallback, setYtFallback] = useState<{ url: string; title?: string } | null>(null);
+  const [ytFallback, setYtFallback] = useState<{
+    url: string;
+    title?: string;
+    watchMetadataOk?: boolean;
+    code?: string | null;
+  } | null>(null);
 
   const trimmed = value.trim();
   const isYT = isYouTubeUrl(trimmed);
@@ -84,8 +89,13 @@ export function GenerateInput({
         try {
           transcript = await fetchYouTubeTranscript(cleanYtUrl);
         } catch (err) {
-          const title = err instanceof TranscriptFetchError ? err.title : undefined;
-          setYtFallback({ url: cleanYtUrl, title: title || undefined });
+          const tfe = err instanceof TranscriptFetchError ? err : null;
+          setYtFallback({
+            url: cleanYtUrl,
+            title: tfe?.title || undefined,
+            watchMetadataOk: Boolean(tfe?.watchMetadataOk),
+            code: tfe?.code ?? undefined,
+          });
           setLoading(false);
           setLoadingMessage("");
           return;
@@ -217,16 +227,17 @@ export function GenerateInput({
       {ytFallback && (
         <div className="rounded-xl border border-border bg-muted/30 px-4 py-4 space-y-3 text-center">
           <p className="text-sm text-foreground">
-            We couldn&apos;t fetch the transcript
-            {ytFallback.title ? (
-              <> for <span className="font-medium">{ytFallback.title}</span></>
-            ) : (
-              <> from YouTube right now</>
-            )}
-            .
+            {ytFallback.code === "TRANSCRIPT_TOO_SHORT"
+              ? "The transcript was too short to use automatically."
+              : ytFallback.watchMetadataOk
+                ? "Video found, but the transcript could not be retrieved."
+                : "We couldn\u2019t fetch the transcript from YouTube right now."}
           </p>
+          {ytFallback.title && ytFallback.code !== "TRANSCRIPT_TOO_SHORT" ? (
+            <p className="text-sm text-muted-foreground line-clamp-2">{ytFallback.title}</p>
+          ) : null}
           <p className="text-sm text-muted-foreground">
-            You can still create the deck by pasting the transcript yourself.
+            You can still create the deck by pasting the transcript or notes yourself.
           </p>
           <Link
             href={fallbackUrl!}

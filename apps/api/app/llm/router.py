@@ -12,7 +12,12 @@ import time
 
 from app.llm.cache import get_cached_response, save_cached_response
 from app.llm.cost_tracker import log_llm_usage, log_usage_unavailable
-from app.llm.direct_outbound import get_llm_requests_session, groq_client, openai_client
+from app.llm.direct_outbound import (
+    describe_llm_proxy_env_for_logs,
+    get_llm_requests_session,
+    groq_client,
+    openai_client,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +85,70 @@ def _groq_http_status(exc: BaseException) -> int | None:
                 return rsc
         cur = cur.__cause__ or cur.__context__
     return None
+
+
+def _groq_find_http_response(exc: BaseException) -> object | None:
+    """First httpx-like response in the exception chain (for safe debug headers/body)."""
+    visited: set[int] = set()
+    cur: BaseException | None = exc
+    while cur is not None and id(cur) not in visited:
+        visited.add(id(cur))
+        resp = getattr(cur, "response", None)
+        if resp is not None and getattr(resp, "status_code", None) is not None:
+            return resp
+        cur = cur.__cause__ or cur.__context__
+    return None
+
+
+def _groq_safe_http_debug(exc: BaseException) -> str:
+    """Non-secret HTTP debug string (cf-ray, short body preview)."""
+    resp = _groq_find_http_response(exc)
+    if resp is None:
+        return "no_response_in_chain"
+    parts: list[str] = []
+    headers = getattr(resp, "headers", None)
+    if headers is not None:
+        cf = headers.get("cf-ray") or headers.get("CF-Ray")
+        if cf:
+            parts.append(f"cf-ray={cf}")
+        srv = headers.get("server")
+        if srv:
+            parts.append(f"server={srv}")
+    try:
+        text = (getattr(resp, "text", None) or "")[:400]
+    except Exception:
+        text = "(unreadable body)"
+    text = text.replace("\r", " ").replace("\n", " ").strip()
+    if len(text) > 240:
+        text = text[:240] + "…"
+    head = "; ".join(parts) if parts else "no_cf_ray"
+    return f"{head}; body_preview={text!r}"
+
+
+def _groq_log_auth_or_edge_failure(exc: Exception) -> None:
+    """Extra logging for 401/403 (key vs Cloudflare/egress); safe for logs (no API keys)."""
+    st = _groq_http_status(exc)
+    if st not in (401, 403):
+        return
+    dbg = _groq_safe_http_debug(exc)
+    logger.warning(
+        "LLM Groq: HTTP %s — path=direct https://api.groq.com (httpx trust_env=False; Groq client uses this "
+        "http_client only; YouTube/Webshare proxy is separate and not used here). %s. %s",
+        st,
+        describe_llm_proxy_env_for_logs(),
+        dbg,
+    )
+    if st == 401:
+        logger.warning(
+            "LLM Groq: HTTP 401 is usually an invalid, expired, or unauthorized API key (account-side)."
+        )
+    elif st == 403:
+        logger.warning(
+            "LLM Groq: HTTP 403 with message like 'Access denied… network settings' is commonly Cloudflare "
+            "edge blocking or restricting the machine's direct egress IP (sanctions/datacenter/VPN ranges). "
+            "If every key fails with the same 403, treat as network-path; try another egress (e.g. local laptop), "
+            "or contact Groq with cf-ray above. Bad keys more often return 401."
+        )
 
 
 def _groq_error_category(exc: Exception) -> str:
@@ -225,6 +294,7 @@ def _generate_groq(prompt: str, temperature: float, max_tokens: int) -> str:
         try:
             return _generate_groq_with_key(prompt, temperature, max_tokens, api_key)
         except Exception as e:
+            _groq_log_auth_or_edge_failure(e)
             allow_next = _groq_error_allows_next_key(e)
             if idx + 1 < n and allow_next:
                 logger.warning(

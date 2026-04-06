@@ -54,7 +54,12 @@ function CreateDeckForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  const [ytFallbackUrl, setYtFallbackUrl] = useState<string | null>(null);
+  const [ytTextFallback, setYtTextFallback] = useState<{
+    url: string;
+    watchMetadataOk: boolean;
+    title: string | null;
+    failureCode: string | null;
+  } | null>(null);
   const [importText, setImportText] = useState("");
   const [importFiles, setImportFiles] = useState<{ name: string; pairCount: number; error?: string }[]>([]);
   const [importError, setImportError] = useState<string | null>(null);
@@ -69,7 +74,12 @@ function CreateDeckForm() {
 
     if (modeParam === "text" && ytParam) {
       setGenerationMode("text");
-      setYtFallbackUrl(ytParam);
+      setYtTextFallback({
+        url: ytParam,
+        watchMetadataOk: false,
+        title: titleParam || null,
+        failureCode: null,
+      });
       if (titleParam) setName(titleParam);
     } else if (topicParam) {
       setTopic(topicParam);
@@ -292,12 +302,28 @@ function CreateDeckForm() {
         try {
           transcript = await fetchYouTubeTranscript(cleanYtUrl);
         } catch (err) {
-          setYtFallbackUrl(cleanYtUrl);
+          const tfe = err instanceof TranscriptFetchError ? err : null;
+          setYtTextFallback({
+            url: cleanYtUrl,
+            watchMetadataOk: Boolean(tfe?.watchMetadataOk),
+            title: tfe?.title ?? null,
+            failureCode: tfe?.code ?? null,
+          });
           setGenerationMode("text");
-          if (err instanceof TranscriptFetchError && err.title) {
-            if (!nameTrimmed) setName(err.title);
+          if (tfe?.title && !nameTrimmed) {
+            setName(tfe.title);
           }
-          setFormError("Couldn\u2019t fetch transcript — paste text below.");
+          if (tfe?.code === "TRANSCRIPT_TOO_SHORT") {
+            setFormError(
+              "The transcript was too short to use. Paste a longer transcript or more notes below."
+            );
+          } else if (tfe?.watchMetadataOk) {
+            setFormError(
+              "Video found, but the transcript could not be retrieved. Paste the transcript or notes below."
+            );
+          } else {
+            setFormError("Couldn\u2019t fetch transcript — paste text below.");
+          }
           setLoading(false);
           setLoadingMessage("");
           return;
@@ -583,13 +609,24 @@ function CreateDeckForm() {
 
             {generationMode === "text" && (
               <div className="space-y-3">
-                {ytFallbackUrl && (
+                {ytTextFallback && (
                   <div className="rounded-lg border border-border/50 bg-muted/20 px-3 py-2.5">
-                    <p className="text-xs font-medium text-foreground">Transcript not fetched — paste manually</p>
+                    <p className="text-xs font-medium text-foreground">
+                      {ytTextFallback.failureCode === "TRANSCRIPT_TOO_SHORT"
+                        ? "The transcript was too short to use automatically."
+                        : ytTextFallback.watchMetadataOk
+                          ? "Video found, but the transcript could not be retrieved."
+                          : "Transcript not fetched — paste manually"}
+                    </p>
+                    {ytTextFallback.title ? (
+                      <p className="mt-1 text-xs text-muted-foreground line-clamp-2">
+                        {ytTextFallback.title}
+                      </p>
+                    ) : null}
                     <ol className="mt-1.5 list-inside list-decimal space-y-0.5 text-xs text-muted-foreground">
                       <li>
                         <a
-                          href={ytFallbackUrl}
+                          href={ytTextFallback.url}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="underline underline-offset-2 hover:text-foreground"
@@ -610,7 +647,7 @@ function CreateDeckForm() {
                   <textarea
                     id="text"
                     placeholder={
-                      ytFallbackUrl
+                      ytTextFallback
                         ? "Paste transcript…"
                         : "Notes, article text, etc."
                     }
