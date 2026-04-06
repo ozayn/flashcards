@@ -2808,6 +2808,12 @@ def _estimate_tokens_per_card(topic: str) -> int:
     return 80
 
 
+def _max_tokens_for_text_mode_cards(base_default: int, num_cards: int) -> int:
+    """Output budget for pasted text / transcript JSON (multi-card). Default LLM_MAX_TOKENS alone often truncates."""
+    n = max(1, num_cards)
+    return max(base_default, min(8192, 150 * n + 1200))
+
+
 def _compute_safe_card_count(
     requested: int, topic: str, retry_attempt: int = 0
 ) -> tuple[int, int]:
@@ -3130,10 +3136,13 @@ def _sync_prepare_generated_cards(
         num_cards, safe_max = _compute_safe_card_count(
             requested_cards, topic_for_estimate, retry_attempt=attempt
         )
-        retry_max_tokens = int(_get_default_max_tokens() * 1.5) if attempt > 0 else None
+        base_default = _get_default_max_tokens()
+        retry_max_tokens = int(base_default * 1.5) if attempt > 0 else None
         if _is_formula_topic(topic_for_estimate):
-            base = _get_default_max_tokens()
-            retry_max_tokens = min(retry_max_tokens or base, 800)
+            retry_max_tokens = min(retry_max_tokens or base_default, 800)
+        elif text_input is not None and attempt == 0:
+            # First attempt: YouTube transcript / pasted text used default 2048 → frequent Gemini MAX_TOKENS + bad JSON.
+            retry_max_tokens = _max_tokens_for_text_mode_cards(base_default, num_cards)
         logger.info(
             "Requested cards: %d, Safe max cards: %d, Final cards used: %d (attempt %d)%s",
             requested_cards,

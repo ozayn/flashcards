@@ -180,6 +180,20 @@ async def startup():
     log = logging.getLogger("uvicorn.error")
     if LOADED_ENV_FILES:
         log.info("Env files loaded (later overrides earlier): %s", LOADED_ENV_FILES)
+    elif any(
+        os.environ.get(k, "").strip()
+        for k in (
+            "DATABASE_URL",
+            "GROQ_API_KEY",
+            "GEMINI_API_KEY",
+            "YOUTUBE_PROXY_URL",
+            "OPENAI_API_KEY",
+        )
+    ):
+        log.info(
+            "No .env file on disk at apps/api/.env or apps/api/app/.env — "
+            "using process environment (typical for containers)."
+        )
     else:
         log.warning(
             "No .env file found at apps/api/.env or apps/api/app/.env — "
