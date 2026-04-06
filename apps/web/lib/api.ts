@@ -97,12 +97,49 @@ export type UserRow = {
   usage?: UserUsageLimits | null;
 };
 
+/** Deduplicate overlapping fetches + absorb Strict Mode double-mount / effect churn (dev). */
+const _USER_API_HYDRATION_TTL_MS = 2800;
+
+type _TtlEntry<T> = { value: T; until: number };
+
+let _usersListTtl: _TtlEntry<UserRow[]> | null = null;
+const _userRowTtl = new Map<string, _TtlEntry<UserRow>>();
+
+function _invalidateUsersListTtl() {
+  _usersListTtl = null;
+}
+
+function _cloneUserRow(row: UserRow): UserRow {
+  return { ...row, usage: row.usage ? { ...row.usage } : row.usage };
+}
+
+const _getUserInFlight = new Map<string, Promise<UserRow>>();
+
 export async function getUser(userId: string): Promise<UserRow> {
-  const res = await fetch(`${API_BASE}/users/${encodeURIComponent(userId)}`, {
-    cache: "no-store",
-  });
-  if (!res.ok) throw new Error("Failed to fetch user");
-  return res.json();
+  const t = _userRowTtl.get(userId);
+  if (t && Date.now() < t.until) {
+    return Promise.resolve(_cloneUserRow(t.value));
+  }
+  const existing = _getUserInFlight.get(userId);
+  if (existing) return existing;
+  const p = (async (): Promise<UserRow> => {
+    try {
+      const res = await fetch(`${API_BASE}/users/${encodeURIComponent(userId)}`, {
+        cache: "no-store",
+      });
+      if (!res.ok) throw new Error("Failed to fetch user");
+      const data = (await res.json()) as UserRow;
+      _userRowTtl.set(userId, {
+        value: data,
+        until: Date.now() + _USER_API_HYDRATION_TTL_MS,
+      });
+      return data;
+    } finally {
+      _getUserInFlight.delete(userId);
+    }
+  })();
+  _getUserInFlight.set(userId, p);
+  return p;
 }
 
 export type UserActivityEntry = {
@@ -145,24 +182,48 @@ export async function patchUserProfileName(
       typeof detail === "string" ? detail : "Failed to update name"
     );
   }
-  return res.json();
+  const row = (await res.json()) as UserRow;
+  _userRowTtl.set(userId, {
+    value: row,
+    until: Date.now() + _USER_API_HYDRATION_TTL_MS,
+  });
+  _invalidateUsersListTtl();
+  return row;
 }
 
-export async function getUsers() {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 8000);
-  try {
-    const res = await fetch(`${API_BASE}/users`, {
-      cache: "no-store",
-      signal: controller.signal,
-    });
-    clearTimeout(timeout);
-    if (!res.ok) throw new Error("Failed to fetch users");
-    return res.json();
-  } catch (e) {
-    clearTimeout(timeout);
-    throw e;
+let _getUsersInFlight: Promise<UserRow[]> | null = null;
+
+export async function getUsers(): Promise<UserRow[]> {
+  const listHit = _usersListTtl;
+  if (listHit && Date.now() < listHit.until) {
+    return Promise.resolve(listHit.value.map(_cloneUserRow));
   }
+  if (_getUsersInFlight) return _getUsersInFlight;
+  const p = (async (): Promise<UserRow[]> => {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+    try {
+      const res = await fetch(`${API_BASE}/users`, {
+        cache: "no-store",
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+      if (!res.ok) throw new Error("Failed to fetch users");
+      const data = (await res.json()) as UserRow[];
+      _usersListTtl = {
+        value: data,
+        until: Date.now() + _USER_API_HYDRATION_TTL_MS,
+      };
+      return data;
+    } catch (e) {
+      clearTimeout(timeout);
+      throw e;
+    } finally {
+      _getUsersInFlight = null;
+    }
+  })();
+  _getUsersInFlight = p;
+  return p;
 }
 
 /** User row from admin list/update (same shape as public user API). */
@@ -354,6 +415,7 @@ export async function createUser(data: {
     throw new Error(err.detail ?? "Failed to create user");
   }
 
+  _invalidateUsersListTtl();
   return res.json();
 }
 
@@ -908,12 +970,39 @@ export interface UserSettings {
   card_style: "paper" | "minimal" | "modern" | "anki";
 }
 
+const _userSettingsTtl = new Map<string, _TtlEntry<UserSettings>>();
+
+function _cloneUserSettings(s: UserSettings): UserSettings {
+  return { ...s };
+}
+
+const _getUserSettingsInFlight = new Map<string, Promise<UserSettings>>();
+
 export async function getUserSettings(userId: string): Promise<UserSettings> {
-  const res = await fetch(`${API_BASE}/users/${userId}/settings`, {
-    cache: "no-store",
-  });
-  if (!res.ok) throw new Error("Failed to fetch user settings");
-  return res.json();
+  const t = _userSettingsTtl.get(userId);
+  if (t && Date.now() < t.until) {
+    return Promise.resolve(_cloneUserSettings(t.value));
+  }
+  const existing = _getUserSettingsInFlight.get(userId);
+  if (existing) return existing;
+  const p = (async (): Promise<UserSettings> => {
+    try {
+      const res = await fetch(`${API_BASE}/users/${userId}/settings`, {
+        cache: "no-store",
+      });
+      if (!res.ok) throw new Error("Failed to fetch user settings");
+      const data = (await res.json()) as UserSettings;
+      _userSettingsTtl.set(userId, {
+        value: data,
+        until: Date.now() + _USER_API_HYDRATION_TTL_MS,
+      });
+      return data;
+    } finally {
+      _getUserSettingsInFlight.delete(userId);
+    }
+  })();
+  _getUserSettingsInFlight.set(userId, p);
+  return p;
 }
 
 export async function updateUserSettings(
@@ -928,5 +1017,10 @@ export async function updateUserSettings(
     body: JSON.stringify(data),
   });
   if (!res.ok) throw new Error("Failed to update user settings");
-  return res.json();
+  const updated = (await res.json()) as UserSettings;
+  _userSettingsTtl.set(userId, {
+    value: updated,
+    until: Date.now() + _USER_API_HYDRATION_TTL_MS,
+  });
+  return updated;
 }

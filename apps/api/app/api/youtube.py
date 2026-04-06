@@ -852,16 +852,22 @@ def _normalize_lang_key(code: str) -> str:
     return code.strip().lower().replace("_", "-")
 
 
+def _is_english_track_code(code: str) -> bool:
+    """True for en, en-US, en-GB, etc. (not e.g. esperanto 'eo')."""
+    k = _normalize_lang_key(code)
+    return k == "en" or k.startswith("en-")
+
+
 def _transcript_language_fetch_order(available: list[tuple[str, str, bool]]) -> list[str]:
     """
     Priority for youtube_transcript_api find_transcript():
-    1) YOUTUBE_TRANSCRIPT_LANGUAGES (comma-separated, leftmost highest)
-    2) Remaining languages in YouTube list order (manual tracks tend to appear first).
+    1) YOUTUBE_TRANSCRIPT_LANGUAGES (comma-separated, leftmost highest) — explicit user/server preference
+    2) Among remaining tracks: if both English and non-English exist, try **non-English first**
+       (each group keeps YouTube/API order) so "Original language" flashcards match spoken language
+    3) If only English remains, use English
 
-    We intentionally do NOT prefer English ahead of other tracks: many videos have
-    auto-translated English captions while the spoken language is something else;
-    picking English first caused "Original language" generation to use English text.
-    To prefer English, set YOUTUBE_TRANSCRIPT_LANGUAGES=en (or en,en-US).
+    To prefer English when multiple tracks exist, set e.g. YOUTUBE_TRANSCRIPT_LANGUAGES=en,en-US
+    (or list English before other codes you accept as fallback).
     """
     codes = [t[0] for t in available]
     result: list[str] = []
@@ -882,18 +888,32 @@ def _transcript_language_fetch_order(available: list[tuple[str, str, bool]]) -> 
         for part in env_raw.split(","):
             if part.strip():
                 try_add_preference(part.strip())
-    for c in codes:
-        if c not in used:
+
+    remaining = [c for c in codes if c not in used]
+    non_en = [c for c in remaining if not _is_english_track_code(c)]
+    en_only = [c for c in remaining if _is_english_track_code(c)]
+    if non_en:
+        for c in non_en:
+            used.add(c)
+            result.append(c)
+        for c in en_only:
+            used.add(c)
+            result.append(c)
+    else:
+        for c in remaining:
             used.add(c)
             result.append(c)
     return result
 
 
-def _fetch_transcript_list_and_fetch(proxy_config: Any, video_id: str) -> tuple[Any, Any]:
-    """One list + find_transcript + fetch. Logs available languages (safe)."""
+def _fetch_transcript_list_and_fetch(
+    proxy_config: Any, video_id: str
+) -> tuple[Any, Any, list[str], list[str]]:
+    """Returns (picked, transcript_list, fetch_order, available_codes)."""
     ytt_api = YouTubeTranscriptApi(proxy_config=proxy_config)
     tlist = ytt_api.list(video_id)
     available = _enumerate_available_transcripts(tlist)
+    plain_codes = [t[0] for t in available]
     lang_order = _transcript_language_fetch_order(available)
     avail_summary = [(a[0], a[1], a[2]) for a in available]
     logger.info(
@@ -902,12 +922,12 @@ def _fetch_transcript_list_and_fetch(proxy_config: Any, video_id: str) -> tuple[
         lang_order,
     )
     print(
-        f"[youtube] transcript: available={[a[0] for a in available]} "
+        f"[youtube] transcript: available={plain_codes} "
         f"fetch_order={lang_order}"
     )
     picked = tlist.find_transcript(lang_order)
     transcript_list = picked.fetch(preserve_formatting=False)
-    return picked, transcript_list
+    return picked, transcript_list, lang_order, plain_codes
 
 
 @router.post("/transcript", response_model=TranscriptResponse)
@@ -970,6 +990,8 @@ async def get_transcript(payload: TranscriptRequest):
 
     transcript_list = None
     picked = None
+    last_fetch_order: list[str] = []
+    last_available_codes: list[str] = []
     last_exc: Optional[Exception] = None
     last_attempt_idx: int = 0
     same_endpoint_extra = _youtube_proxy_same_endpoint_extra_retries()
@@ -1008,7 +1030,11 @@ async def get_transcript(payload: TranscriptRequest):
                 )
                 time.sleep(delay_s)
             try:
-                picked, transcript_list = _fetch_transcript_list_and_fetch(cfg, video_id)
+                picked, transcript_list, _fetch_order, _avail_codes = _fetch_transcript_list_and_fetch(
+                    cfg, video_id
+                )
+                last_fetch_order = _fetch_order
+                last_available_codes = _avail_codes
                 proxy_success = True
                 if sub_try > 0:
                     logger.info(
@@ -1210,9 +1236,20 @@ async def get_transcript(payload: TranscriptRequest):
     _raw_lang = picked_code or lang
     response_language = str(_raw_lang).strip() if _raw_lang else None
     picked_label = getattr(picked, "language", None) if picked else None
+    _avail = last_available_codes
+    _had_mixed = bool(
+        _avail
+        and any(_is_english_track_code(c) for c in _avail)
+        and any(not _is_english_track_code(c) for c in _avail)
+    )
+    _chose_non_en = bool(response_language and not _is_english_track_code(response_language))
+    _non_en_chosen_over_en = _had_mixed and _chose_non_en
     generation_lifecycle_audit(
-        f"yt_transcript_picked video_id={video_id} language_code={response_language or 'unknown'} "
-        f"language_label={picked_label!r}"
+        f"yt_transcript_picked video_id={video_id} "
+        f"available_track_codes={_avail!r} fetch_order_after_policy={last_fetch_order!r} "
+        f"language_code={response_language or 'unknown'} language_label={picked_label!r} "
+        f"had_english_and_non_english={_had_mixed} "
+        f"chose_non_english_over_english={_non_en_chosen_over_en}"
     )
 
     if len(text.strip()) < 50:

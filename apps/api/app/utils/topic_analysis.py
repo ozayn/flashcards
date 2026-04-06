@@ -22,21 +22,130 @@ def _is_mostly_latin(text: str) -> bool:
     return latin / len(text) >= 0.8
 
 
+def _has_extended_latin_letters_or_catalan_punctuation(text: str) -> bool:
+    """Accented Latin or Catalan l·l — suggests the author intentionally used a non-English orthography."""
+    if "\u00b7" in text:
+        return True
+    for c in text:
+        if c.isalpha() and ord(c) > 127:
+            return True
+    return False
+
+
+# Catalan / Occitan surface cues — if present, do not force English just because langdetect said "ca".
+_CA_RESPECT_ROMANCE_HINT = re.compile(
+    r"\b(?:"
+    r"per\s+a\b|perqu[eè]\b|qu[eè]\b|com\b|amb\b|estudiar\b|aprendre\b|"
+    r"llengua\b|paraula\b|conceptes\b|fon[eè]tica\b|catal[aà]\b|"
+    r"\bdel[s]?\b|\bals?\b|\bles\b|\bd['’]\w|\bl['’]\w"
+    r")\b",
+    re.IGNORECASE,
+)
+
+# Short ASCII-only STEM / UI prompts are often mis-tagged as ca/it/fr/nl/etc. at high confidence.
+# Avoid \ba\b — it matches Catalan "per a …".
+_EN_LEXICAL_HINT_RE = re.compile(
+    r"\b(?:"
+    r"the|an|and|or|not|but|if|as|at|by|in|on|to|of|for|from|with|into|about|over|than|then|there|"
+    r"this|that|these|those|what|which|who|whom|whose|when|where|why|how|"
+    r"have|has|had|was|were|are|is|am|be|been|being|do|does|did|can|could|will|would|should|may|might|must|"
+    r"your|our|their|its|they|them|each|every|some|any|all|such|other|another|same|both|few|more|most|"
+    r"using|based|between|within|without|through|during|before|after|above|below|"
+    r"model|models|training|learn|learning|network|networks|neural|machine|deep|data|layer|layers|"
+    r"batch|loss|epoch|gradient|tensor|embedding|attention|transformer|convolution|recurrent|"
+    r"function|functions|algorithm|algorithms|linear|vector|matrix|scalar|"
+    r"code|programming|python|java|script|api|http|json|sql|"
+    r"basic|basics|intro|introduction|concept|concepts|guide|overview|summary|review|"
+    r"chapter|lesson|unit|example|examples|problem|problems|solution|solutions|"
+    r"definition|theorem|proof|equation|formula|graph|graphs|"
+    r"flashcard|flashcards|study|studying|exam|quiz|notes|lecture|course|class|"
+    r"key|main|important|common|list|explain|describe|compare|define"
+    r")\b",
+    re.IGNORECASE,
+)
+
+# English indefinite article before a word (not bare "a", which matches Catalan "per a").
+_EN_ARTICLE_BEFORE_WORD = re.compile(r"(?:^|\s)a\s+[\w\"']", re.IGNORECASE)
+
+
+def _looks_plausibly_english_short_latin(topic: str) -> bool:
+    if _EN_LEXICAL_HINT_RE.search(topic):
+        return True
+    return bool(_EN_ARTICLE_BEFORE_WORD.search(topic))
+
+
 def detect_language(topic: str) -> str | None:
-    """Detect the language of the topic. Returns ISO 639-1 code or None if detection fails."""
+    """Detect the language of the topic. Returns ISO 639-1 code or None if detection fails.
+
+    Short Latin-script topics often misclassify (e.g. English → Catalan/Italian) at confidence 1.0;
+    prefer English when the text is ASCII-only or contains common English/STEM vocabulary."""
     topic = (topic or "").strip()
     if not topic:
         return None
     try:
-        from langdetect import DetectorFactory, detect
+        from langdetect import DetectorFactory, detect_langs
+
         DetectorFactory.seed = 0  # Deterministic results
-        return detect(topic)
+        scores = detect_langs(topic)
     except Exception:
-        pass
-    # Fallback: if topic is mostly Latin characters, assume English
-    if len(topic) >= 2 and _is_mostly_latin(topic):
-        return "en"
-    return None
+        scores = []
+
+    if not scores:
+        if len(topic) >= 2 and _is_mostly_latin(topic):
+            return "en"
+        return None
+
+    top = scores[0]
+    short_latin = len(topic) < 220 and _is_mostly_latin(topic)
+    ascii_only_latin = short_latin and not _has_extended_latin_letters_or_catalan_punctuation(topic)
+    en_prob = next((s.prob for s in scores if s.lang == "en"), 0.0)
+    ca_family = top.lang in ("ca", "eu", "gl", "oc")
+
+    if short_latin:
+        protected_ca = bool(_CA_RESPECT_ROMANCE_HINT.search(topic))
+        # ca:1.00 on ASCII English is common; require override signals unless text looks Catalan.
+        if ascii_only_latin and ca_family and not protected_ca:
+            if (
+                _looks_plausibly_english_short_latin(topic)
+                or en_prob >= 0.06
+                or top.prob >= 0.97
+            ):
+                return "en"
+        # it/fr/nl/de/… at high confidence on two-word English STEM prompts.
+        if (
+            ascii_only_latin
+            and not ca_family
+            and top.lang != "en"
+            and top.prob >= 0.85
+            and _looks_plausibly_english_short_latin(topic)
+        ):
+            return "en"
+        if ca_family and not protected_ca and (top.prob < 0.72 or en_prob >= 0.08):
+            return "en"
+        if top.prob < 0.72:
+            return "en"
+        if top.lang != "en" and en_prob >= 0.18 and top.prob < 0.88:
+            return "en"
+
+    return top.lang
+
+
+def langdetect_top_score(topic: str) -> str | None:
+    """First langdetect label:prob for compact audit logs (no topic text)."""
+    topic = (topic or "").strip()
+    if not topic:
+        return None
+    try:
+        from langdetect import DetectorFactory, detect_langs
+
+        DetectorFactory.seed = 0
+        scores = detect_langs(topic)
+        if not scores:
+            return None
+        t = scores[0]
+        return f"{t.lang}:{t.prob:.2f}"
+    except Exception:
+        return None
 
 
 def is_vocabulary_topic(topic: str) -> bool:

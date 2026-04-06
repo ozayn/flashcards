@@ -21,8 +21,10 @@ import {
   generationLanguagePayload,
   normalizeLangCode,
   originalLanguageToggleLabel,
+  transcriptLanguageDisplay,
   type GenerationLangPreference,
 } from "@/lib/source-language";
+import { startYoutubeTranscriptPhaseTimers } from "@/lib/youtube-fetch-status";
 
 const YT_REGEX = /(?:youtube\.com\/watch\?.*v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/shorts\/)/i;
 
@@ -59,6 +61,8 @@ export function GenerateInput({
     code?: string | null;
   } | null>(null);
   const [genLangMode, setGenLangMode] = useState<GenerationLangPreference>("source");
+  /** Set after a successful YouTube transcript fetch (same submit); pairs with language toggle. */
+  const [youtubeTranscriptLangRaw, setYoutubeTranscriptLangRaw] = useState<string | null>(null);
 
   const trimmed = value.trim();
   const isYT = isYouTubeUrl(trimmed);
@@ -70,6 +74,8 @@ export function GenerateInput({
     setError(null);
     setYtFallback(null);
     setLoading(true);
+    setLoadingMessage("");
+    setYoutubeTranscriptLangRaw(null);
 
     try {
       let userId: string | null = getStoredUserId();
@@ -92,7 +98,7 @@ export function GenerateInput({
           return;
         }
         const cleanYtUrl = normalizeYouTubeUrl(trimmed);
-        setLoadingMessage("Fetching transcript…");
+        const stopYtPhases = startYoutubeTranscriptPhaseTimers(setLoadingMessage);
         let transcript: Awaited<ReturnType<typeof fetchYouTubeTranscript>>;
         try {
           transcript = await fetchYouTubeTranscript(cleanYtUrl);
@@ -107,11 +113,16 @@ export function GenerateInput({
           setLoading(false);
           setLoadingMessage("");
           return;
+        } finally {
+          stopYtPhases();
         }
+
+        const langRaw = transcript.language?.trim() || null;
+        setYoutubeTranscriptLangRaw(langRaw);
 
         const videoTitle = transcript.title || null;
         const deckName = videoTitle || "YouTube Deck";
-        setLoadingMessage("Creating deck…");
+        setLoadingMessage("Preparing deck…");
         const deck = await createDeck({
           user_id: userId,
           name: deckName,
@@ -211,7 +222,12 @@ export function GenerateInput({
       <input
         type="text"
         value={value}
-        onChange={(e) => { setValue(e.target.value); setError(null); setYtFallback(null); }}
+        onChange={(e) => {
+          setValue(e.target.value);
+          setError(null);
+          setYtFallback(null);
+          setYoutubeTranscriptLangRaw(null);
+        }}
         placeholder={placeholder}
         autoComplete="off"
         disabled={loading}
@@ -262,9 +278,14 @@ export function GenerateInput({
           <GenerationLanguageToggle
             value={genLangMode}
             onChange={setGenLangMode}
-            sourceLabel={originalLanguageToggleLabel(null)}
+            sourceLabel={originalLanguageToggleLabel(isYT ? youtubeTranscriptLangRaw : null)}
             disabled={loading}
           />
+          {isYT && youtubeTranscriptLangRaw ? (
+            <p className="text-xs text-muted-foreground text-center max-w-md mx-auto leading-snug">
+              Transcript language: {transcriptLanguageDisplay(youtubeTranscriptLangRaw)}
+            </p>
+          ) : null}
           <Button
             type="submit"
             size="lg"
@@ -272,13 +293,22 @@ export function GenerateInput({
             className="rounded-xl px-8 font-medium"
           >
             {loading
-              ? loadingMessage || "Creating…"
+              ? "Working…"
               : isYT
                 ? "Create Deck from Video"
                 : isWiki
                   ? "Create Deck from Article"
                   : "Create Deck"}
           </Button>
+          {loading && loadingMessage ? (
+            <p
+              className="text-sm text-muted-foreground text-center max-w-md mx-auto leading-snug"
+              role="status"
+              aria-live="polite"
+            >
+              {loadingMessage}
+            </p>
+          ) : null}
           <p className="text-xs text-muted-foreground">
             {isYT
               ? "We\u2019ll pull the transcript and create a deck from it."

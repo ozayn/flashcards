@@ -32,7 +32,10 @@ from app.core.user_tier import (
 from app.llm.json_truncation import analyze_llm_json_response
 from app.llm.provider_route import apply_provider_routing
 from app.llm.router import (
+    bind_card_cache_output_language,
+    clear_card_cache_output_language,
     generate_completion,
+    peek_thread_completion_provider,
     _get_default_max_tokens,
     _get_provider_order,
     RateLimitError,
@@ -47,6 +50,7 @@ from app.utils.topic_analysis import (
     is_loanword_vocab_topic,
     is_translation_vocab_topic,
     is_vocabulary_topic,
+    langdetect_top_score,
     resolve_generation_language_code,
 )
 
@@ -532,13 +536,29 @@ def _evidence_matches_passage(evidence: str, passage: str) -> bool:
     return norm_ev in norm_pass
 
 
-def _filter_ungrounded_cards(cards: list, passage: str) -> list:
+def _filter_ungrounded_cards(
+    cards: list,
+    passage: str,
+    *,
+    stage: Literal["chunk", "full"] = "full",
+    chunk_i: Optional[int] = None,
+    chunk_n: Optional[int] = None,
+    llm_routing: Optional[dict] = None,
+) -> tuple[list, bool]:
     """Filter out cards whose answers are not directly supported by the passage.
-    Fail-open: if grounding fails or removes all cards, return original cards."""
+
+    Fail-open: if grounding fails or removes all cards, return original cards.
+
+    Returns (cards_out, fallback_used)."""
     if not cards:
-        return []
+        return [], False
     if not (passage and passage.strip()):
-        return cards  # No passage to verify against — use originals
+        return cards, False  # No passage to verify against — use originals
+
+    before_count = len(cards)
+    chunk_tag = ""
+    if stage == "chunk" and chunk_i is not None and chunk_n is not None:
+        chunk_tag = f" chunk={chunk_i}/{chunk_n}"
 
     passage_preview = passage[:4000].strip()
     if len(passage) > 4000:
@@ -579,7 +599,11 @@ Rules:
 """
 
     try:
-        response_text = generate_completion(prompt)
+        response_text = generate_completion(
+            prompt,
+            llm_routing=llm_routing,
+            llm_purpose="aux",
+        )
         parsed = _parse_json_object(response_text)
 
         kept_raw = parsed.get("kept")
@@ -616,21 +640,33 @@ Rules:
                 result.append(card)
 
         if not result:
-            logger.warning("Grounding removed all cards — falling back to original cards")
-            return cards
+            _generation_audit(
+                f"{_gen_log_prefix().strip()} gen_grounding before_count={before_count} "
+                f"after_count=0 returned_count={before_count} fallback_used=true "
+                f"stage={stage}{chunk_tag} reason=all_removed",
+                level="warning",
+            )
+            return cards, True
         # Transcript fail-open: if grounding kept very few but we had many candidates, use originals
         if len(cards) >= 5 and len(result) < 3:
-            logger.warning(
-                "Grounding kept %d of %d cards; falling back to originals to avoid over-filtering",
-                len(result),
-                len(cards),
+            kept = len(result)
+            _generation_audit(
+                f"{_gen_log_prefix().strip()} gen_grounding before_count={before_count} "
+                f"after_count={kept} returned_count={before_count} fallback_used=true "
+                f"stage={stage}{chunk_tag} reason=underfiltered threshold_kept_lt=3",
+                level="warning",
             )
-            return cards
-        return result
+            return cards, True
+        return result, False
 
     except (ValueError, json.JSONDecodeError, KeyError, TypeError) as e:
-        logger.warning("Grounding fallback triggered — using original cards: %s", e)
-        return cards
+        _generation_audit(
+            f"{_gen_log_prefix().strip()} gen_grounding before_count={before_count} "
+            f"after_count=na returned_count={before_count} fallback_used=true "
+            f"stage={stage}{chunk_tag} reason=verifier_failed exc_type={type(e).__name__}",
+            level="warning",
+        )
+        return cards, True
 
 
 def _extract_balanced_json(text: str) -> str | None:
@@ -1455,6 +1491,49 @@ def _deck_source_type_str(deck: Deck) -> str:
     return st.value if hasattr(st, "value") else str(st)
 
 
+def _emit_generation_run_summary_audit(
+    *,
+    deck: Deck,
+    text_input: Optional[str],
+    lifecycle_meta: dict[str, Any],
+    num_cards_requested: int,
+    created: int,
+    summary_status: str,
+    success: bool,
+    failure_tag: Optional[str] = None,
+    level: Literal["info", "warning", "error"] = "info",
+) -> None:
+    """One compact MEMO line at end of a generation job. Grep: run_summary"""
+    st = _deck_source_type_str(deck) or (
+        deck.source_type.value if deck.source_type else "unknown"
+    )
+    tl = len(text_input) if text_input else 0
+    chunked_b = bool(lifecycle_meta.get("chunked_mode"))
+    try:
+        chunks_n = int(lifecycle_meta.get("chunk_count") or 0)
+    except (TypeError, ValueError):
+        chunks_n = 0
+    try:
+        req_int = int(
+            lifecycle_meta.get("cards_requested")
+            if lifecycle_meta.get("cards_requested") is not None
+            else num_cards_requested
+        )
+    except (TypeError, ValueError):
+        req_int = num_cards_requested
+    prep = lifecycle_meta.get("llm_prep") or {}
+    cards_pv = prep.get("cards_provider_final") or prep.get("last_provider") or "unknown"
+    pfx = _gen_log_prefix().strip()
+    fail_part = f" failure={failure_tag}" if failure_tag else ""
+    msg = (
+        f"{pfx} run_summary source={st} text_len={tl} chunked={str(chunked_b).lower()} "
+        f"chunks={chunks_n} requested={req_int} created={created} "
+        f"cards_provider={cards_pv} summary={summary_status} "
+        f"success={str(success).lower()}{fail_part}"
+    )
+    _generation_audit(msg, level=level)
+
+
 def _should_generate_source_summary(deck: Deck, text_input: Optional[str]) -> bool:
     """Summaries are additive: only for text/transcript/article generation runs, not short sources."""
     return _source_summary_skip_reason(deck, text_input) is None
@@ -1464,12 +1543,16 @@ def _sync_generate_source_summary(
     deck: Deck,
     text_input: Optional[str],
     lang_hint: Optional[str],
-) -> Optional[str]:
-    """Plain-text short summary; uses same LLM fallback chain as flashcard generation."""
+    llm_routing: Optional[dict] = None,
+) -> tuple[Optional[str], Optional[str]]:
+    """Plain-text short summary; uses same provider routing as the card job when llm_routing is set.
+
+    Returns (summary_text, summary_llm_provider) for outcome logging (separate from card prep stats).
+    """
     try:
         body = (deck.source_text or text_input or "").strip()
         if not body:
-            return None
+            return None, None
         st = _deck_source_type_str(deck)
         if st == SourceType.youtube.value:
             kind = "video transcript"
@@ -1513,10 +1596,13 @@ Rules:
             temperature=0.25,
             max_tokens=500,
             skip_cache=True,
+            llm_routing=llm_routing,
+            llm_purpose="summary",
         )
+        summary_provider = peek_thread_completion_provider()
         out = (raw_out or "").strip()
         if not out:
-            return None
+            return None, summary_provider
         if out.startswith("```"):
             lines = out.split("\n")
             if lines and lines[0].startswith("```"):
@@ -1524,10 +1610,10 @@ Rules:
             if lines and lines[-1].strip() == "```":
                 lines = lines[:-1]
             out = "\n".join(lines).strip()
-        return out[:14000]
+        return out[:14000], summary_provider
     except Exception as e:
         logger.debug("%ssource_summary_llm_exception %s", _gen_log_prefix(), type(e).__name__)
-        return None
+        return None, None
 
 
 def _extract_concepts_json(response_text: str) -> dict:
@@ -1703,7 +1789,11 @@ Rules:
 - If the topic asks for people (e.g., "well-known street photographers"), extract only person names."""
 
     try:
-        response_text = generate_completion(prompt, llm_routing=llm_routing if text else None)
+        response_text = generate_completion(
+            prompt,
+            llm_routing=llm_routing if text else None,
+            llm_purpose="cards",
+        )
     except ValueError as e:
         logger.warning("Concept extraction failed: %s", e)
         return []
@@ -3281,15 +3371,24 @@ def _run_chunked_text_flashcard_generation(
         batch = parsed.get("flashcards") if isinstance(parsed.get("flashcards"), list) else []
         if strict_text_only and batch:
             before = len(batch)
-            batch = _filter_ungrounded_cards(batch, chunk)
-            logger.debug(
-                "%s[text-chunk-mode] chunk %d/%d grounding %d->%d cards",
-                _gen_log_prefix(),
-                i + 1,
-                n,
-                before,
-                len(batch),
+            batch, grounding_fb = _filter_ungrounded_cards(
+                batch,
+                chunk,
+                stage="chunk",
+                chunk_i=i + 1,
+                chunk_n=n,
+                llm_routing=llm_routing,
             )
+            if not grounding_fb:
+                logger.debug(
+                    "%s[text-chunk-mode] gen_grounding stage=chunk chunk=%d/%d before_count=%d "
+                    "returned_count=%d fallback_used=false",
+                    _gen_log_prefix(),
+                    i + 1,
+                    n,
+                    before,
+                    len(batch),
+                )
         merged.extend(batch)
     deduped = _dedupe_flashcards_preserve_order(merged)
     cap = min(150, max(num_cards + 15, num_cards * 3))
@@ -3584,7 +3683,8 @@ async def _run_generation_background(
                 err_tok = _safe_background_finished_error(exc)
                 _generation_audit(
                     f"[gen_job={pre_job}] generation_background_finished deck_id={deck_id_str} "
-                    f"success=false error={err_tok}"
+                    f"success=false error={err_tok}",
+                    level="warning",
                 )
                 logger.warning(
                     "[gen_job=%s] generation_background_finished deck_id=%s success=false error=%s",
@@ -3651,12 +3751,13 @@ async def generate_flashcards_background(
 
     def _bg_done(t: asyncio.Task) -> None:
         if t.cancelled():
-            _generation_audit(f"bg_task_cancelled deck_id={deck_id_str}")
+            _generation_audit(f"bg_task_cancelled deck_id={deck_id_str}", level="warning")
             return
         exc = t.exception()
         if exc is not None:
             _generation_audit(
-                f"bg_task_done deck_id={deck_id_str} unhandled={type(exc).__name__}"
+                f"bg_task_done deck_id={deck_id_str} unhandled={type(exc).__name__}",
+                level="warning",
             )
 
     task.add_done_callback(_bg_done)
@@ -3682,6 +3783,13 @@ def _sync_prepare_generated_cards(
         "route_reason": "default",
         "cards_requested": 0,
     }
+    lang_hint_outer = (payload.language or "").strip().lower()[:2] or None
+    card_cache_lang = resolve_generation_language_code(
+        payload.topic or "",
+        text_input or "",
+        lang_hint_outer,
+    )
+    bind_card_cache_output_language(card_cache_lang)
     try:
         return _sync_prepare_generated_cards_inner(
             payload,
@@ -3691,6 +3799,7 @@ def _sync_prepare_generated_cards(
             lifecycle_meta,
         )
     finally:
+        clear_card_cache_output_language()
         llm_prep_stats_arm(False)
 
 
@@ -3702,6 +3811,8 @@ def _sync_prepare_generated_cards_inner(
     lifecycle_meta: dict[str, Any],
 ) -> tuple[list, dict[str, Any]]:
     lang_hint = (payload.language or "").strip().lower()[:2] or None
+
+    text_llm_routing_snapshot: Optional[dict] = None
 
     requested_cards = max(1, min(payload.num_cards or 10, 50))
     topic_for_estimate = (payload.topic or "") or (
@@ -3758,6 +3869,7 @@ def _sync_prepare_generated_cards_inner(
                 text_llm_routing["youtube_route_reason"] = (
                     payload.youtube_route_reason or "youtube_transcript"
                 )
+            text_llm_routing_snapshot = text_llm_routing
             _rb, _route_l, _route_r = apply_provider_routing(_get_provider_order(), text_llm_routing)
             lifecycle_meta["chunked_mode"] = use_chunked
             lifecycle_meta["chunk_count"] = chunk_count
@@ -4361,13 +4473,20 @@ def _sync_prepare_generated_cards_inner(
         and not used_chunked_text_generation
     ):
         before_ground = len(cards)
-        cards = _filter_ungrounded_cards(cards, text_input)
-        logger.debug(
-            "%s[text-mode] after_grounding kept=%d removed=%d",
-            _gen_log_prefix(),
-            len(cards),
-            before_ground - len(cards),
+        cards, grounding_fb = _filter_ungrounded_cards(
+            cards,
+            text_input,
+            stage="full",
+            llm_routing=text_llm_routing_snapshot,
         )
+        if not grounding_fb:
+            logger.debug(
+                "%s[text-mode] gen_grounding stage=full before_count=%d returned_count=%d "
+                "fallback_used=false",
+                _gen_log_prefix(),
+                before_ground,
+                len(cards),
+            )
     
     # Low-value filter: when text mode, remove transcript housekeeping cards
     if text_input and cards and not is_persian_mapping_mode:
@@ -4504,6 +4623,9 @@ async def generate_flashcards(
         job_id = existing_job
         job_tok = None
     _gen_log_token = generation_log_deck_id.set(deck_id_str)
+    generation_run_summary_emitted = False
+    lifecycle_meta: dict[str, Any] = {}
+    created = 0
     try:
         logger.info("%sgen_source %s", _gen_log_prefix(), _format_gen_source_kv(deck, text_input))
         _generation_audit(
@@ -4521,6 +4643,18 @@ async def generate_flashcards(
             text_input or "",
             _lang_hint,
         )
+        _topic_trim = (payload.topic or "").strip()
+        if not text_input and _topic_trim:
+            _topic_det = detect_language(_topic_trim)
+            _ld_top = langdetect_top_score(_topic_trim)
+            _generation_audit(
+                f"{_gen_log_prefix().strip()} gen_topic_language "
+                f"request_language_field={_raw_req_lang!r} lang_hint={_lang_hint!r} "
+                f"langdetect_top={_ld_top!r} "
+                f"topic_text_preview_language_detected={_topic_det!r} "
+                f"effective_output_lang_code={_eff_lang!r} topic_len={len(_topic_trim)} "
+                f"llm_cache_key_out_lang={_eff_lang!r}"
+            )
         if _deck_source_type_str(deck) == SourceType.youtube.value and text_input:
             _ym = _parse_deck_source_metadata_dict(deck)
             _cap = _ym.get("caption_language")
@@ -4553,7 +4687,6 @@ async def generate_flashcards(
         tier_elevated = user_has_elevated_tier(owner, trusted_id)
         deck_start_count = len(existing_questions)
 
-        created = 0
         skipped_batch_dup = 0
         skipped_db_dup = 0
         for raw_card in cards:
@@ -4628,21 +4761,31 @@ async def generate_flashcards(
         # RULE: Only 503 when ZERO valid cards. created >= 1 → SUCCESS.
         if created == 0:
             prep = lifecycle_meta.get("llm_prep") or {}
+            cards_pv = prep.get("cards_provider_final") or prep.get("last_provider")
             raw_n = len(cards)
             logger.error(
                 "%sgen_outcome success=false created=0 reason=cards_filtered_or_invalid "
-                "final_provider=%s llm_fallback=%s chunked_mode=%s chunk_count=%s",
+                "cards_provider=%s prep_last_provider=%s llm_fallback=%s chunked_mode=%s chunk_count=%s mix=%s",
                 _gen_log_prefix(),
+                cards_pv,
                 prep.get("last_provider"),
                 bool(prep.get("any_fallback")),
                 lifecycle_meta.get("chunked_mode"),
                 lifecycle_meta.get("chunk_count"),
+                prep.get("cards_provider_mix") or "",
             )
-            _generation_audit(
-                f"{_gen_log_prefix().strip()} gen_outcome success=false created=0 "
-                f"reason=no_cards_inserted raw_cards={raw_n} batch_dup={skipped_batch_dup} "
-                f"db_dup={skipped_db_dup} final_provider={prep.get('last_provider')}"
+            _emit_generation_run_summary_audit(
+                deck=deck,
+                text_input=text_input,
+                lifecycle_meta=lifecycle_meta,
+                num_cards_requested=payload.num_cards,
+                created=0,
+                summary_status="na",
+                success=False,
+                failure_tag="no_cards_inserted",
+                level="error",
             )
+            generation_run_summary_emitted = True
             raise HTTPException(
                 status_code=503,
                 detail="Generated cards were invalid or duplicates"
@@ -4650,22 +4793,46 @@ async def generate_flashcards(
 
         lang_for_summary = (payload.language or "").strip().lower()[:2] or None
         summary_skip = _source_summary_skip_reason(deck, text_input)
+        summary_provider_final: Optional[str] = None
+        summary_status_str = "na"
         if summary_skip:
+            summary_status_str = "skipped"
             logger.info("%sgen_summary status=skipped reason=%s", _gen_log_prefix(), summary_skip)
         else:
+            st_route = (routing_source_type or _deck_source_type_str(deck) or "").strip()
+            tl_sum = len(text_input) if text_input else 0
+            summary_llm_routing: dict[str, Any] = {
+                "chunked_mode": bool(lifecycle_meta.get("chunked_mode")),
+                "text_len": tl_sum,
+                "source_type": st_route or None,
+                "num_cards": payload.num_cards,
+            }
+            if st_route.lower() == "youtube" and tl_sum > 0:
+                summary_llm_routing["youtube_route_reason"] = (
+                    payload.youtube_route_reason or "youtube_transcript"
+                )
             try:
-                summary = await asyncio.to_thread(
+                summary, summary_provider_final = await asyncio.to_thread(
                     _sync_generate_source_summary,
                     deck,
                     text_input,
                     lang_for_summary,
+                    summary_llm_routing,
                 )
                 if summary:
                     deck.source_summary = summary
-                    logger.info("%sgen_summary status=generated chars=%d", _gen_log_prefix(), len(summary))
+                    summary_status_str = "generated"
+                    logger.info(
+                        "%sgen_summary status=generated chars=%d provider=%s",
+                        _gen_log_prefix(),
+                        len(summary),
+                        summary_provider_final or "?",
+                    )
                 else:
+                    summary_status_str = "failed"
                     logger.warning("%sgen_summary status=failed reason=empty_response", _gen_log_prefix())
             except Exception as e:
+                summary_status_str = "failed"
                 logger.warning(
                     "%sgen_summary status=failed reason=%s",
                     _gen_log_prefix(),
@@ -4676,21 +4843,34 @@ async def generate_flashcards(
         await db.flush()
 
         prep = lifecycle_meta.get("llm_prep") or {}
+        cards_pv = prep.get("cards_provider_final") or prep.get("last_provider") or "unknown"
+        mix_s = prep.get("cards_provider_mix") or ""
         logger.info(
-            "%sgen_outcome success=true created=%d final_provider=%s llm_fallback=%s "
-            "chunked_mode=%s chunk_count=%d used_chunked_pipeline=%s",
+            "%sgen_outcome success=true created=%d cards_provider=%s prep_last_provider=%s "
+            "llm_fallback=%s chunked_mode=%s chunk_count=%d used_chunked_pipeline=%s "
+            "summary_provider=%s cards_mix=%s",
             _gen_log_prefix(),
             created,
-            prep.get("last_provider") or "unknown",
+            cards_pv,
+            prep.get("last_provider") or "-",
             bool(prep.get("any_fallback")),
             lifecycle_meta.get("chunked_mode"),
             lifecycle_meta.get("chunk_count"),
             lifecycle_meta.get("used_chunked_text_generation"),
+            summary_provider_final or "-",
+            mix_s,
         )
-        _generation_audit(
-            f"{_gen_log_prefix().strip()} gen_outcome success=true created={created} "
-            f"final_provider={prep.get('last_provider') or 'unknown'}"
+        _emit_generation_run_summary_audit(
+            deck=deck,
+            text_input=text_input,
+            lifecycle_meta=lifecycle_meta,
+            num_cards_requested=payload.num_cards,
+            created=created,
+            summary_status=summary_status_str,
+            success=True,
+            level="info",
         )
+        generation_run_summary_emitted = True
         if text_input:
             logger.debug(
                 "%s[text-mode] final_created=%d skipped_batch_dup=%d skipped_db_dup=%d",
@@ -4708,16 +4888,42 @@ async def generate_flashcards(
             _gen_log_prefix(),
             getattr(e, "status_code", "?"),
         )
-        _generation_audit(
-            f"{_gen_log_prefix().strip()} gen_outcome success=false kind=http_exception "
-            f"status={getattr(e, 'status_code', '?')}"
-        )
+        if not generation_run_summary_emitted:
+            sc = getattr(e, "status_code", None)
+            ft = f"http_{sc}" if sc is not None else "http_unknown"
+            lev: Literal["warning", "error"] = (
+                "error" if (isinstance(sc, int) and sc >= 500) else "warning"
+            )
+            _emit_generation_run_summary_audit(
+                deck=deck,
+                text_input=text_input,
+                lifecycle_meta=lifecycle_meta,
+                num_cards_requested=payload.num_cards,
+                created=created,
+                summary_status="na",
+                success=False,
+                failure_tag=ft,
+                level=lev,
+            )
+            generation_run_summary_emitted = True
         deck.generation_status = GenerationStatus.failed.value
         await db.flush()
         raise
     except RateLimitError as e:
         logger.warning("%sgen_outcome success=false kind=rate_limit err=%s", _gen_log_prefix(), e)
-        _generation_audit(f"{_gen_log_prefix().strip()} gen_outcome success=false kind=rate_limit")
+        if not generation_run_summary_emitted:
+            _emit_generation_run_summary_audit(
+                deck=deck,
+                text_input=text_input,
+                lifecycle_meta=lifecycle_meta,
+                num_cards_requested=payload.num_cards,
+                created=created,
+                summary_status="na",
+                success=False,
+                failure_tag="rate_limit",
+                level="warning",
+            )
+            generation_run_summary_emitted = True
         deck.generation_status = GenerationStatus.failed.value
         await db.flush()
         raise HTTPException(
@@ -4726,9 +4932,19 @@ async def generate_flashcards(
         )
     except RuntimeError as e:
         logger.warning("%sgen_outcome success=false kind=runtime_err err=%s", _gen_log_prefix(), e)
-        _generation_audit(
-            f"{_gen_log_prefix().strip()} gen_outcome success=false kind=runtime_err"
-        )
+        if not generation_run_summary_emitted:
+            _emit_generation_run_summary_audit(
+                deck=deck,
+                text_input=text_input,
+                lifecycle_meta=lifecycle_meta,
+                num_cards_requested=payload.num_cards,
+                created=created,
+                summary_status="na",
+                success=False,
+                failure_tag="runtime_err",
+                level="warning",
+            )
+            generation_run_summary_emitted = True
         deck.generation_status = GenerationStatus.failed.value
         await db.flush()
         if "all llm providers failed" in str(e).lower():
@@ -4739,9 +4955,19 @@ async def generate_flashcards(
         raise
     except Exception as e:
         logger.warning("%sgen_outcome success=false kind=%s", _gen_log_prefix(), type(e).__name__)
-        _generation_audit(
-            f"{_gen_log_prefix().strip()} gen_outcome success=false kind={type(e).__name__}"
-        )
+        if not generation_run_summary_emitted:
+            _emit_generation_run_summary_audit(
+                deck=deck,
+                text_input=text_input,
+                lifecycle_meta=lifecycle_meta,
+                num_cards_requested=payload.num_cards,
+                created=created,
+                summary_status="na",
+                success=False,
+                failure_tag=type(e).__name__,
+                level="error",
+            )
+            generation_run_summary_emitted = True
         deck.generation_status = GenerationStatus.failed.value
         await db.flush()
         raise

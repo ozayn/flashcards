@@ -29,8 +29,10 @@ import {
   generationLanguagePayload,
   normalizeLangCode,
   originalLanguageToggleLabel,
+  transcriptLanguageDisplay,
   type GenerationLangPreference,
 } from "@/lib/source-language";
+import { startYoutubeTranscriptPhaseTimers } from "@/lib/youtube-fetch-status";
 
 type GenerationMode = "topic" | "text" | "youtube" | "url" | "import";
 
@@ -74,6 +76,8 @@ function CreateDeckForm() {
   const [importError, setImportError] = useState<string | null>(null);
   const importFileRef = useRef<HTMLInputElement>(null);
   const [textUploadStatus, setTextUploadStatus] = useState<string | null>(null);
+  /** Filled after a successful YouTube transcript fetch; drives toggle label + helper line. */
+  const [youtubeTranscriptLangRaw, setYoutubeTranscriptLangRaw] = useState<string | null>(null);
 
   useEffect(() => {
     const modeParam = searchParams.get("mode");
@@ -104,6 +108,10 @@ function CreateDeckForm() {
   }, [generationMode]);
 
   useEffect(() => {
+    if (generationMode !== "youtube") setYoutubeTranscriptLangRaw(null);
+  }, [generationMode]);
+
+  useEffect(() => {
     setCardCount((c) => {
       const max = cardCountOptions[cardCountOptions.length - 1];
       if (max === undefined) return c;
@@ -123,7 +131,9 @@ function CreateDeckForm() {
   const topicForGeneration =
     topicTrimmed || (useNameAsTopic && !topicTrimmed ? nameTrimmed : "");
 
-  const genLangSourceLabelCreate = originalLanguageToggleLabel(null);
+  const genLangSourceLabelCreate = originalLanguageToggleLabel(
+    generationMode === "youtube" ? youtubeTranscriptLangRaw : null
+  );
 
   function handleImportFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const files = e.target.files;
@@ -275,6 +285,8 @@ function CreateDeckForm() {
     if (!userId) return;
 
     setLoading(true);
+    setLoadingMessage("");
+    setYoutubeTranscriptLangRaw(null);
 
     try {
       if (emptyDeckMode) {
@@ -308,7 +320,7 @@ function CreateDeckForm() {
 
       if (generationMode === "youtube") {
         const cleanYtUrl = normalizeYouTubeUrl(youtubeUrlTrimmed);
-        setLoadingMessage("Fetching transcript…");
+        const stopYtPhases = startYoutubeTranscriptPhaseTimers(setLoadingMessage);
         let transcript: Awaited<ReturnType<typeof fetchYouTubeTranscript>>;
         try {
           transcript = await fetchYouTubeTranscript(cleanYtUrl);
@@ -338,11 +350,16 @@ function CreateDeckForm() {
           setLoading(false);
           setLoadingMessage("");
           return;
+        } finally {
+          stopYtPhases();
         }
+
+        const langRaw = transcript.language?.trim() || null;
+        setYoutubeTranscriptLangRaw(langRaw);
 
         const videoTitle = transcript.title || null;
         const deckName = nameTrimmed || videoTitle || "YouTube Deck";
-        setLoadingMessage("Saving…");
+        setLoadingMessage("Preparing deck…");
 
         const deck = await createDeck({
           user_id: userId,
@@ -753,6 +770,7 @@ function CreateDeckForm() {
                     onChange={(e) => {
                       setYoutubeUrl(e.target.value);
                       setFormError(null);
+                      setYoutubeTranscriptLangRaw(null);
                     }}
                     disabled={loading}
                     className="min-w-0"
@@ -782,6 +800,11 @@ function CreateDeckForm() {
                     className="sm:ml-1"
                   />
                 </div>
+                {youtubeTranscriptLangRaw ? (
+                  <p className="text-xs text-muted-foreground leading-snug">
+                    Transcript language: {transcriptLanguageDisplay(youtubeTranscriptLangRaw)}
+                  </p>
+                ) : null}
               </div>
             )}
 
@@ -931,8 +954,17 @@ function CreateDeckForm() {
             size="lg"
             className="w-full font-semibold sm:w-auto sm:min-w-[10rem]"
           >
-            {loading ? loadingMessage || "Creating…" : "Create deck"}
+            {loading ? "Working…" : "Create deck"}
           </Button>
+          {loading && loadingMessage ? (
+            <p
+              className="text-sm text-muted-foreground leading-snug"
+              role="status"
+              aria-live="polite"
+            >
+              {loadingMessage}
+            </p>
+          ) : null}
           {loading && (
             <div
               className="h-0.5 w-full max-w-[11rem] overflow-hidden rounded-full bg-muted sm:max-w-[10rem]"

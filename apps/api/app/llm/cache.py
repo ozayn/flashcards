@@ -24,9 +24,13 @@ CREATE TABLE IF NOT EXISTS llm_cache (
 """
 
 
-def hash_prompt(prompt: str) -> str:
-    """Return SHA256 hash of prompt for cache key."""
-    return hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+def hash_prompt(prompt: str, output_lang: str | None = None) -> str:
+    """Return SHA256 hash for cache lookup. When output_lang is set, key includes it (language-safe cache)."""
+    if output_lang is None:
+        return hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+    code = (output_lang or "").strip().lower()[:24] or "unspecified"
+    material = f"v2|out_lang={code}|{prompt}"
+    return hashlib.sha256(material.encode("utf-8")).hexdigest()
 
 
 def _get_connection() -> sqlite3.Connection:
@@ -37,13 +41,14 @@ def _get_connection() -> sqlite3.Connection:
     return conn
 
 
-def get_cached_response(prompt: str) -> str | None:
+def get_cached_response(prompt: str, output_lang: str | None = None) -> str | None:
     """
     Return cached response if exists, else None.
     Never raises; returns None on any error.
+    output_lang: when set (flashcard pipeline), must match save_cached_response for hits.
     """
     try:
-        key = hash_prompt(prompt)
+        key = hash_prompt(prompt, output_lang=output_lang)
         conn = _get_connection()
         try:
             row = conn.execute(
@@ -58,13 +63,13 @@ def get_cached_response(prompt: str) -> str | None:
         return None
 
 
-def save_cached_response(prompt: str, response: str) -> None:
+def save_cached_response(prompt: str, response: str, output_lang: str | None = None) -> None:
     """
     Store response in cache.
     Never raises; logs and continues on error.
     """
     try:
-        key = hash_prompt(prompt)
+        key = hash_prompt(prompt, output_lang=output_lang)
         conn = _get_connection()
         try:
             conn.execute(

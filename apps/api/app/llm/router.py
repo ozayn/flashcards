@@ -6,11 +6,50 @@ from __future__ import annotations
 
 import json
 import logging
+from typing import Literal
 import os
 import re
+import threading
 import time
 
 import requests
+
+_tls_completion = threading.local()
+
+# Resolved flashcard output language (ISO code or "bilingual") for SQLite cache keying.
+_tls_card_cache_lang = threading.local()
+
+
+def bind_card_cache_output_language(code: str | None) -> None:
+    """Set per-thread cache language for llm_purpose=cards (call from generation prep; reset in finally)."""
+    if code is None or str(code).strip() == "":
+        _tls_card_cache_lang.code = "unspecified"
+    else:
+        _tls_card_cache_lang.code = str(code).strip().lower()[:24]
+
+
+def clear_card_cache_output_language() -> None:
+    if hasattr(_tls_card_cache_lang, "code"):
+        delattr(_tls_card_cache_lang, "code")
+
+
+def _card_cache_output_lang_for_key() -> str | None:
+    return getattr(_tls_card_cache_lang, "code", None)
+
+
+def clear_thread_completion_provider() -> None:
+    """Reset before each generate_completion (same thread sees peek after return)."""
+    _tls_completion.last = None
+
+
+def peek_thread_completion_provider() -> str | None:
+    """Last successful provider for the current thread's most recent generate_completion (cache or live)."""
+    v = getattr(_tls_completion, "last", None)
+    return v if isinstance(v, str) and v else None
+
+
+def _record_thread_completion_provider(provider: str) -> None:
+    _tls_completion.last = provider
 
 from app.core.gen_job_context import (
     llm_prep_stats_record_success,
@@ -901,23 +940,38 @@ def generate_completion(
     skip_cache: bool = False,
     *,
     llm_routing: dict | None = None,
+    llm_purpose: Literal["cards", "summary", "aux"] = "cards",
 ) -> str:
     """
     Generate completion using primary provider with fallback.
     Tries providers in order until one succeeds.
     Optional llm_routing (text job hints: chunked_mode, text_len, source_type, num_cards,
     youtube_route_reason) may reorder Groq vs Gemini (see provider_route.apply_provider_routing).
+    llm_purpose: cards = flashcard pipeline; summary = deck source summary; aux = grounding etc.
+    Only llm_purpose=cards updates llm_prep_stats (cards_provider_final / run_summary).
     """
+    clear_thread_completion_provider()
+    _pp = f" llm_purpose={llm_purpose}"
+    cache_output_lang: str | None = None
+    if llm_purpose == "cards":
+        cache_output_lang = _card_cache_output_lang_for_key() or "unspecified"
     if not skip_cache:
         try:
-            cached = get_cached_response(prompt)
+            cached = get_cached_response(prompt, output_lang=cache_output_lang)
             if cached is not None:
-                llm_prep_stats_record_success("cache", 0)
+                if llm_purpose == "cards":
+                    llm_prep_stats_record_success("cache", 0)
                 logger.info("%sllm_try provider=cache result=success", _life_prefix())
+                cache_key_note = (
+                    f" cache_key_out_lang={cache_output_lang}"
+                    if cache_output_lang is not None
+                    else ""
+                )
                 generation_lifecycle_audit(
                     f"{_life_prefix().strip()} llm_try provider=cache result=success "
-                    f"note=cache_hit_skips_live_chain"
+                    f"note=cache_hit_skips_live_chain{_pp}{cache_key_note}"
                 )
+                _record_thread_completion_provider("cache")
                 return cached
         except Exception as e:
             logger.warning("%sllm_cache_check_failed err=%s", _life_prefix(), e)
@@ -930,14 +984,15 @@ def generate_completion(
     chain_providers = [p for p in order if p in _PROVIDER_FNS]
     chain_first = chain_providers[0] if chain_providers else None
     logger.debug(
-        "%sllm_route provider_route=%s route_reason=%s chain=%s",
+        "%sllm_route llm_purpose=%s provider_route=%s route_reason=%s chain=%s",
         _life_prefix(),
+        llm_purpose,
         route_label,
         route_reason,
         chain_s,
     )
     generation_lifecycle_audit(
-        f"{_life_prefix().strip()} llm_chain provider_route={route_label} route_reason={route_reason} "
+        f"{_life_prefix().strip()} llm_chain{_pp} provider_route={route_label} route_reason={route_reason} "
         f"chain={chain_s} first_provider={chain_first or 'none'}"
     )
     last_error = None
@@ -961,7 +1016,7 @@ def generate_completion(
             model,
         )
         generation_lifecycle_audit(
-            f"{_life_prefix().strip()} llm_try start provider={provider} "
+            f"{_life_prefix().strip()} llm_try start{_pp} provider={provider} "
             f"chain_step={attempt_idx}/{max(chain_total, 1)} next_on_fail={next_on_fail}"
         )
 
@@ -970,7 +1025,8 @@ def generate_completion(
             try:
                 response_text = fn(prompt, temp, max_tok)
                 cache_ok = _is_valid_json_for_cache(response_text)
-                llm_prep_stats_record_success(provider, attempt_idx - 1)
+                if llm_purpose == "cards":
+                    llm_prep_stats_record_success(provider, attempt_idx - 1)
                 logger.info(
                     "%sllm_try provider=%s chain_step=%d result=success bytes=%d cache_json_ok=%s",
                     _life_prefix(),
@@ -981,13 +1037,15 @@ def generate_completion(
                 )
                 used_fb = chain_first is not None and provider != chain_first
                 generation_lifecycle_audit(
-                    f"{_life_prefix().strip()} llm_try result=success provider={provider} "
+                    f"{_life_prefix().strip()} llm_try result=success{_pp} provider={provider} "
                     f"chain_step={attempt_idx}/{max(chain_total, 1)} first_in_chain={chain_first or 'none'} "
                     f"used_fallback={str(used_fb).lower()}"
                 )
                 if cache_ok:
                     try:
-                        save_cached_response(prompt, response_text)
+                        save_cached_response(
+                            prompt, response_text, output_lang=cache_output_lang
+                        )
                     except Exception as e:
                         logger.warning("%sllm_cache_save_failed err=%s", _life_prefix(), e)
                 else:
@@ -999,6 +1057,7 @@ def generate_completion(
                         len(response_text or ""),
                         _llm_response_preview(response_text or "", prev_len),
                     )
+                _record_thread_completion_provider(provider)
                 return response_text
             except Exception as e:
                 if _is_rate_limit_error(e) and retries_left > 0:
@@ -1013,9 +1072,10 @@ def generate_completion(
                         retries_left,
                     )
                     generation_lifecycle_audit(
-                        f"{_life_prefix().strip()} llm_try provider={provider} "
+                        f"{_life_prefix().strip()} llm_try provider={provider}{_pp} "
                         f"chain_step={attempt_idx}/{max(chain_total, 1)} result=rate_limit_retry "
-                        f"retry_in_s={wait:.1f} retries_left={retries_left} next_same_provider=true"
+                        f"retry_in_s={wait:.1f} retries_left={retries_left} next_same_provider=true",
+                        level="warning",
                     )
                     time.sleep(wait)
                     continue
@@ -1033,8 +1093,9 @@ def generate_completion(
                         nxt[0],
                     )
                     generation_lifecycle_audit(
-                        f"{_life_prefix().strip()} llm_try result={cat} provider={provider} "
-                        f"chain_step={attempt_idx}/{max(chain_total, 1)} next_provider={nxt[0]}"
+                        f"{_life_prefix().strip()} llm_try result={cat}{_pp} provider={provider} "
+                        f"chain_step={attempt_idx}/{max(chain_total, 1)} next_provider={nxt[0]}",
+                        level="warning",
                     )
                 else:
                     logger.warning(
@@ -1045,8 +1106,9 @@ def generate_completion(
                         cat,
                     )
                     generation_lifecycle_audit(
-                        f"{_life_prefix().strip()} llm_try result={cat} provider={provider} "
-                        f"chain_step={attempt_idx}/{max(chain_total, 1)} next_provider=none"
+                        f"{_life_prefix().strip()} llm_try result={cat}{_pp} provider={provider} "
+                        f"chain_step={attempt_idx}/{max(chain_total, 1)} next_provider=none",
+                        level="warning",
                     )
                 break
 

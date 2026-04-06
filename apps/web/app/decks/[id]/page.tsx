@@ -420,6 +420,8 @@ export default function DeckPage({ params }: DeckPageProps) {
   const hasFlashcards = flashcards.length > 0;
   const [genPanelExpanded, setGenPanelExpanded] = useState(true);
   const prevFlashcardCountRef = useRef(-1);
+  /** Tracks prior isDeckGeneratingLike; used to refresh flashcards once when BG gen finishes (see poll effect). */
+  const prevDeckGeneratingLikeRef = useRef(false);
 
   const deckCaptionLang = useMemo(() => {
     if (deck?.source_type !== "youtube") return null;
@@ -427,7 +429,10 @@ export default function DeckPage({ params }: DeckPageProps) {
     return normalizeLangCode(ym?.caption_language ?? null);
   }, [deck?.source_type, deck?.source_metadata]);
 
-  const genLangSourceLabel = originalLanguageToggleLabel(deckCaptionLang);
+  // Caption language applies to pasted/generated text, not free-form topic prompts.
+  const genLangSourceLabel = originalLanguageToggleLabel(
+    genMode === "text" ? deckCaptionLang : null
+  );
 
   useEffect(() => {
     const n = flashcards.length;
@@ -502,6 +507,9 @@ export default function DeckPage({ params }: DeckPageProps) {
   const deckGenerating = isDeckGeneratingLike(deck?.generation_status);
   const isFailed = deck?.generation_status === "failed";
 
+  // When the last poll tick sets generation_status to completed/failed, deckGenerating flips to false,
+  // this effect's cleanup runs and sets cancelled=true while getFlashcards is still in flight — so
+  // setFlashcards never ran. Poll deck only here; flashcards refresh on the transition effect below.
   useEffect(() => {
     if (!deckGenerating) return;
     let cancelled = false;
@@ -514,17 +522,6 @@ export default function DeckPage({ params }: DeckPageProps) {
         const deckData = await getDeck(params.id);
         if (cancelled) return;
         setDeck(deckData);
-        const stillGenerating = isDeckGeneratingLike(deckData?.generation_status);
-        if (!stillGenerating) {
-          try {
-            const flashcardsData = await getFlashcards(params.id);
-            if (!cancelled) {
-              setFlashcards(Array.isArray(flashcardsData) ? flashcardsData : []);
-            }
-          } catch {
-            /* ignore */
-          }
-        }
       } catch {
         /* ignore polling errors */
       } finally {
@@ -532,12 +529,50 @@ export default function DeckPage({ params }: DeckPageProps) {
       }
     }
 
+    void pollOnce();
     const interval = setInterval(pollOnce, DECK_GENERATION_POLL_MS);
     return () => {
       cancelled = true;
       clearInterval(interval);
     };
   }, [deckGenerating, params.id]);
+
+  useEffect(() => {
+    prevDeckGeneratingLikeRef.current = false;
+  }, [params.id]);
+
+  useEffect(() => {
+    const now = isDeckGeneratingLike(deck?.generation_status);
+    const prev = prevDeckGeneratingLikeRef.current;
+    prevDeckGeneratingLikeRef.current = now;
+
+    if (!prev || now) return;
+
+    let cancelled = false;
+    (async () => {
+      if (process.env.NODE_ENV === "development") {
+        console.debug(
+          "deck_generation_completed_refreshing_flashcards deck_id=%s status=%s",
+          params.id,
+          deck?.generation_status ?? "",
+        );
+      }
+      try {
+        const flashcardsData = await getFlashcards(params.id);
+        if (cancelled) return;
+        const list = Array.isArray(flashcardsData) ? flashcardsData : [];
+        setFlashcards(list);
+        if (process.env.NODE_ENV === "development") {
+          console.debug("deck_generation_completed_flashcards_loaded count=%d", list.length);
+        }
+      } catch {
+        /* ignore */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [deck?.generation_status, params.id]);
 
   useEffect(() => {
     if (deck) {
@@ -617,7 +652,12 @@ export default function DeckPage({ params }: DeckPageProps) {
     setImportResult(null);
     setGenActionError(null);
     try {
-      const langOpts = generationLanguagePayload(genLangMode, deckCaptionLang);
+      // Topic mode: never inherit YouTube caption language — that caused English topics on
+      // Catalan-caption decks to send language=ca. Text mode may use caption as source hint.
+      const langOpts = generationLanguagePayload(
+        genLangMode,
+        genMode === "text" ? deckCaptionLang : null
+      );
       if (genMode === "text") {
         await generateFlashcards({
           deck_id: deck.id,

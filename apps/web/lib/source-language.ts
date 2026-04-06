@@ -76,3 +76,17 @@ export function originalLanguageToggleLabel(sourceHint: string | null): string {
   if (h) return `Original (${languageDisplayName(h)})`;
   return "Original";
 }
+
+/**
+ * Display name for YouTube transcript API `language` (usually ISO 639-1, sometimes a label).
+ * Used in helper copy next to the flashcard language toggle.
+ */
+export function transcriptLanguageDisplay(raw: string | null | undefined): string {
+  if (raw == null) return "";
+  const s = String(raw).trim();
+  if (!s) return "";
+  const code = normalizeLangCode(s);
+  if (code) return languageDisplayName(code);
+  if (/^[a-z]{2}$/i.test(s)) return languageDisplayName(s.toLowerCase());
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
