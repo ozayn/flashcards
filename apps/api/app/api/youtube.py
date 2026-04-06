@@ -1,10 +1,13 @@
 """YouTube transcript endpoint — fetches captions for a video."""
 
 import html
+import json
 import logging
 import os
+import random
 import re
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Literal, Optional
 from urllib.parse import parse_qs, urlparse
@@ -231,6 +234,15 @@ def _verify_single_proxy_egress(
         return i, True, first_line, f"[{i}]ok"
     except requests.RequestException as exc:
         logger.error("[youtube] proxy[%d/%d]: egress failed — %s (host=%s)", i + 1, n, exc, host)
+        err_s = str(exc).lower()
+        if "407" in str(exc) or "proxy authentication required" in err_s:
+            logger.warning(
+                "[youtube] proxy[%d/%d]: HTTP 407 from proxy — credentials missing, wrong, or not in the URL "
+                "(expected http(s)://USER:PASS@host:port for this YOUTUBE_PROXY_URL / YOUTUBE_PROXY_URLS slot; host=%s)",
+                i + 1,
+                n,
+                host,
+            )
         return i, False, None, f"[{i}]{type(exc).__name__}"
     except Exception as exc:
         logger.exception("[youtube] proxy[%d/%d]: egress check crashed (host=%s)", i + 1, n, host)
@@ -380,24 +392,161 @@ def extract_video_id(url: str) -> Optional[str]:
 
 
 _WATCH_LENGTH_SECONDS_RE = re.compile(r'"lengthSeconds"\s*:\s*"?(\d+)"?')
+# Embedded player config (more reliable than <title> when consent/bot pages appear).
+_VD_TITLE_RE = re.compile(r'"title"\s*:\s*"((?:[^"\\]|\\.)*)"')
+# Sidebar / renderer snippets often use "title":"130K" (views); reject as video title.
+_COMPACT_METRIC_TITLE_RE = re.compile(
+    r"^[\d.,]+\s*([KkMmBb]|million|billion|mln|bln|%|views?|subscribers?)?$"
+)
 
 
-def _parse_watch_page_html(page: str) -> tuple[Optional[str], Optional[int]]:
-    """Extract title and lengthSeconds from a watch HTML body."""
-    title = None
-    m = re.search(r"<title>(.+?)(?:\s*-\s*YouTube)?\s*</title>", page)
-    if m:
-        title = html.unescape(m.group(1)).strip()
+def _looks_like_metric_snippet_title(title: str) -> bool:
+    """True if string looks like a view/subscriber count, not a real video title."""
+    s = title.strip()
+    if len(s) > 24:
+        return False
+    if _COMPACT_METRIC_TITLE_RE.match(s):
+        return True
+    if len(s) <= 6 and s.replace(".", "").replace(",", "").isdigit():
+        return True
+    return False
+
+
+def _is_placeholder_watch_title(title: Optional[str]) -> bool:
+    """Consent / interstitial pages often set a generic <title>; reject those."""
+    if not title:
+        return True
+    t = title.strip().lower()
+    if not t or t == "youtube":
+        return True
+    if "before you continue" in t:
+        return True
+    if "just a moment" in t or "attention required" in t:
+        return True
+    if "sign in to" in t and len(t) < 50:
+        return True
+    return False
+
+
+def _is_usable_watch_title(title: Optional[str]) -> bool:
+    """Title is non-empty, not a consent placeholder, and not a numeric/metric UI snippet."""
+    if not title or not str(title).strip():
+        return False
+    if _is_placeholder_watch_title(title):
+        return False
+    if _looks_like_metric_snippet_title(title):
+        return False
+    return True
+
+
+def _decode_json_string_fragment(inner: str) -> str:
+    """Decode a JSON string literal body (escape sequences) to Unicode text."""
+    try:
+        return str(json.loads(f'"{inner}"'))
+    except json.JSONDecodeError:
+        return inner
+
+
+def _parse_watch_page_html(page: str, video_id: str) -> tuple[Optional[str], Optional[int]]:
+    """Extract title and lengthSeconds from watch HTML (player JSON, then fallbacks)."""
+    title: Optional[str] = None
     duration: Optional[int] = None
-    lm = _WATCH_LENGTH_SECONDS_RE.search(page)
-    if lm:
-        try:
-            duration = int(lm.group(1))
-            if duration < 0 or duration > 86400 * 30:
+
+    # Anchor on this video's videoId — the first "videoDetails" block can contain other "title" keys
+    # (e.g. view counts like "130K") that are not the watch video title.
+    vid_markers = (f'"videoId":"{video_id}"', f'"videoId": "{video_id}"')
+    vidx = -1
+    for needle in vid_markers:
+        vidx = page.find(needle)
+        if vidx != -1:
+            break
+    if vidx != -1:
+        local = page[vidx : vidx + 14000]
+        tm = _VD_TITLE_RE.search(local)
+        if tm:
+            cand = _decode_json_string_fragment(tm.group(1)).strip()
+            if _is_usable_watch_title(cand):
+                title = cand
+        lm = _WATCH_LENGTH_SECONDS_RE.search(local)
+        if lm:
+            try:
+                d = int(lm.group(1))
+                if 0 <= d <= 86400 * 30:
+                    duration = d
+            except ValueError:
+                pass
+
+    if title is None or not _is_usable_watch_title(title):
+        vd_idx = page.find('"videoDetails"')
+        if vd_idx != -1:
+            window = page[vd_idx : vd_idx + 32000]
+            tm = _VD_TITLE_RE.search(window)
+            if tm:
+                cand = _decode_json_string_fragment(tm.group(1)).strip()
+                if _is_usable_watch_title(cand):
+                    title = cand
+            if duration is None:
+                lm = _WATCH_LENGTH_SECONDS_RE.search(window)
+                if lm:
+                    try:
+                        d = int(lm.group(1))
+                        if 0 <= d <= 86400 * 30:
+                            duration = d
+                    except ValueError:
+                        pass
+
+    if title is None or not _is_usable_watch_title(title):
+        m = re.search(r"<title>(.+?)(?:\s*-\s*YouTube)?\s*</title>", page, re.DOTALL)
+        if m:
+            cand = html.unescape(re.sub(r"\s+", " ", m.group(1))).strip()
+            if _is_usable_watch_title(cand):
+                title = cand
+
+    if duration is None:
+        lm = _WATCH_LENGTH_SECONDS_RE.search(page)
+        if lm:
+            try:
+                d = int(lm.group(1))
+                if 0 <= d <= 86400 * 30:
+                    duration = d
+            except ValueError:
                 duration = None
-        except ValueError:
-            duration = None
+
+    if not _is_usable_watch_title(title):
+        title = None
+
     return title, duration
+
+
+def _fetch_oembed_title(
+    video_id: str,
+    *,
+    proxies: Optional[dict[str, str]],
+    headers: dict[str, str],
+    timeout: float,
+) -> Optional[str]:
+    """YouTube oEmbed JSON — often returns a real title when the watch HTML is a bot wall."""
+    watch = f"https://www.youtube.com/watch?v={video_id}"
+    try:
+        r = requests.get(
+            "https://www.youtube.com/oembed",
+            params={"url": watch, "format": "json"},
+            headers=headers,
+            proxies=proxies,
+            timeout=timeout,
+        )
+        if r.status_code != 200:
+            return None
+        data = r.json()
+        t = data.get("title")
+        if isinstance(t, str):
+            t = t.strip()
+        if not _is_usable_watch_title(t):
+            return None
+        return t
+    except Exception:
+        logger.debug("oEmbed title fetch failed for %s", video_id, exc_info=True)
+        return None
 
 
 def fetch_video_watch_meta(video_id: str) -> tuple[Optional[str], Optional[int]]:
@@ -436,7 +585,18 @@ def fetch_video_watch_meta(video_id: str) -> tuple[Optional[str], Optional[int]]
             resp = requests.get(watch_url, **kwargs)
             if resp.status_code != 200:
                 continue
-            title, duration_seconds = _parse_watch_page_html(resp.text)
+            title, duration_seconds = _parse_watch_page_html(resp.text, video_id)
+            if not _is_usable_watch_title(title):
+                title = None
+            if title is None:
+                oe = _fetch_oembed_title(
+                    video_id,
+                    proxies=proxies,
+                    headers=headers,
+                    timeout=10.0,
+                )
+                if oe:
+                    title = oe
             if (title and str(title).strip()) or duration_seconds is not None:
                 return title, duration_seconds
         except Exception as e:
@@ -591,10 +751,8 @@ def _should_try_next_proxy_for_transcript(exc: Exception) -> bool:
         (
             NoTranscriptFound,
             TranscriptsDisabled,
-            VideoUnavailable,
             InvalidVideoId,
             AgeRestricted,
-            VideoUnplayable,
             NotTranslatable,
             TranslationLanguageNotAvailable,
             CookieError,
@@ -605,6 +763,69 @@ def _should_try_next_proxy_for_transcript(exc: Exception) -> bool:
         ),
     ):
         return False
+    if isinstance(exc, (VideoUnavailable, VideoUnplayable)):
+        return _is_ip_block_error(exc)
+    if isinstance(exc, (IpBlocked, RequestBlocked, PoTokenRequired)):
+        return True
+    if isinstance(exc, YouTubeRequestFailed):
+        return True
+    if isinstance(exc, CouldNotRetrieveTranscript):
+        return _is_ip_block_error(exc)
+    return _is_ip_block_error(exc)
+
+
+def _youtube_proxy_same_endpoint_extra_retries() -> int:
+    """
+    Extra transcript attempts per proxy after the first (rotating residential = fresh exit IP).
+    Env YOUTUBE_PROXY_RETRY_SAME_ENDPOINTS: default 2 → 3 total tries per endpoint.
+    """
+    raw = os.environ.get("YOUTUBE_PROXY_RETRY_SAME_ENDPOINTS", "").strip()
+    if raw:
+        try:
+            return max(0, min(int(raw), 10))
+        except ValueError:
+            pass
+    return 2
+
+
+def _youtube_proxy_retry_delay_seconds() -> float:
+    """Base delay from YOUTUBE_PROXY_RETRY_DELAY_MS (default 500) plus random jitter (no secrets logged)."""
+    raw = os.environ.get("YOUTUBE_PROXY_RETRY_DELAY_MS", "").strip()
+    base_ms = 500.0
+    if raw:
+        try:
+            base_ms = float(max(0.0, min(float(raw), 60_000.0)))
+        except ValueError:
+            pass
+    jitter_max = min(400.0, base_ms * 0.75) if base_ms > 0 else 100.0
+    jitter = random.uniform(0.0, jitter_max)
+    return (base_ms + jitter) / 1000.0
+
+
+def _should_retry_same_endpoint_transcript(exc: Exception) -> bool:
+    """
+    True when repeating the same rotating proxy URL may help (new residential session / exit IP).
+    Never true for definitive caption/content/user errors.
+    """
+    if isinstance(
+        exc,
+        (
+            NoTranscriptFound,
+            TranscriptsDisabled,
+            InvalidVideoId,
+            AgeRestricted,
+            NotTranslatable,
+            TranslationLanguageNotAvailable,
+            CookieError,
+            CookieInvalid,
+            CookiePathInvalid,
+            FailedToCreateConsentCookie,
+            YouTubeDataUnparsable,
+        ),
+    ):
+        return False
+    if isinstance(exc, (VideoUnavailable, VideoUnplayable)):
+        return _is_ip_block_error(exc)
     if isinstance(exc, (IpBlocked, RequestBlocked, PoTokenRequired)):
         return True
     if isinstance(exc, YouTubeRequestFailed):
@@ -663,6 +884,27 @@ def _transcript_language_fetch_order(available: list[tuple[str, str, bool]]) -> 
             used.add(c)
             result.append(c)
     return result
+
+
+def _fetch_transcript_list_and_fetch(proxy_config: Any, video_id: str) -> tuple[Any, Any]:
+    """One list + find_transcript + fetch. Logs available languages (safe)."""
+    ytt_api = YouTubeTranscriptApi(proxy_config=proxy_config)
+    tlist = ytt_api.list(video_id)
+    available = _enumerate_available_transcripts(tlist)
+    lang_order = _transcript_language_fetch_order(available)
+    avail_summary = [(a[0], a[1], a[2]) for a in available]
+    logger.info(
+        "[youtube] transcript: available languages (code, name, generated)=%s; fetch_order=%s",
+        avail_summary,
+        lang_order,
+    )
+    print(
+        f"[youtube] transcript: available={[a[0] for a in available]} "
+        f"fetch_order={lang_order}"
+    )
+    picked = tlist.find_transcript(lang_order)
+    transcript_list = picked.fetch(preserve_formatting=False)
+    return picked, transcript_list
 
 
 @router.post("/transcript", response_model=TranscriptResponse)
@@ -727,103 +969,151 @@ async def get_transcript(payload: TranscriptRequest):
     picked = None
     last_exc: Optional[Exception] = None
     last_attempt_idx: int = 0
+    same_endpoint_extra = _youtube_proxy_same_endpoint_extra_retries()
+    max_tries_per_proxy = 1 + same_endpoint_extra if _proxy_configs else 1
 
     for attempt_idx, cfg in enumerate(attempts):
         last_attempt_idx = attempt_idx
         host = _proxy_host_for_logs(cfg)
         logger.info(
-            "[youtube] transcript: trying proxy index %d/%d (host=%s) video_id=%s",
+            "[youtube] transcript: trying proxy index %d/%d (host=%s) video_id=%s (same_endpoint_max_tries=%d)",
             attempt_idx + 1,
             n_attempts,
             host,
             video_id,
+            max_tries_per_proxy,
         )
         print(f"[youtube] transcript: try {attempt_idx + 1}/{n_attempts} (host={host})")
-        try:
-            ytt_api = YouTubeTranscriptApi(proxy_config=cfg)
-            tlist = ytt_api.list(video_id)
-            available = _enumerate_available_transcripts(tlist)
-            lang_order = _transcript_language_fetch_order(available)
-            avail_summary = [(a[0], a[1], a[2]) for a in available]
-            logger.info(
-                "[youtube] transcript: available languages (code, name, generated)=%s; fetch_order=%s",
-                avail_summary,
-                lang_order,
-            )
-            print(
-                f"[youtube] transcript: available={[a[0] for a in available]} "
-                f"fetch_order={lang_order}"
-            )
-            picked = tlist.find_transcript(lang_order)
-            transcript_list = picked.fetch(preserve_formatting=False)
-            logger.info(
-                "[youtube] transcript: success via index %d/%d (host=%s) video_id=%s language_code=%s",
-                attempt_idx + 1,
-                n_attempts,
-                host,
-                video_id,
-                getattr(picked, "language_code", None),
-            )
-            print(
-                f"[youtube] Transcript fetch for {video_id}: ok "
-                f"(proxy_index={attempt_idx + 1}/{n_attempts}, language={getattr(picked, 'language_code', '?')})"
-            )
-            logger.info(
-                "[youtube] transcript video_id=%s outcome=ok proxy_index=%d/%d language_code=%s watch_metadata_was_ok=%s",
-                video_id,
-                attempt_idx + 1,
-                n_attempts,
-                getattr(picked, "language_code", None),
-                meta_ok,
-            )
-            break
-        except HTTPException:
-            raise
-        except NoTranscriptFound as exc:
-            print(f"[youtube] Transcript fetch for {video_id}: FAILED — {exc}")
-            logger.warning("Transcript fetch for %s: no matching language — %s", video_id, exc)
-            _log_transcript_failed_after_watch_metadata_ok(
-                video_id,
-                title=title,
-                duration_seconds=duration_seconds,
-                code="NO_TRANSCRIPT_LANGUAGE",
-                detail=str(exc),
-            )
-            raise HTTPException(
-                status_code=422,
-                detail=_youtube_ingestion_error_detail(
-                    code="NO_TRANSCRIPT_LANGUAGE",
-                    message="No transcript available in a supported language for this video.",
-                    video_id=video_id,
-                    title=title,
-                    duration_seconds=duration_seconds,
-                ),
-            )
-        except Exception as exc:
-            last_exc = exc
-            print(f"[youtube] Transcript fetch for {video_id}: FAILED — {exc}")
-            logger.warning(
-                "Transcript fetch for %s: failed (proxy_index=%d/%d, host=%s) — %s",
-                video_id,
-                attempt_idx + 1,
-                n_attempts,
-                host,
-                exc,
-            )
-            if (
-                _proxy_configs
-                and _should_try_next_proxy_for_transcript(exc)
-                and attempt_idx < n_attempts - 1
-            ):
-                logger.warning(
-                    "[youtube] transcript: proxy failure is retryable — trying next proxy (%d/%d tried)",
+        proxy_success = False
+        for sub_try in range(max_tries_per_proxy):
+            if sub_try > 0:
+                delay_s = _youtube_proxy_retry_delay_seconds()
+                logger.info(
+                    "[youtube] transcript: block-like failure — same-endpoint retry %d/%d on proxy %d/%d "
+                    "after %.2fs delay (fresh residential exit; host=%s) video_id=%s",
+                    sub_try,
+                    same_endpoint_extra,
                     attempt_idx + 1,
                     n_attempts,
+                    delay_s,
+                    host,
+                    video_id,
                 )
                 print(
-                    f"[youtube] transcript: retryable failure on proxy {attempt_idx + 1}/{n_attempts}, trying next"
+                    f"[youtube] transcript: rotating endpoint retry {sub_try}/{same_endpoint_extra} "
+                    f"on proxy {attempt_idx + 1}/{n_attempts} (delay {delay_s:.2f}s)"
                 )
-                continue
+                time.sleep(delay_s)
+            try:
+                picked, transcript_list = _fetch_transcript_list_and_fetch(cfg, video_id)
+                proxy_success = True
+                if sub_try > 0:
+                    logger.info(
+                        "[youtube] transcript: success on same-endpoint retry %d/%d for proxy %d/%d "
+                        "(host=%s) video_id=%s language_code=%s",
+                        sub_try,
+                        same_endpoint_extra,
+                        attempt_idx + 1,
+                        n_attempts,
+                        host,
+                        video_id,
+                        getattr(picked, "language_code", None),
+                    )
+                    print(
+                        f"[youtube] Transcript succeeded on same-endpoint retry {sub_try}/{same_endpoint_extra} "
+                        f"for proxy {attempt_idx + 1}/{n_attempts} "
+                        f"(language={getattr(picked, 'language_code', '?')})"
+                    )
+                else:
+                    logger.info(
+                        "[youtube] transcript: success via index %d/%d (host=%s) video_id=%s language_code=%s",
+                        attempt_idx + 1,
+                        n_attempts,
+                        host,
+                        video_id,
+                        getattr(picked, "language_code", None),
+                    )
+                    print(
+                        f"[youtube] Transcript fetch for {video_id}: ok "
+                        f"(proxy_index={attempt_idx + 1}/{n_attempts}, language={getattr(picked, 'language_code', '?')})"
+                    )
+                logger.info(
+                    "[youtube] transcript video_id=%s outcome=ok proxy_index=%d/%d language_code=%s "
+                    "watch_metadata_was_ok=%s same_endpoint_attempt=%d",
+                    video_id,
+                    attempt_idx + 1,
+                    n_attempts,
+                    getattr(picked, "language_code", None),
+                    meta_ok,
+                    sub_try + 1,
+                )
+                break
+            except HTTPException:
+                raise
+            except NoTranscriptFound as exc:
+                print(f"[youtube] Transcript fetch for {video_id}: FAILED — {exc}")
+                logger.warning("Transcript fetch for %s: no matching language — %s", video_id, exc)
+                _log_transcript_failed_after_watch_metadata_ok(
+                    video_id,
+                    title=title,
+                    duration_seconds=duration_seconds,
+                    code="NO_TRANSCRIPT_LANGUAGE",
+                    detail=str(exc),
+                )
+                raise HTTPException(
+                    status_code=422,
+                    detail=_youtube_ingestion_error_detail(
+                        code="NO_TRANSCRIPT_LANGUAGE",
+                        message="No transcript available in a supported language for this video.",
+                        video_id=video_id,
+                        title=title,
+                        duration_seconds=duration_seconds,
+                    ),
+                )
+            except Exception as exc:
+                last_exc = exc
+                print(f"[youtube] Transcript fetch for {video_id}: FAILED — {exc}")
+                logger.warning(
+                    "Transcript fetch for %s: failed (proxy_index=%d/%d, same_endpoint_try=%d/%d, host=%s) — %s",
+                    video_id,
+                    attempt_idx + 1,
+                    n_attempts,
+                    sub_try + 1,
+                    max_tries_per_proxy,
+                    host,
+                    exc,
+                )
+                retry_same = (
+                    _proxy_configs
+                    and _should_retry_same_endpoint_transcript(exc)
+                    and sub_try < max_tries_per_proxy - 1
+                )
+                if retry_same:
+                    logger.warning(
+                        "[youtube] transcript: block-like failure (%s), retrying same endpoint for fresh exit",
+                        type(exc).__name__,
+                    )
+                    continue
+                try_next_proxy = (
+                    _proxy_configs
+                    and _should_try_next_proxy_for_transcript(exc)
+                    and attempt_idx < n_attempts - 1
+                )
+                if try_next_proxy:
+                    logger.warning(
+                        "[youtube] transcript: exhausted same-endpoint retries (%d attempts) for proxy %d/%d "
+                        "— moving to next proxy (%s)",
+                        max_tries_per_proxy,
+                        attempt_idx + 1,
+                        n_attempts,
+                        type(exc).__name__,
+                    )
+                    print(
+                        f"[youtube] transcript: exhausted retries for proxy {attempt_idx + 1}/{n_attempts}, "
+                        f"moving to next ({type(exc).__name__})"
+                    )
+                break
+        if proxy_success:
             break
 
     if transcript_list is None:
