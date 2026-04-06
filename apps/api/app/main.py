@@ -35,6 +35,26 @@ from app.models import User, Deck, Flashcard, Review  # noqa: F401 - register mo
 
 _is_production = os.environ.get("ENVIRONMENT", "development").lower() == "production"
 
+# If no .env file was loaded, treat process env as "configured" when any of these are set
+# (typical for Railway/Fly/Docker). Used only for startup logging — not validation.
+_ENV_CONFIG_SIGNAL_KEYS = (
+    "DATABASE_URL",
+    "GROQ_API_KEY",
+    "GEMINI_API_KEY",
+    "YOUTUBE_PROXY_URL",
+    "YOUTUBE_PROXY_URLS",
+    "OPENAI_API_KEY",
+    "WEBSHARE_PROXY_USER",
+    "WEBSHARE_PROXY_PW",
+    "MEMO_OAUTH_SYNC_SECRET",
+    "ADMIN_API_KEY",
+)
+
+
+def _process_env_has_config_signals() -> bool:
+    return any((os.environ.get(k) or "").strip() for k in _ENV_CONFIG_SIGNAL_KEYS)
+
+
 app = FastAPI(
     title="MemoNext API",
     description="MemoNext — Turn information into memory. AI Flashcard Learning Platform API",
@@ -180,24 +200,17 @@ async def startup():
     log = logging.getLogger("uvicorn.error")
     if LOADED_ENV_FILES:
         log.info("Env files loaded (later overrides earlier): %s", LOADED_ENV_FILES)
-    elif any(
-        os.environ.get(k, "").strip()
-        for k in (
-            "DATABASE_URL",
-            "GROQ_API_KEY",
-            "GEMINI_API_KEY",
-            "YOUTUBE_PROXY_URL",
-            "OPENAI_API_KEY",
-        )
-    ):
+    elif _process_env_has_config_signals():
         log.info(
-            "No .env file on disk at apps/api/.env or apps/api/app/.env — "
-            "using process environment (typical for containers)."
+            "No local .env file found under apps/api/.env or apps/api/app/.env; "
+            "using process environment (normal for containers and hosted deployments)."
         )
     else:
         log.warning(
-            "No .env file found at apps/api/.env or apps/api/app/.env — "
-            "set YOUTUBE_PROXY_URL etc. in the environment or create one of those files"
+            "No .env file on disk and no recognized config in process environment "
+            "(expected at least one of: DATABASE_URL, LLM keys, YOUTUBE/WEBSHARE proxy, "
+            "MEMO_OAUTH_SYNC_SECRET, ADMIN_API_KEY). "
+            "Set variables in the platform environment or create apps/api/.env."
         )
 
     try:
