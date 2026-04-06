@@ -13,6 +13,7 @@ import time
 from app.llm.cache import get_cached_response, save_cached_response
 from app.llm.cost_tracker import log_llm_usage, log_usage_unavailable
 from app.llm.direct_outbound import (
+    describe_groq_outbound_for_logs,
     describe_llm_proxy_env_for_logs,
     get_llm_requests_session,
     groq_client,
@@ -132,9 +133,10 @@ def _groq_log_auth_or_edge_failure(exc: Exception) -> None:
         return
     dbg = _groq_safe_http_debug(exc)
     logger.warning(
-        "LLM Groq: HTTP %s — path=direct https://api.groq.com (httpx trust_env=False; Groq client uses this "
-        "http_client only; YouTube/Webshare proxy is separate and not used here). %s. %s",
+        "LLM Groq: HTTP %s — %s (Groq-only httpx client; YouTube/Webshare uses separate config unless "
+        "GROQ_PROXY_URL matches). %s. %s",
         st,
+        describe_groq_outbound_for_logs(),
         describe_llm_proxy_env_for_logs(),
         dbg,
     )
@@ -145,9 +147,9 @@ def _groq_log_auth_or_edge_failure(exc: Exception) -> None:
     elif st == 403:
         logger.warning(
             "LLM Groq: HTTP 403 with message like 'Access denied… network settings' is commonly Cloudflare "
-            "edge blocking or restricting the machine's direct egress IP (sanctions/datacenter/VPN ranges). "
-            "If every key fails with the same 403, treat as network-path; try another egress (e.g. local laptop), "
-            "or contact Groq with cf-ray above. Bad keys more often return 401."
+            "edge blocking or restricting the client egress IP (sanctions/datacenter/VPN ranges). "
+            "If GROQ_PROXY_URL is unset, try routing Groq through a residential proxy (same URL style as "
+            "YOUTUBE_PROXY_URL). If every key fails the same way, treat as network-path; bad keys more often return 401."
         )
 
 
