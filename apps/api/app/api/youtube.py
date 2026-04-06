@@ -382,37 +382,76 @@ def extract_video_id(url: str) -> Optional[str]:
 _WATCH_LENGTH_SECONDS_RE = re.compile(r'"lengthSeconds"\s*:\s*"?(\d+)"?')
 
 
+def _parse_watch_page_html(page: str) -> tuple[Optional[str], Optional[int]]:
+    """Extract title and lengthSeconds from a watch HTML body."""
+    title = None
+    m = re.search(r"<title>(.+?)(?:\s*-\s*YouTube)?\s*</title>", page)
+    if m:
+        title = html.unescape(m.group(1)).strip()
+    duration: Optional[int] = None
+    lm = _WATCH_LENGTH_SECONDS_RE.search(page)
+    if lm:
+        try:
+            duration = int(lm.group(1))
+            if duration < 0 or duration > 86400 * 30:
+                duration = None
+        except ValueError:
+            duration = None
+    return title, duration
+
+
 def fetch_video_watch_meta(video_id: str) -> tuple[Optional[str], Optional[int]]:
     """
-    One watch-page GET: parse HTML title and embedded lengthSeconds (no API key).
-    Returns (title, duration_seconds); either may be None if parsing fails.
+    Watch-page GET: parse HTML title and embedded lengthSeconds (no API key).
+
+    When YOUTUBE/Webshare proxies are configured (same as transcript), uses them so
+    residential egress can read the page. Plain server IP often gets consent/bot HTML
+    with no usable title or lengthSeconds while transcript APIs still work via proxy.
     """
-    try:
-        resp = requests.get(
-            f"https://www.youtube.com/watch?v={video_id}",
-            headers={"Accept-Language": "en-US,en;q=0.9"},
-            timeout=10,
+    watch_url = f"https://www.youtube.com/watch?v={video_id}"
+    headers = {
+        "Accept-Language": "en-US,en;q=0.9",
+        # YouTube frequently serves minimal/bot interstitials to default python-requests UAs.
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        ),
+    }
+
+    attempts: list[Optional[dict[str, str]]] = []
+    if _proxy_configs:
+        for cfg in _proxy_configs:
+            pd = _requests_proxies_from_ytt_config(cfg)
+            if pd:
+                attempts.append(pd)
+    if not attempts:
+        attempts.append(None)
+
+    last_error: Optional[Exception] = None
+    for proxies in attempts:
+        try:
+            kwargs: dict[str, Any] = {"headers": headers, "timeout": 10}
+            if proxies is not None:
+                kwargs["proxies"] = proxies
+            resp = requests.get(watch_url, **kwargs)
+            if resp.status_code != 200:
+                continue
+            title, duration_seconds = _parse_watch_page_html(resp.text)
+            if (title and str(title).strip()) or duration_seconds is not None:
+                return title, duration_seconds
+        except Exception as e:
+            last_error = e
+            logger.debug("watch page meta request failed video_id=%s: %s", video_id, e)
+            continue
+
+    if last_error:
+        logger.debug("Could not fetch watch page meta for %s: %s", video_id, last_error)
+    else:
+        logger.debug(
+            "Could not parse watch page meta for %s (non-200 or no title/duration in HTML)",
+            video_id,
         )
-        if resp.status_code != 200:
-            return None, None
-        page = resp.text
-        title = None
-        m = re.search(r"<title>(.+?)(?:\s*-\s*YouTube)?\s*</title>", page)
-        if m:
-            title = html.unescape(m.group(1)).strip()
-        duration: Optional[int] = None
-        lm = _WATCH_LENGTH_SECONDS_RE.search(page)
-        if lm:
-            try:
-                duration = int(lm.group(1))
-                if duration < 0 or duration > 86400 * 30:
-                    duration = None
-            except ValueError:
-                duration = None
-        return title, duration
-    except Exception:
-        logger.debug("Could not fetch watch page meta for %s", video_id)
-        return None, None
+    return None, None
 
 
 def _watch_metadata_succeeded(title: Optional[str], duration_seconds: Optional[int]) -> bool:
