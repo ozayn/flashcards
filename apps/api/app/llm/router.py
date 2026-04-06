@@ -10,7 +10,14 @@ import os
 import re
 import time
 
+import requests
+
+from app.core.gen_job_context import (
+    llm_prep_stats_record_success,
+)
+from app.core.gen_job_context import generation_job_id as _generation_job_id_ctx
 from app.llm.cache import get_cached_response, save_cached_response
+from app.llm.provider_route import apply_provider_routing
 from app.llm.cost_tracker import log_llm_usage, log_usage_unavailable
 from app.llm.direct_outbound import (
     describe_groq_outbound_for_logs,
@@ -23,6 +30,36 @@ from app.llm.direct_outbound import (
 logger = logging.getLogger(__name__)
 
 _JSON_SYSTEM_PROMPT = "You are a helpful assistant. Return only valid JSON, no other text."
+
+
+def _life_prefix() -> str:
+    j = _generation_job_id_ctx.get()
+    return f"[gen_job={j}] " if j else ""
+
+
+def _classify_llm_failure(exc: Exception, provider: str) -> str:
+    """Short result token for lifecycle logs (no secrets)."""
+    if _is_rate_limit_error(exc):
+        return "rate_limit"
+    if isinstance(exc, ValueError):
+        return "validation"
+    if isinstance(exc, requests.Timeout):
+        return "timeout"
+    if isinstance(exc, requests.ConnectionError):
+        return "connection"
+    if isinstance(exc, requests.HTTPError) and exc.response is not None:
+        sc = exc.response.status_code
+        if sc >= 500:
+            return "http_5xx"
+        if sc == 408:
+            return "timeout"
+        return f"http_{sc}"
+    msg = str(exc).lower()
+    if "timeout" in msg or "timed out" in msg:
+        return "timeout"
+    if "connection" in msg or "econnreset" in msg:
+        return "connection"
+    return type(exc).__name__
 
 
 def _llm_response_preview(text: str, max_len: int = 500) -> str:
@@ -61,6 +98,27 @@ def _groq_api_keys_ordered() -> list[str]:
         seen.add(primary)
         out.append(primary)
     raw = os.getenv("GROQ_API_KEYS") or ""
+    for part in raw.split(","):
+        k = part.strip()
+        if not k or k in seen:
+            continue
+        seen.add(k)
+        out.append(k)
+    return out
+
+
+def _gemini_api_keys_ordered() -> list[str]:
+    """
+    Gemini keys: GEMINI_API_KEY first (if set), then comma-separated GEMINI_API_KEYS entries.
+    Trim, drop empties, dedupe while preserving order.
+    """
+    seen: set[str] = set()
+    out: list[str] = []
+    primary = (os.getenv("GEMINI_API_KEY") or "").strip()
+    if primary:
+        seen.add(primary)
+        out.append(primary)
+    raw = os.getenv("GEMINI_API_KEYS") or ""
     for part in raw.split(","):
         k = part.strip()
         if not k or k in seen:
@@ -228,6 +286,106 @@ def _groq_error_allows_next_key(exc: Exception) -> bool:
     return False
 
 
+def _gemini_http_status(exc: BaseException) -> int | None:
+    """HTTP status from requests.HTTPError or nested exception chain."""
+    if isinstance(exc, requests.HTTPError) and exc.response is not None:
+        return exc.response.status_code
+    visited: set[int] = set()
+    cur: BaseException | None = exc
+    while cur is not None and id(cur) not in visited:
+        visited.add(id(cur))
+        if isinstance(cur, requests.HTTPError) and cur.response is not None:
+            return cur.response.status_code
+        resp = getattr(cur, "response", None)
+        if resp is not None:
+            rsc = getattr(resp, "status_code", None)
+            if isinstance(rsc, int):
+                return rsc
+        cur = cur.__cause__ or cur.__context__
+    return None
+
+
+def _gemini_error_category(exc: Exception) -> str:
+    """Short label for logs (no secrets)."""
+    st = _gemini_http_status(exc)
+    if st == 429:
+        return "rate_limit"
+    if st is not None and st >= 500:
+        return f"http_{st}"
+    if st is not None:
+        return f"http_{st}"
+    if isinstance(exc, ValueError):
+        return "response_validation"
+    msg = str(exc).lower()
+    if "rate" in msg and "limit" in msg:
+        return "rate_limit"
+    if "quota" in msg or "resource exhausted" in msg:
+        return "quota"
+    if "timeout" in msg or isinstance(exc, requests.Timeout):
+        return "timeout"
+    if isinstance(exc, requests.ConnectionError):
+        return "connection_error"
+    return type(exc).__name__
+
+
+def _gemini_error_allows_next_key(exc: Exception) -> bool:
+    """
+    True if trying another Gemini API key may help (rate limits, quota, transient upstream).
+    False for request/content/model issues where rotating keys will not fix the call.
+    """
+    if isinstance(exc, ValueError):
+        return False
+
+    status = _gemini_http_status(exc)
+    if status is not None:
+        if status == 429:
+            return True
+        if status >= 500:
+            return True
+        if status == 408:
+            return True
+        if status in (401, 403):
+            return True
+        if status in (400, 404, 413, 422):
+            return False
+        if 400 <= status < 500:
+            return False
+        return False
+
+    msg = str(exc).lower()
+    if "413" in msg or "payload too large" in msg or "request entity too large" in msg:
+        return False
+    if "invalid json" in msg or "json decode" in msg:
+        return False
+
+    if isinstance(exc, requests.Timeout):
+        return True
+    if isinstance(exc, requests.ConnectionError):
+        return True
+
+    if any(
+        k in msg
+        for k in (
+            "rate limit",
+            "429",
+            "quota",
+            "resource exhausted",
+            "too many requests",
+            "capacity",
+            "overloaded",
+            "temporarily unavailable",
+            "unavailable",
+            "connection reset",
+            "econnreset",
+            "timeout",
+            "timed out",
+        )
+    ):
+        return True
+
+    return False
+
+
 def _get_provider_order() -> list[str]:
     """Return provider order. If LLM_PROVIDER is set, try that first. OpenAI is opt-in via OPENAI_ENABLED."""
     base = list(PROVIDER_ORDER)
@@ -292,25 +450,33 @@ def _generate_groq(prompt: str, temperature: float, max_tokens: int) -> str:
         raise ValueError("GROQ_API_KEY not configured")
     n = len(keys)
     for idx, api_key in enumerate(keys):
-        logger.info("LLM Groq: trying API key %d of %d", idx + 1, n)
+        logger.info(
+            "%sllm_key provider=groq idx=%d/%d phase=try",
+            _life_prefix(),
+            idx + 1,
+            n,
+        )
         try:
             return _generate_groq_with_key(prompt, temperature, max_tokens, api_key)
         except Exception as e:
             _groq_log_auth_or_edge_failure(e)
             allow_next = _groq_error_allows_next_key(e)
+            cat = _groq_error_category(e)
             if idx + 1 < n and allow_next:
                 logger.warning(
-                    "LLM Groq: key %d of %d failed (%s); trying next Groq key",
+                    "%sllm_key provider=groq idx=%d/%d result=%s next=key",
+                    _life_prefix(),
                     idx + 1,
                     n,
-                    _groq_error_category(e),
+                    cat,
                 )
                 continue
             if idx + 1 >= n and allow_next:
                 logger.warning(
-                    "LLM Groq: all %d key(s) exhausted (%s); falling back to next LLM provider",
+                    "%sllm_key provider=groq result=%s next=provider keys_exhausted=%d",
+                    _life_prefix(),
+                    cat,
                     n,
-                    _groq_error_category(e),
                 )
             raise
 
@@ -361,12 +527,9 @@ def _generate_openrouter(prompt: str, temperature: float, max_tokens: int) -> st
     return text
 
 
-def _generate_gemini(prompt: str, temperature: float, max_tokens: int) -> str:
+def _generate_gemini_with_key(prompt: str, temperature: float, max_tokens: int, api_key: str) -> str:
     from app.llm.json_truncation import analyze_llm_json_response, finish_reason_is_max_tokens
 
-    api_key = (os.getenv("GEMINI_API_KEY") or "").strip()
-    if not api_key:
-        raise ValueError("GEMINI_API_KEY not configured")
     model = (os.getenv("GEMINI_MODEL") or "").strip() or DEFAULT_MODELS["gemini"]
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
     json_mode = (os.getenv("GEMINI_JSON_OUTPUT", "1") or "1").strip() not in ("0", "false", "no")
@@ -417,7 +580,7 @@ def _generate_gemini(prompt: str, temperature: float, max_tokens: int) -> str:
                     timeout=120,
                 )
             if not resp.ok:
-                raise RuntimeError(f"Gemini API error: {resp.text}")
+                resp.raise_for_status()
         return resp.json()
 
     def parse_response(data: dict) -> tuple[str, str | None, dict]:
@@ -565,6 +728,42 @@ def _generate_gemini(prompt: str, temperature: float, max_tokens: int) -> str:
     return text
 
 
+def _generate_gemini(prompt: str, temperature: float, max_tokens: int) -> str:
+    keys = _gemini_api_keys_ordered()
+    if not keys:
+        raise ValueError("No Gemini API keys configured (set GEMINI_API_KEY and/or GEMINI_API_KEYS)")
+    n = len(keys)
+    for idx, api_key in enumerate(keys):
+        logger.info(
+            "%sllm_key provider=gemini idx=%d/%d phase=try",
+            _life_prefix(),
+            idx + 1,
+            n,
+        )
+        try:
+            return _generate_gemini_with_key(prompt, temperature, max_tokens, api_key)
+        except Exception as e:
+            allow_next = _gemini_error_allows_next_key(e)
+            cat = _gemini_error_category(e)
+            if idx + 1 < n and allow_next:
+                logger.warning(
+                    "%sllm_key provider=gemini idx=%d/%d result=%s next=key",
+                    _life_prefix(),
+                    idx + 1,
+                    n,
+                    cat,
+                )
+                continue
+            if idx + 1 >= n and allow_next:
+                logger.warning(
+                    "%sllm_key provider=gemini result=%s next=provider keys_exhausted=%d",
+                    _life_prefix(),
+                    cat,
+                    n,
+                )
+            raise
+
+
 def _generate_openai(prompt: str, temperature: float, max_tokens: int) -> str:
     api_key = (os.getenv("OPENAI_API_KEY") or "").strip()
     if not api_key:
@@ -699,43 +898,67 @@ def generate_completion(
     temperature: float | None = None,
     max_tokens: int | None = None,
     skip_cache: bool = False,
+    *,
+    llm_routing: dict | None = None,
 ) -> str:
     """
     Generate completion using primary provider with fallback.
     Tries providers in order until one succeeds.
+    Optional llm_routing (text job hints: chunked_mode, text_len, source_type, num_cards)
+    may reorder Groq vs Gemini (see provider_route.apply_provider_routing).
     """
     if not skip_cache:
         try:
             cached = get_cached_response(prompt)
             if cached is not None:
-                logger.info("LLM cache hit")
+                llm_prep_stats_record_success("cache", 0)
+                logger.info("%sllm_try provider=cache result=success", _life_prefix())
                 return cached
         except Exception as e:
-            logger.warning("LLM cache check failed: %s", e)
+            logger.warning("%sllm_cache_check_failed err=%s", _life_prefix(), e)
 
     temp = temperature if temperature is not None else _get_default_temperature()
     max_tok = max_tokens if max_tokens is not None else _get_default_max_tokens()
-    order = _get_provider_order()
+    base_order = _get_provider_order()
+    order, route_label, route_reason = apply_provider_routing(base_order, llm_routing)
+    chain_s = ",".join(order)
+    logger.debug(
+        "%sllm_route provider_route=%s route_reason=%s chain=%s",
+        _life_prefix(),
+        route_label,
+        route_reason,
+        chain_s,
+    )
     last_error = None
-    logger.info("LLM provider order (fallback chain): %s", order)
+    chain_total = len([p for p in order if p in _PROVIDER_FNS])
+    attempt_idx = 0
 
     for pi, provider in enumerate(order):
         fn = _PROVIDER_FNS.get(provider)
         if not fn:
             continue
+        attempt_idx += 1
         model = _get_model(provider)
-        logger.info("Using LLM provider: %s (%s)", provider, model)
+        logger.info(
+            "%sllm_try provider=%s chain_step=%d/%d model=%s phase=start",
+            _life_prefix(),
+            provider,
+            attempt_idx,
+            max(chain_total, 1),
+            model,
+        )
 
         retries_left = MAX_RATE_LIMIT_RETRIES
         while True:
             try:
                 response_text = fn(prompt, temp, max_tok)
                 cache_ok = _is_valid_json_for_cache(response_text)
+                llm_prep_stats_record_success(provider, attempt_idx - 1)
                 logger.info(
-                    "LLM ok provider=%s model=%s max_output_tokens=%d response_bytes=%d cache_json_ok=%s",
+                    "%sllm_try provider=%s chain_step=%d result=success bytes=%d cache_json_ok=%s",
+                    _life_prefix(),
                     provider,
-                    model,
-                    max_tok,
+                    attempt_idx,
                     len(response_text or ""),
                     cache_ok,
                 )
@@ -743,40 +966,52 @@ def generate_completion(
                     try:
                         save_cached_response(prompt, response_text)
                     except Exception as e:
-                        logger.warning("LLM cache save failed: %s", e)
+                        logger.warning("%sllm_cache_save_failed err=%s", _life_prefix(), e)
                 else:
                     prev_len = 3200 if provider == "gemini" else 1200
-                    logger.warning(
-                        "LLM response not strict JSON for cache (generation may still parse). "
-                        "provider=%s raw_len=%d preview=%s",
+                    logger.debug(
+                        "%sllm_non_json_cache provider=%s raw_len=%d preview=%s",
+                        _life_prefix(),
                         provider,
                         len(response_text or ""),
                         _llm_response_preview(response_text or "", prev_len),
                     )
-                logger.info("LLM provider used: %s", provider)
                 return response_text
             except Exception as e:
                 if _is_rate_limit_error(e) and retries_left > 0:
                     wait = _extract_retry_after(e) or DEFAULT_RETRY_WAIT
                     retries_left -= 1
                     logger.warning(
-                        "Rate limit hit on %s, waiting %.1fs before retry (%d retries left)",
-                        provider, wait, retries_left,
+                        "%sllm_try provider=%s chain_step=%d result=rate_limit retry_in_s=%.1f retries_left=%d",
+                        _life_prefix(),
+                        provider,
+                        attempt_idx,
+                        wait,
+                        retries_left,
                     )
                     time.sleep(wait)
                     continue
 
                 last_error = e
-                if _is_rate_limit_error(e):
-                    nxt = [p for p in order[pi + 1 :] if p in _PROVIDER_FNS]
+                cat = _classify_llm_failure(e, provider)
+                nxt = [p for p in order[pi + 1 :] if p in _PROVIDER_FNS]
+                if nxt:
                     logger.warning(
-                        "Rate limit on %s after %d retries; next provider(s): %s",
+                        "%sllm_try provider=%s chain_step=%d result=%s next_provider=%s",
+                        _life_prefix(),
                         provider,
-                        MAX_RATE_LIMIT_RETRIES,
-                        nxt or "(none)",
+                        attempt_idx,
+                        cat,
+                        nxt[0],
                     )
                 else:
-                    logger.warning("LLM provider failed: %s — %s", provider, e)
+                    logger.warning(
+                        "%sllm_try provider=%s chain_step=%d result=%s next_provider=none",
+                        _life_prefix(),
+                        provider,
+                        attempt_idx,
+                        cat,
+                    )
                 break
 
     raise RateLimitError("all", original=last_error) if (

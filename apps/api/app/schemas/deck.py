@@ -54,6 +54,7 @@ class DeckResponse(BaseModel):
     source_text: Optional[str] = None
     source_segments: Optional[str] = Field(None, exclude=True)
     source_metadata: Optional[str] = None
+    source_summary: Optional[str] = None
     generation_status: str = "completed"
     generated_by_ai: bool = False
     archived: bool = False

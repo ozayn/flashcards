@@ -52,6 +52,7 @@ import FormattedText from "@/components/FormattedText";
 import { FlashcardModal } from "@/components/FlashcardModal";
 import { DeckGenerationBadge, isDeckGeneratingLike } from "@/components/DeckGenerationBadge";
 import { AdminTransferDeckConfirmModal } from "@/components/AdminTransferDeckConfirmModal";
+import { LongSourceTextarea } from "@/components/long-source-textarea";
 
 interface DeckPageProps {
   params: { id: string };
@@ -66,6 +67,8 @@ interface Deck {
   source_url?: string | null;
   /** JSON: { duration_seconds?, caption_language? } for YouTube */
   source_metadata?: string | null;
+  /** Short LLM summary for long transcript/text/article decks */
+  source_summary?: string | null;
   has_timestamps?: boolean;
   generation_status?: string;
   archived?: boolean;
@@ -1196,6 +1199,21 @@ export default function DeckPage({ params }: DeckPageProps) {
                   <span className="font-medium text-foreground">{deck.source_topic.trim()}</span>
                 </div>
               ) : null}
+
+              {deck.source_summary?.trim() ? (
+                <details className="pt-1.5 border-t border-border/35 text-muted-foreground open:[&_summary_svg]:rotate-90">
+                  <summary className="flex cursor-pointer list-none items-center gap-1.5 text-[11px] sm:text-xs text-muted-foreground/65 hover:text-muted-foreground select-none [&::-webkit-details-marker]:hidden">
+                    <ChevronRight
+                      className="h-3.5 w-3.5 shrink-0 opacity-60 transition-transform"
+                      aria-hidden
+                    />
+                    <span>Source summary</span>
+                  </summary>
+                  <div className="mt-2 text-[11px] sm:text-xs text-muted-foreground/80 leading-relaxed pl-5 border-l border-border/45 whitespace-pre-wrap">
+                    {deck.source_summary.trim()}
+                  </div>
+                </details>
+              ) : null}
             </div>
             {!isReadOnly && categoryModalOpen && (
               <div
@@ -1458,7 +1476,7 @@ export default function DeckPage({ params }: DeckPageProps) {
                       <label htmlFor="gen-text" className="text-sm font-medium">
                         Paste notes or transcript
                       </label>
-                      <textarea
+                      <LongSourceTextarea
                         id="gen-text"
                         name="genText"
                         placeholder="Paste notes, lecture content, or any text to generate flashcards from…"
@@ -1468,42 +1486,39 @@ export default function DeckPage({ params }: DeckPageProps) {
                           if (genTextUploadStatus) setGenTextUploadStatus(null);
                         }}
                         maxLength={GENERATION_TEXT_MAX_CHARS}
-                        className="w-full min-h-[120px] rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                      />
-                      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
-                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                          <input
-                            ref={genTextFileInputRef}
-                            id="gen-text-upload"
-                            type="file"
-                            accept=".txt,text/plain"
-                            onChange={handleGenTextFileUpload}
-                            className="sr-only"
-                          />
-                          <label
-                            htmlFor="gen-text-upload"
-                            className="inline-flex cursor-pointer items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
-                          >
-                            <Upload className="size-3.5 shrink-0" />
-                            Upload .txt
-                          </label>
-                          {genTextUploadStatus && (
-                            <span
-                              className={`text-xs ${genTextUploadStatus.startsWith("Only ") || genTextUploadStatus.startsWith("That ") || genTextUploadStatus.startsWith("Could ") ? "text-destructive" : "text-muted-foreground"}`}
+                        auxiliaryRow={
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                            <input
+                              ref={genTextFileInputRef}
+                              id="gen-text-upload"
+                              type="file"
+                              accept=".txt,text/plain"
+                              onChange={handleGenTextFileUpload}
+                              className="sr-only"
+                            />
+                            <label
+                              htmlFor="gen-text-upload"
+                              className="inline-flex cursor-pointer items-center gap-1.5 transition-colors hover:text-foreground"
                             >
-                              {genTextUploadStatus}
-                            </span>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-2 sm:ml-auto">
-                          <span className="text-xs text-muted-foreground">
-                            {genText.length} / {GENERATION_TEXT_MAX_CHARS.toLocaleString()} characters
-                          </span>
-                          {genText.length >= GENERATION_TEXT_MAX_CHARS && (
-                            <span className="text-xs text-destructive">Text is too long</span>
-                          )}
-                        </div>
-                      </div>
+                              <Upload className="size-3.5 shrink-0" />
+                              Upload .txt
+                            </label>
+                            {genTextUploadStatus && (
+                              <span
+                                className={
+                                  genTextUploadStatus.startsWith("Only ") ||
+                                  genTextUploadStatus.startsWith("That ") ||
+                                  genTextUploadStatus.startsWith("Could ")
+                                    ? "text-destructive"
+                                    : ""
+                                }
+                              >
+                                {genTextUploadStatus}
+                              </span>
+                            )}
+                          </div>
+                        }
+                      />
                     </div>
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
                       <label htmlFor="cardCount-text" className="text-sm font-medium shrink-0">

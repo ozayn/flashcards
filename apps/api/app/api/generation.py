@@ -2,8 +2,10 @@ import asyncio
 import contextvars
 import json
 import logging
+import os
 import re
-from typing import Callable, Optional
+import secrets
+from typing import Any, Callable, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -12,6 +14,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db, AsyncSessionLocal
+from app.core.gen_job_context import (
+    generation_job_id as generation_job_id_ctx,
+    llm_prep_stats_arm,
+    llm_prep_stats_reset,
+    llm_prep_stats_snapshot,
+)
 from app.core.product_admin import user_has_product_admin_access
 from app.core.user_access import assert_may_mutate_deck, get_trusted_acting_user_id
 from app.core.user_tier import (
@@ -21,7 +29,13 @@ from app.core.user_tier import (
     user_has_elevated_tier,
 )
 from app.llm.json_truncation import analyze_llm_json_response
-from app.llm.router import generate_completion, _get_default_max_tokens, RateLimitError
+from app.llm.provider_route import apply_provider_routing
+from app.llm.router import (
+    generate_completion,
+    _get_default_max_tokens,
+    _get_provider_order,
+    RateLimitError,
+)
 from app.models import Deck, Flashcard, User
 from app.models.enums import GenerationStatus, SourceType
 from app.schemas.flashcard import DIFFICULTY_TO_INT
@@ -42,8 +56,90 @@ generation_log_deck_id: contextvars.ContextVar[Optional[str]] = contextvars.Cont
 
 
 def _gen_log_prefix() -> str:
+    parts: list[str] = []
+    j = generation_job_id_ctx.get()
+    if j:
+        parts.append(f"gen_job={j}")
     d = generation_log_deck_id.get()
-    return f"[deck_id={d}] " if d else ""
+    if d:
+        parts.append(f"deck_id={d}")
+    if not parts:
+        return ""
+    return "[" + " ".join(parts) + "] "
+
+
+def _parse_deck_source_metadata_dict(deck: Deck) -> dict[str, Any]:
+    raw = getattr(deck, "source_metadata", None)
+    if not raw or not str(raw).strip():
+        return {}
+    try:
+        j = json.loads(str(raw))
+        return j if isinstance(j, dict) else {}
+    except json.JSONDecodeError:
+        return {}
+
+
+def _format_gen_source_kv(deck: Deck, text_input: Optional[str]) -> str:
+    st = _deck_source_type_str(deck) or ("text" if text_input else "topic")
+    body = (text_input or getattr(deck, "source_text", None) or "").strip()
+    text_len = len(body)
+    parts = [f"source_type={st}", f"text_len={text_len}"]
+    if st == SourceType.youtube.value:
+        meta = _parse_deck_source_metadata_dict(deck)
+        if meta.get("duration_seconds") is not None:
+            try:
+                parts.append(f"yt_duration_s={int(meta['duration_seconds'])}")
+            except (TypeError, ValueError):
+                pass
+        cl = meta.get("caption_language")
+        if isinstance(cl, str) and cl.strip():
+            parts.append(f"yt_caption_lang={cl.strip()[:24]}")
+        parts.append("yt_transcript=ok" if text_len > 0 else "yt_transcript=missing")
+        parts.append("yt_deck_meta=present" if meta else "yt_deck_meta=absent")
+    elif st in (
+        SourceType.wikipedia.value,
+        SourceType.webpage.value,
+        SourceType.url.value,
+    ):
+        has_url = bool((getattr(deck, "source_url", None) or "").strip())
+        has_title = bool(
+            (getattr(deck, "source_title", None) or getattr(deck, "source_topic", None) or "").strip()
+        )
+        parts.append(f"article_text={'ok' if text_len > 0 else 'missing'}")
+        parts.append(f"url_hint={'yes' if has_url else 'no'}")
+        parts.append(f"title_hint={'yes' if has_title else 'no'}")
+    elif st == SourceType.text.value:
+        parts.append("origin=text")
+    else:
+        parts.append("origin=topic_mode" if not text_len else "origin=topic_with_text")
+    return " ".join(parts)
+
+
+def _source_summary_skip_reason(deck: Deck, text_input: Optional[str]) -> Optional[str]:
+    """None => run summary LLM; else compact reason for gen_summary."""
+    if not text_input or not text_input.strip():
+        return "topic_only_no_passage"
+    existing = getattr(deck, "source_summary", None)
+    if existing and str(existing).strip():
+        return "already_exists"
+    body = (deck.source_text or text_input or "").strip()
+    if len(body) < 400:
+        return "body_too_short"
+    st = _deck_source_type_str(deck)
+    if st == SourceType.youtube.value:
+        if len(body) < _SOURCE_SUMMARY_MIN_CHARS_YOUTUBE:
+            return "youtube_below_summary_min"
+        return None
+    if st in (
+        SourceType.text.value,
+        SourceType.wikipedia.value,
+        SourceType.webpage.value,
+        SourceType.url.value,
+    ):
+        if len(body) < _source_summary_min_chars_text():
+            return "below_summary_min_chars"
+        return None
+    return "source_type_ineligible"
 
 
 def _preview_for_log(text: str, max_len: int = 600) -> str:
@@ -136,6 +232,13 @@ class BackgroundGenerationResponse(BaseModel):
 
 # Keep in sync with apps/web/lib/generation-text.ts (GENERATION_TEXT_MAX_CHARS).
 TEXT_MAX_LENGTH = 50000
+
+# Long text / transcript: split source and generate per chunk (see GENERATION_TEXT_CHUNK_THRESHOLD in .env.example).
+_TEXT_CHUNK_TARGET_CHARS = 6500
+_TEXT_CHUNK_HARD_MAX_CHARS = 9000
+_TEXT_CHUNK_MIN_CARDS = 1
+_TEXT_CHUNK_MAX_CARDS = 8
+_TEXT_CHUNK_MERGE_MIN_LEN = 350
 
 MAX_CARDS_ADMIN = 50
 MAX_CARDS_USER = 25
@@ -1321,6 +1424,96 @@ def _sample_text_for_prompt(text: str, max_chars: int = 12000) -> str:
     )
 
 
+def _source_summary_min_chars_text() -> int:
+    """Minimum pasted/article text length to generate a source summary (env override)."""
+    raw = (os.environ.get("GENERATION_SOURCE_SUMMARY_MIN_CHARS") or "").strip()
+    if raw:
+        try:
+            return max(2000, min(int(raw), TEXT_MAX_LENGTH))
+        except ValueError:
+            pass
+    return 3500
+
+
+_SOURCE_SUMMARY_MIN_CHARS_YOUTUBE = 600
+
+
+def _deck_source_type_str(deck: Deck) -> str:
+    st = deck.source_type
+    if st is None:
+        return ""
+    return st.value if hasattr(st, "value") else str(st)
+
+
+def _should_generate_source_summary(deck: Deck, text_input: Optional[str]) -> bool:
+    """Summaries are additive: only for text/transcript/article generation runs, not short sources."""
+    return _source_summary_skip_reason(deck, text_input) is None
+
+
+def _sync_generate_source_summary(
+    deck: Deck,
+    text_input: Optional[str],
+    lang_hint: Optional[str],
+) -> Optional[str]:
+    """Plain-text short summary; uses same LLM fallback chain as flashcard generation."""
+    try:
+        body = (deck.source_text or text_input or "").strip()
+        if not body:
+            return None
+        st = _deck_source_type_str(deck)
+        if st == SourceType.youtube.value:
+            kind = "video transcript"
+        elif st in (
+            SourceType.wikipedia.value,
+            SourceType.webpage.value,
+            SourceType.url.value,
+        ):
+            kind = "article or web page"
+        else:
+            kind = "passage"
+        title = (deck.source_topic or deck.source_title or "").strip()
+        lang = (lang_hint or "en").strip()[:12]
+        excerpt = _sample_text_for_prompt(body, max_chars=16000)
+        title_block = f"Title/context: {title}\n\n" if title else ""
+        prompt = f"""You summarize sources for a study app. Write in the same language as the source (match the excerpt; BCP-47 hint: {lang}).
+
+Source type: {kind}.
+{title_block}Source excerpt:
+---
+{excerpt}
+---
+
+Write a SHORT summary (not an essay). Use ONE of these formats:
+(A) One short paragraph (2–4 sentences) followed by exactly 3 bullet lines starting with "- " or "• ", OR
+(B) 3–6 compact bullet lines only.
+
+Rules:
+- Stay grounded in the excerpt; do not invent facts.
+- No preamble ("Here is a summary") and no closing filler.
+- Total length: at most ~180 words.
+- Plain text only (paragraphs and bullet lines; no code fences)."""
+        raw_out = generate_completion(
+            prompt,
+            temperature=0.25,
+            max_tokens=500,
+            skip_cache=True,
+        )
+        out = (raw_out or "").strip()
+        if not out:
+            return None
+        if out.startswith("```"):
+            lines = out.split("\n")
+            if lines and lines[0].startswith("```"):
+                lines = lines[1:]
+            if lines and lines[-1].strip() == "```":
+                lines = lines[:-1]
+            out = "\n".join(lines).strip()
+        return out[:14000]
+    except Exception as e:
+        logger.debug("%ssource_summary_llm_exception %s", _gen_log_prefix(), type(e).__name__)
+        return None
+
+
 def _extract_concepts_json(response_text: str) -> dict:
     """Parse concept-extraction LLM output ({"concepts": [...]}) without flashcards schema validation."""
     raw = response_text.strip()
@@ -1387,6 +1580,7 @@ def _extract_concepts(
     is_people_list: bool = False,
     num_cards: int = 10,
     strict_text_only: bool = True,
+    llm_routing: Optional[dict] = None,
 ) -> list:
     """Extract key concepts from topic or text using LLM."""
     if text:
@@ -1493,7 +1687,7 @@ Rules:
 - If the topic asks for people (e.g., "well-known street photographers"), extract only person names."""
 
     try:
-        response_text = generate_completion(prompt)
+        response_text = generate_completion(prompt, llm_routing=llm_routing if text else None)
     except ValueError as e:
         logger.warning("Concept extraction failed: %s", e)
         return []
@@ -1668,6 +1862,7 @@ def _generate_flashcards_from_persian_mapping(
     num_cards: int = 10,
     skip_cache: bool = False,
     max_tokens_override: Optional[int] = None,
+    llm_routing: Optional[dict] = None,
 ) -> str:
     """Generate mapping-style flashcards from Persian structured linguistic content.
 
@@ -1730,7 +1925,9 @@ Rules:
 - Output MUST be valid JSON. No plain text, no Q/A format. Use double quotes. Escape newlines as \\n.
 {JSON_CLOSING_CONSTRAINT}"""
 
-    return generate_completion(prompt, skip_cache=skip_cache, max_tokens=max_tokens_override)
+    return generate_completion(
+        prompt, skip_cache=skip_cache, max_tokens=max_tokens_override, llm_routing=llm_routing
+    )
 
 
 def _generate_flashcards_from_text(
@@ -1742,12 +1939,17 @@ def _generate_flashcards_from_text(
     topic: Optional[str] = None,
     skip_cache: bool = False,
     max_tokens_override: Optional[int] = None,
+    llm_routing: Optional[dict] = None,
 ) -> str:
     """Generate flashcards from text: extract concepts first, then generate from concepts."""
     if _is_persian_mapping_text(text):
         logger.info("Detected Persian mapping text — using specialized mapping prompt")
         return _generate_flashcards_from_persian_mapping(
-            text, num_cards=num_cards, skip_cache=skip_cache, max_tokens_override=max_tokens_override,
+            text,
+            num_cards=num_cards,
+            skip_cache=skip_cache,
+            max_tokens_override=max_tokens_override,
+            llm_routing=llm_routing,
         )
 
     concepts = _extract_concepts(
@@ -1755,6 +1957,7 @@ def _generate_flashcards_from_text(
         language_hint=language_hint,
         num_cards=num_cards,
         strict_text_only=strict_text_only,
+        llm_routing=llm_routing,
     )
     is_vocab = is_vocabulary_topic(text[:200]) if text else False
     if concepts:
@@ -1769,6 +1972,7 @@ def _generate_flashcards_from_text(
             include_background=include_background,
             skip_cache=skip_cache,
             max_tokens_override=max_tokens_override,
+            llm_routing=llm_routing,
         )
     # Fallback: single-stage generation when concept extraction fails
     text_preview = _sample_text_for_prompt(text, max_chars=16000)
@@ -1906,7 +2110,9 @@ Rules:
     if not _is_formula_topic(topic or text):
         prompt += NON_FORMULA_STRICT_RULE
 
-    return generate_completion(prompt, skip_cache=skip_cache, max_tokens=max_tokens_override)
+    return generate_completion(
+        prompt, skip_cache=skip_cache, max_tokens=max_tokens_override, llm_routing=llm_routing
+    )
 
 
 def _generate_flashcards_from_people_list(
@@ -2008,6 +2214,7 @@ def _generate_flashcards_from_concepts(
     include_background: bool = False,
     skip_cache: bool = False,
     max_tokens_override: Optional[int] = None,
+    llm_routing: Optional[dict] = None,
 ) -> str:
     """Stage 2: Generate flashcards from concepts using LLM."""
     concept_list = "\n".join(f"- {c}" for c in concepts)
@@ -2237,7 +2444,9 @@ Rules:
 {JSON_CLOSING_CONSTRAINT}
 {NON_FORMULA_STRICT_RULE if not _is_formula_topic(topic) else ''}"""
 
-    return generate_completion(prompt, skip_cache=skip_cache, max_tokens=max_tokens_override)
+    return generate_completion(
+        prompt, skip_cache=skip_cache, max_tokens=max_tokens_override, llm_routing=llm_routing
+    )
 
 
 def _generate_flashcards_from_question_topic(
@@ -2814,6 +3023,271 @@ def _max_tokens_for_text_mode_cards(base_default: int, num_cards: int) -> int:
     return max(base_default, min(8192, 150 * n + 1200))
 
 
+def _text_chunk_generation_threshold() -> int:
+    """Character length above which text mode may split the source into chunks (env override)."""
+    raw = (os.environ.get("GENERATION_TEXT_CHUNK_THRESHOLD") or "").strip()
+    if raw:
+        try:
+            return max(4000, min(int(raw), TEXT_MAX_LENGTH))
+        except ValueError:
+            pass
+    return 12000
+
+
+def _should_use_chunked_text_generation(text: str) -> bool:
+    if not text or not text.strip():
+        return False
+    if len(text) < _text_chunk_generation_threshold():
+        return False
+    if _is_persian_mapping_text(text):
+        return False
+    return True
+
+
+def _split_hard_by_length(s: str, hard_max: int) -> list[str]:
+    """Last resort: split on spaces within hard_max-sized slices."""
+    s = s.strip()
+    if not s:
+        return []
+    if len(s) <= hard_max:
+        return [s]
+    out: list[str] = []
+    i = 0
+    while i < len(s):
+        end = min(i + hard_max, len(s))
+        chunk = s[i:end]
+        if end < len(s):
+            sp = chunk.rfind(" ")
+            if sp > hard_max // 3:
+                chunk = chunk[:sp].strip()
+                i += sp + 1
+            else:
+                i = end
+        else:
+            i = len(s)
+        if chunk.strip():
+            out.append(chunk.strip())
+    return out
+
+
+def _split_long_segment_at_sentences(seg: str, target: int, hard_max: int) -> list[str]:
+    """Split an oversized block on sentence boundaries, then on length."""
+    seg = seg.strip()
+    if not seg:
+        return []
+    if len(seg) <= target:
+        return [seg]
+    parts = re.split(r"(?<=[.!?…])\s+", seg)
+    out: list[str] = []
+    buf = ""
+    for p in parts:
+        p = p.strip()
+        if not p:
+            continue
+        if len(p) > hard_max:
+            if buf:
+                out.append(buf.strip())
+                buf = ""
+            out.extend(_split_hard_by_length(p, hard_max))
+            continue
+        cand = (buf + " " + p).strip() if buf else p
+        if len(cand) <= target:
+            buf = cand
+        else:
+            if buf:
+                out.append(buf.strip())
+            buf = p
+    if buf:
+        out.append(buf.strip())
+    return [x for x in out if x]
+
+
+def _merge_tiny_text_chunks(parts: list[str], *, min_len: int) -> list[str]:
+    """Merge very short trailing pieces into the previous chunk."""
+    if not parts:
+        return []
+    merged: list[str] = []
+    for p in parts:
+        p = p.strip()
+        if not p:
+            continue
+        if merged and len(p) < min_len:
+            merged[-1] = (merged[-1] + "\n\n" + p).strip()
+        else:
+            merged.append(p)
+    return merged
+
+
+def _split_text_into_natural_chunks(
+    text: str,
+    *,
+    target: int = _TEXT_CHUNK_TARGET_CHARS,
+    hard_max: int = _TEXT_CHUNK_HARD_MAX_CHARS,
+) -> list[str]:
+    """Split on paragraphs, then sentences; avoid blunt cuts when possible. Always returns at least one chunk."""
+    t = text.strip()
+    if not t:
+        return []
+    if len(t) <= target:
+        return [t]
+    paragraphs = re.split(r"\n\s*\n+", t)
+    parts: list[str] = []
+    cur = ""
+    for para in paragraphs:
+        para = para.strip()
+        if not para:
+            continue
+        if len(para) > hard_max:
+            if cur:
+                parts.append(cur)
+                cur = ""
+            parts.extend(_split_long_segment_at_sentences(para, target, hard_max))
+            continue
+        cand = (cur + "\n\n" + para) if cur else para
+        if len(cand) <= target:
+            cur = cand
+        else:
+            if cur:
+                parts.append(cur)
+            cur = para
+    if cur:
+        parts.append(cur)
+    merged = _merge_tiny_text_chunks(parts, min_len=_TEXT_CHUNK_MERGE_MIN_LEN)
+    return merged if merged else [t]
+
+
+def _allocate_cards_per_text_chunk(total: int, n_chunks: int) -> list[int]:
+    """Spread requested cards across chunks with per-chunk floor/ceiling."""
+    if n_chunks <= 0:
+        return []
+    total = max(1, total)
+    if total < n_chunks:
+        out = [0] * n_chunks
+        for i in range(total):
+            out[i % n_chunks] += 1
+        return out
+    base = max(
+        _TEXT_CHUNK_MIN_CARDS,
+        min(_TEXT_CHUNK_MAX_CARDS, (total + n_chunks - 1) // n_chunks),
+    )
+    out = [base] * n_chunks
+    # Adjust toward total without leaving chunks empty
+    for _ in range(n_chunks * 20):
+        s = sum(out)
+        if s == total:
+            break
+        if s < total:
+            idx = min(range(n_chunks), key=lambda i: out[i] if out[i] < _TEXT_CHUNK_MAX_CARDS else 999)
+            if out[idx] >= _TEXT_CHUNK_MAX_CARDS:
+                break
+            out[idx] += 1
+        else:
+            idx = max(range(n_chunks), key=lambda i: out[i] if out[i] > _TEXT_CHUNK_MIN_CARDS else -1)
+            if out[idx] <= _TEXT_CHUNK_MIN_CARDS:
+                break
+            out[idx] -= 1
+    return out
+
+
+def _dedupe_flashcards_preserve_order(cards: list) -> list:
+    """Drop near-duplicate cards by normalized question + answer (order preserved)."""
+    seen: set[tuple[str, str]] = set()
+    out: list = []
+    for c in cards:
+        if not isinstance(c, dict):
+            continue
+        q = (c.get("question") or "").strip().lower()
+        a = (c.get("answer_short") or c.get("answer") or "").strip().lower()
+        if not q:
+            continue
+        key = (q[:220], a[:400])
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(c)
+    return out
+
+
+def _run_chunked_text_flashcard_generation(
+    text_input: str,
+    lang_hint: Optional[str],
+    num_cards: int,
+    strict_text_only: bool,
+    include_background: bool,
+    topic: Optional[str],
+    skip_cache: bool,
+    base_default: int,
+    llm_routing: Optional[dict] = None,
+) -> dict:
+    """
+    Split long text into chunks; call the same text-mode generator per chunk; merge and dedupe.
+    Per-chunk grounding uses that chunk as passage (strict_text_only). Provider fallback unchanged (generate_completion).
+    """
+    chunks = _split_text_into_natural_chunks(text_input)
+    if len(chunks) <= 1:
+        raise ValueError("chunked generation requires multiple chunks")
+    n = len(chunks)
+    per_chunk = _allocate_cards_per_text_chunk(num_cards, n)
+    chunk_lens = [len(c) for c in chunks]
+    logger.debug(
+        "%s[text-chunk-mode] chunked_run cards_per_chunk=%s chunk_lens=%s threshold=%d",
+        _gen_log_prefix(),
+        per_chunk,
+        chunk_lens,
+        _text_chunk_generation_threshold(),
+    )
+    merged: list = []
+    for i, chunk in enumerate(chunks):
+        n_i = per_chunk[i] if i < len(per_chunk) else _TEXT_CHUNK_MIN_CARDS
+        if n_i <= 0:
+            continue
+        mt = _max_tokens_for_text_mode_cards(base_default, max(1, n_i))
+        logger.debug(
+            "%s[text-chunk-mode] chunk %d/%d chars=%d cards=%d",
+            _gen_log_prefix(),
+            i + 1,
+            n,
+            len(chunk),
+            n_i,
+        )
+        response_text = _generate_flashcards_from_text(
+            chunk,
+            lang_hint,
+            num_cards=n_i,
+            strict_text_only=strict_text_only,
+            include_background=include_background,
+            topic=topic,
+            skip_cache=skip_cache or (i > 0),
+            max_tokens_override=mt,
+            llm_routing=llm_routing,
+        )
+        parsed = _extract_json(response_text)
+        batch = parsed.get("flashcards") if isinstance(parsed.get("flashcards"), list) else []
+        if strict_text_only and batch:
+            before = len(batch)
+            batch = _filter_ungrounded_cards(batch, chunk)
+            logger.debug(
+                "%s[text-chunk-mode] chunk %d/%d grounding %d->%d cards",
+                _gen_log_prefix(),
+                i + 1,
+                n,
+                before,
+                len(batch),
+            )
+        merged.extend(batch)
+    deduped = _dedupe_flashcards_preserve_order(merged)
+    cap = min(150, max(num_cards + 15, num_cards * 3))
+    final_cards = deduped[:cap]
+    logger.debug(
+        "%s[text-chunk-mode] merge merged=%d deduped=%d capped=%d",
+        _gen_log_prefix(),
+        len(merged),
+        len(deduped),
+        len(final_cards),
+    )
+    return {"flashcards": final_cards}
+
+
 def _compute_safe_card_count(
     requested: int, topic: str, retry_attempt: int = 0
 ) -> tuple[int, int]:
@@ -3118,10 +3592,40 @@ def _sync_prepare_generated_cards(
     payload: GenerateFlashcardsRequest,
     deck_id_str: str,
     text_input: Optional[str],
-) -> list:
+    routing_source_type: Optional[str] = None,
+) -> tuple[list, dict[str, Any]]:
     """LLM + card shaping (sync). Runs in a worker thread so the API event loop stays responsive."""
+    llm_prep_stats_arm(True)
+    llm_prep_stats_reset()
+    lifecycle_meta: dict[str, Any] = {
+        "chunked_mode": False,
+        "chunk_count": 1,
+        "used_chunked_text_generation": False,
+        "provider_route": "groq_first",
+        "route_reason": "default",
+        "cards_requested": 0,
+    }
+    try:
+        return _sync_prepare_generated_cards_inner(
+            payload,
+            deck_id_str,
+            text_input,
+            routing_source_type,
+            lifecycle_meta,
+        )
+    finally:
+        llm_prep_stats_arm(False)
+
+
+def _sync_prepare_generated_cards_inner(
+    payload: GenerateFlashcardsRequest,
+    deck_id_str: str,
+    text_input: Optional[str],
+    routing_source_type: Optional[str],
+    lifecycle_meta: dict[str, Any],
+) -> tuple[list, dict[str, Any]]:
     lang_hint = (payload.language or "").strip().lower()[:2] or None
-    
+
     requested_cards = max(1, min(payload.num_cards or 10, 50))
     topic_for_estimate = (payload.topic or "") or (
         (text_input[:200] + "...") if text_input else ""
@@ -3129,6 +3633,7 @@ def _sync_prepare_generated_cards(
     
     used_simple_mode = False
     for attempt in range(3):
+        used_chunked_text_generation = False
         if attempt == 1:
             requested_cards = max(3, requested_cards - 2)
         elif attempt == 2:
@@ -3143,35 +3648,109 @@ def _sync_prepare_generated_cards(
         elif text_input is not None and attempt == 0:
             # First attempt: YouTube transcript / pasted text used default 2048 → frequent Gemini MAX_TOKENS + bad JSON.
             retry_max_tokens = _max_tokens_for_text_mode_cards(base_default, num_cards)
-        logger.info(
-            "Requested cards: %d, Safe max cards: %d, Final cards used: %d (attempt %d)%s",
+        logger.debug(
+            "%sattempt=%d requested_cards=%d safe_max=%d num_cards=%d%s",
+            _gen_log_prefix(),
+            attempt + 1,
             requested_cards,
             safe_max,
             num_cards,
-            attempt + 1,
-            f", max_tokens={retry_max_tokens}" if retry_max_tokens else "",
+            f" max_tokens={retry_max_tokens}" if retry_max_tokens else "",
         )
+    
+        response_text: Optional[str] = None
+        text_mode_prebuilt: Optional[dict] = None
     
         if text_input:
             # Text mode: generate only from pasted text. Topic optional (e.g. deck name) for example detection.
-            try:
-                response_text = _generate_flashcards_from_text(
-                    text_input,
-                    lang_hint,
-                    num_cards=num_cards,
-                    strict_text_only=payload.strict_text_only,
-                    include_background=payload.include_background,
-                    topic=payload.topic,
-                    skip_cache=attempt > 0,
-                    max_tokens_override=retry_max_tokens,
+            chunk_candidates = (
+                _split_text_into_natural_chunks(text_input)
+                if _should_use_chunked_text_generation(text_input)
+                else []
+            )
+            use_chunked = attempt == 0 and len(chunk_candidates) > 1
+            text_len = len(text_input)
+            chunk_count = len(chunk_candidates) if chunk_candidates else 1
+            text_llm_routing = {
+                "chunked_mode": use_chunked,
+                "text_len": text_len,
+                "source_type": routing_source_type,
+                "num_cards": num_cards,
+            }
+            _rb, _route_l, _route_r = apply_provider_routing(_get_provider_order(), text_llm_routing)
+            lifecycle_meta["chunked_mode"] = use_chunked
+            lifecycle_meta["chunk_count"] = chunk_count
+            lifecycle_meta["provider_route"] = _route_l
+            lifecycle_meta["route_reason"] = _route_r
+            lifecycle_meta["cards_requested"] = num_cards
+            logger.debug(
+                "%sllm_chain_text mode fallback_chain=%s",
+                _gen_log_prefix(),
+                ",".join(_rb),
+            )
+            if attempt == 0:
+                logger.info(
+                    "%sgen_mode text_len=%d chunked_mode=%s chunk_count=%d cards_requested=%d "
+                    "provider_route=%s route_reason=%s",
+                    _gen_log_prefix(),
+                    text_len,
+                    use_chunked,
+                    chunk_count,
+                    num_cards,
+                    _route_l,
+                    _route_r,
                 )
-            except ValueError as e:
-                raise HTTPException(status_code=503, detail=str(e))
+            if use_chunked:
+                try:
+                    text_mode_prebuilt = _run_chunked_text_flashcard_generation(
+                        text_input,
+                        lang_hint,
+                        num_cards=num_cards,
+                        strict_text_only=payload.strict_text_only,
+                        include_background=payload.include_background,
+                        topic=payload.topic,
+                        skip_cache=attempt > 0,
+                        base_default=base_default,
+                        llm_routing=text_llm_routing,
+                    )
+                    used_chunked_text_generation = True
+                except ValueError as e:
+                    raise HTTPException(status_code=503, detail=str(e))
+            else:
+                try:
+                    response_text = _generate_flashcards_from_text(
+                        text_input,
+                        lang_hint,
+                        num_cards=num_cards,
+                        strict_text_only=payload.strict_text_only,
+                        include_background=payload.include_background,
+                        topic=payload.topic,
+                        skip_cache=attempt > 0,
+                        max_tokens_override=retry_max_tokens,
+                        llm_routing=text_llm_routing,
+                    )
+                except ValueError as e:
+                    raise HTTPException(status_code=503, detail=str(e))
         else:
             # Topic mode
             topic_str = payload.topic or ""
             is_vocab = is_vocabulary_topic(topic_str)
-    
+            _tb, _route_l, _route_r = apply_provider_routing(_get_provider_order(), None)
+            lifecycle_meta["chunked_mode"] = False
+            lifecycle_meta["chunk_count"] = 1
+            lifecycle_meta["provider_route"] = _route_l
+            lifecycle_meta["route_reason"] = _route_r
+            lifecycle_meta["cards_requested"] = num_cards
+            if attempt == 0:
+                logger.info(
+                    "%sgen_mode text_len=0 chunked_mode=false chunk_count=1 cards_requested=%d "
+                    "provider_route=%s route_reason=%s",
+                    _gen_log_prefix(),
+                    num_cards,
+                    _route_l,
+                    _route_r,
+                )
+
             # Formula topics: one plaintext card per call (no JSON dependency)
             if _is_formula_topic(topic_str):
                 seen_questions: set[tuple[str, str]] = set()
@@ -3626,7 +4205,10 @@ def _sync_prepare_generated_cards(
                         raise HTTPException(status_code=503, detail=str(e))
     
         try:
-            parsed_json = _extract_json(response_text)
+            if text_mode_prebuilt is not None:
+                parsed_json = text_mode_prebuilt
+            else:
+                parsed_json = _extract_json(response_text)
         except ValueError as e:
             if "truncated" in str(e).lower() and attempt < 2:
                 logger.warning(
@@ -3658,9 +4240,13 @@ def _sync_prepare_generated_cards(
         break
     
     cards: list = parsed_json["flashcards"]
-    logger.info("Parsed cards preview: %s", cards[:2])
+    logger.debug("%sParsed cards preview: %s", _gen_log_prefix(), cards[:2])
     if text_input:
-        logger.info("[text-mode] Stage 1 - candidate cards after generation: %d", len(cards))
+        logger.debug(
+            "%s[text-mode] candidate_cards_after_generation=%d",
+            _gen_log_prefix(),
+            len(cards),
+        )
     
     # RULE: If at least 1 valid card exists → SUCCESS. Only 503 when ZERO valid cards.
     # Never fail for len(cards) < num_cards (partial results are accepted).
@@ -3675,24 +4261,45 @@ def _sync_prepare_generated_cards(
     if is_persian_mapping_mode:
         logger.info("Persian mapping mode detected — skipping transcript filters")
     
-    # Grounding check: when text mode and strict_text_only, filter out unsupported cards
-    if text_input and payload.strict_text_only and cards and not is_persian_mapping_mode:
+    # Grounding check: when text mode and strict_text_only, filter out unsupported cards (skipped when already done per chunk)
+    if (
+        text_input
+        and payload.strict_text_only
+        and cards
+        and not is_persian_mapping_mode
+        and not used_chunked_text_generation
+    ):
         before_ground = len(cards)
         cards = _filter_ungrounded_cards(cards, text_input)
-        logger.info("[text-mode] Stage 2 - after grounding: %d kept (removed %d)", len(cards), before_ground - len(cards))
+        logger.debug(
+            "%s[text-mode] after_grounding kept=%d removed=%d",
+            _gen_log_prefix(),
+            len(cards),
+            before_ground - len(cards),
+        )
     
     # Low-value filter: when text mode, remove transcript housekeeping cards
     if text_input and cards and not is_persian_mapping_mode:
         before_lv = len(cards)
         cards = _filter_low_value_transcript_cards(cards)
-        logger.info("[text-mode] Stage 3 - after low-value filter: %d kept (removed %d)", len(cards), before_lv - len(cards))
+        logger.debug(
+            "%s[text-mode] after_low_value kept=%d removed=%d",
+            _gen_log_prefix(),
+            len(cards),
+            before_lv - len(cards),
+        )
     
     # Generic card filter: limit shallow "What is X?" cards in transcript mode
     if text_input and cards and not is_persian_mapping_mode:
         before_gen = len(cards)
         cards = _filter_generic_transcript_cards(cards, text_input, max_generic=2)
         if len(cards) < before_gen:
-            logger.info("[text-mode] Stage 3b - after generic filter: %d kept (removed %d)", len(cards), before_gen - len(cards))
+            logger.debug(
+                "%s[text-mode] after_generic_filter kept=%d removed=%d",
+                _gen_log_prefix(),
+                len(cards),
+                before_gen - len(cards),
+            )
     
     # Example requirement: only when USER explicitly requested via topic (not inferred from transcript text)
     wants_examples = _topic_wants_examples(topic_str)
@@ -3700,7 +4307,12 @@ def _sync_prepare_generated_cards(
         before_ex = len(cards)
         cards = [c for c in cards if "Example:" in (c.get("answer_short") or "")]
         if text_input:
-            logger.info("[text-mode] after example filter: %d kept (removed %d)", len(cards), before_ex - len(cards))
+            logger.debug(
+                "%s[text-mode] after_example_filter kept=%d removed=%d",
+                _gen_log_prefix(),
+                len(cards),
+                before_ex - len(cards),
+            )
         if len(cards) == 0:
             raise HTTPException(
                 status_code=503,
@@ -3713,14 +4325,29 @@ def _sync_prepare_generated_cards(
     if text_input and cards and not is_persian_mapping_mode:
         before_overlap = len(cards)
         cards = _reduce_transcript_overlaps(cards)
-        logger.info("[text-mode] Stage 4 - after overlap reduction: %d kept (removed %d)", len(cards), before_overlap - len(cards))
+        logger.debug(
+            "%s[text-mode] after_overlap kept=%d removed=%d",
+            _gen_log_prefix(),
+            len(cards),
+            before_overlap - len(cards),
+        )
         transcript_cap = max(requested_cards, 10)
         before_cap = len(cards)
         cards = _select_best_transcript_cards(cards, max_cards=transcript_cap)
         if before_cap > transcript_cap:
-            logger.info("[text-mode] Stage 5 - capped at %d (had %d)", transcript_cap, before_cap)
+            logger.debug(
+                "%s[text-mode] capped_at=%d had=%d",
+                _gen_log_prefix(),
+                transcript_cap,
+                before_cap,
+            )
 
-    return cards
+    lifecycle_meta["used_chunked_text_generation"] = bool(
+        text_input and used_chunked_text_generation
+    )
+    lifecycle_meta["cards_requested"] = num_cards
+    lifecycle_meta["llm_prep"] = llm_prep_stats_snapshot()
+    return cards, lifecycle_meta
 
 
 @router.post("", response_model=GenerateFlashcardsResponse)
@@ -3776,13 +4403,19 @@ async def generate_flashcards(
     deck.generation_status = GenerationStatus.generating.value
     await db.flush()
 
+    routing_source_type = deck.source_type.value if deck.source_type else None
+
+    job_id = secrets.token_hex(6)
+    job_tok = generation_job_id_ctx.set(job_id)
     _gen_log_token = generation_log_deck_id.set(deck_id_str)
     try:
-        cards = await asyncio.to_thread(
+        logger.info("%sgen_source %s", _gen_log_prefix(), _format_gen_source_kv(deck, text_input))
+        cards, lifecycle_meta = await asyncio.to_thread(
             _sync_prepare_generated_cards,
             payload,
             deck_id_str,
             text_input,
+            routing_source_type,
         )
 
         topic_str = (payload.topic or "").strip()
@@ -3817,7 +4450,7 @@ async def generate_flashcards(
                 )
                 continue
 
-            logger.info("Processing card: %s", question[:100])
+            logger.debug("%sprocessing_card q_preview=%s", _gen_log_prefix(), question[:100])
 
             norm = _normalize_question(question)
             answer = (answer_short or "").strip().lower()
@@ -3872,31 +4505,82 @@ async def generate_flashcards(
 
         # RULE: Only 503 when ZERO valid cards. created >= 1 → SUCCESS.
         if created == 0:
-            logger.error("All generated cards were filtered out or invalid")
+            prep = lifecycle_meta.get("llm_prep") or {}
+            logger.error(
+                "%sgen_outcome success=false created=0 reason=cards_filtered_or_invalid "
+                "final_provider=%s llm_fallback=%s chunked_mode=%s chunk_count=%s",
+                _gen_log_prefix(),
+                prep.get("last_provider"),
+                bool(prep.get("any_fallback")),
+                lifecycle_meta.get("chunked_mode"),
+                lifecycle_meta.get("chunk_count"),
+            )
             raise HTTPException(
                 status_code=503,
                 detail="Generated cards were invalid or duplicates"
             )
 
+        lang_for_summary = (payload.language or "").strip().lower()[:2] or None
+        summary_skip = _source_summary_skip_reason(deck, text_input)
+        if summary_skip:
+            logger.info("%sgen_summary status=skipped reason=%s", _gen_log_prefix(), summary_skip)
+        else:
+            try:
+                summary = await asyncio.to_thread(
+                    _sync_generate_source_summary,
+                    deck,
+                    text_input,
+                    lang_for_summary,
+                )
+                if summary:
+                    deck.source_summary = summary
+                    logger.info("%sgen_summary status=generated chars=%d", _gen_log_prefix(), len(summary))
+                else:
+                    logger.warning("%sgen_summary status=failed reason=empty_response", _gen_log_prefix())
+            except Exception as e:
+                logger.warning(
+                    "%sgen_summary status=failed reason=%s",
+                    _gen_log_prefix(),
+                    type(e).__name__,
+                )
+
         deck.generation_status = GenerationStatus.completed.value
         await db.flush()
 
+        prep = lifecycle_meta.get("llm_prep") or {}
+        logger.info(
+            "%sgen_outcome success=true created=%d final_provider=%s llm_fallback=%s "
+            "chunked_mode=%s chunk_count=%d used_chunked_pipeline=%s",
+            _gen_log_prefix(),
+            created,
+            prep.get("last_provider") or "unknown",
+            bool(prep.get("any_fallback")),
+            lifecycle_meta.get("chunked_mode"),
+            lifecycle_meta.get("chunk_count"),
+            lifecycle_meta.get("used_chunked_text_generation"),
+        )
         if text_input:
-            logger.info(
-                "[text-mode] Stage 6 - final created: %d (skipped batch_dup=%d, db_dup=%d)",
+            logger.debug(
+                "%s[text-mode] final_created=%d skipped_batch_dup=%d skipped_db_dup=%d",
+                _gen_log_prefix(),
                 created,
                 skipped_batch_dup,
                 skipped_db_dup,
             )
-        logger.info("Inserted %d cards", created)
+        logger.debug("%sinserted_cards=%d", _gen_log_prefix(), created)
         return GenerateFlashcardsResponse(created=created)
 
-    except HTTPException:
+    except HTTPException as e:
+        logger.warning(
+            "%sgen_outcome success=false kind=http_exception status=%s",
+            _gen_log_prefix(),
+            getattr(e, "status_code", "?"),
+        )
         deck.generation_status = GenerationStatus.failed.value
         await db.flush()
         raise
     except RateLimitError as e:
-        logger.warning("Generation rate-limited: %s", e)
+        logger.warning("%sgen_outcome success=false kind=rate_limit err=%s", _gen_log_prefix(), e)
         deck.generation_status = GenerationStatus.failed.value
         await db.flush()
         raise HTTPException(
@@ -3904,6 +4588,7 @@ async def generate_flashcards(
             detail="The AI provider is temporarily rate-limited. Please wait a few seconds and try again.",
         )
     except RuntimeError as e:
+        logger.warning("%sgen_outcome success=false kind=runtime_err err=%s", _gen_log_prefix(), e)
         deck.generation_status = GenerationStatus.failed.value
         await db.flush()
         if "all llm providers failed" in str(e).lower():
@@ -3912,9 +4597,11 @@ async def generate_flashcards(
                 detail="The AI provider is temporarily unavailable. Please try again in a moment.",
             )
         raise
-    except Exception:
+    except Exception as e:
+        logger.warning("%sgen_outcome success=false kind=%s", _gen_log_prefix(), type(e).__name__)
         deck.generation_status = GenerationStatus.failed.value
         await db.flush()
         raise
     finally:
         generation_log_deck_id.reset(_gen_log_token)
+        generation_job_id_ctx.reset(job_tok)

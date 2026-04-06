@@ -23,6 +23,7 @@ import { GENERATION_TEXT_MAX_CHARS } from "@/lib/generation-text";
 import { markDeckBackgroundGenerationNavigation } from "@/lib/deck-pending-generation";
 import { Upload } from "lucide-react";
 import PageContainer from "@/components/layout/page-container";
+import { LongSourceTextarea } from "@/components/long-source-textarea";
 
 type GenerationMode = "topic" | "text" | "youtube" | "url" | "import";
 
@@ -644,60 +645,53 @@ function CreateDeckForm() {
                   <label htmlFor="text" className="text-sm font-medium">
                     Text
                   </label>
-                  <textarea
+                  <LongSourceTextarea
                     id="text"
-                    placeholder={
-                      ytTextFallback
-                        ? "Paste transcript…"
-                        : "Notes, article text, etc."
-                    }
                     value={text}
                     onChange={(e) => {
                       setText(e.target.value);
                       if (textUploadStatus) setTextUploadStatus(null);
                     }}
+                    placeholder={
+                      ytTextFallback
+                        ? "Paste transcript…"
+                        : "Notes, article text, etc."
+                    }
                     maxLength={GENERATION_TEXT_MAX_CHARS}
                     disabled={loading}
-                    className="w-full min-h-[140px] max-mobile:min-h-[120px] rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                  />
-                  <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
-                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                      <input
-                        id="create-deck-text-upload"
-                        type="file"
-                        accept=".txt,text/plain"
-                        onChange={handleTextTabFileUpload}
-                        disabled={loading}
-                        className="sr-only"
-                      />
-                      <label
-                        htmlFor="create-deck-text-upload"
-                        className={`inline-flex items-center gap-1 underline-offset-2 hover:underline ${loading ? "pointer-events-none opacity-50" : "cursor-pointer"}`}
-                      >
-                        <Upload className="size-3.5 shrink-0" />
-                        .txt
-                      </label>
-                      {textUploadStatus && (
-                        <span
-                          className={
-                            textUploadStatus.startsWith("Only ") ||
-                            textUploadStatus.startsWith("That ") ||
-                            textUploadStatus.startsWith("Could ")
-                              ? "text-destructive"
-                              : ""
-                          }
+                    auxiliaryRow={
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                        <input
+                          id="create-deck-text-upload"
+                          type="file"
+                          accept=".txt,text/plain"
+                          onChange={handleTextTabFileUpload}
+                          disabled={loading}
+                          className="sr-only"
+                        />
+                        <label
+                          htmlFor="create-deck-text-upload"
+                          className={`inline-flex items-center gap-1 underline-offset-2 hover:underline ${loading ? "pointer-events-none opacity-50" : "cursor-pointer"}`}
                         >
-                          {textUploadStatus}
-                        </span>
-                      )}
-                    </div>
-                    <span>
-                      {text.length.toLocaleString()}
-                      {text.length >= GENERATION_TEXT_MAX_CHARS && (
-                        <span className="ml-1 text-destructive"> · limit</span>
-                      )}
-                    </span>
-                  </div>
+                          <Upload className="size-3.5 shrink-0" />
+                          .txt
+                        </label>
+                        {textUploadStatus && (
+                          <span
+                            className={
+                              textUploadStatus.startsWith("Only ") ||
+                              textUploadStatus.startsWith("That ") ||
+                              textUploadStatus.startsWith("Could ")
+                                ? "text-destructive"
+                                : ""
+                            }
+                          >
+                            {textUploadStatus}
+                          </span>
+                        )}
+                      </div>
+                    }
+                  />
                 </div>
                 <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
                   <span className="shrink-0">Cards</span>

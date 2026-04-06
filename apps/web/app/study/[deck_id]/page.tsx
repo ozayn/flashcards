@@ -9,6 +9,12 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { Flashcard } from "@/components/study/Flashcard";
 import FormattedText from "@/components/FormattedText";
 import { getFlashcards, getUserSettings, updateUserSettings, submitReview, deleteDeckReviews, type UserSettings } from "@/lib/api";
+import {
+  clampCardIndex,
+  clearDeckStudyResume,
+  readDeckStudyResume,
+  writeDeckStudyResume,
+} from "@/lib/deck-study-resume";
 import { getStoredUserId } from "@/components/user-selector";
 
 interface StudyPageProps {
@@ -49,6 +55,7 @@ export default function StudyPage({ params }: StudyPageProps) {
     },
     [router, pathname, searchParams],
   );
+
   const [flashcards, setFlashcards] = useState<StudyFlashcard[]>([]);
   const [loading, setLoading] = useState(true);
   const [noUserForStudy, setNoUserForStudy] = useState(false);
@@ -67,6 +74,42 @@ export default function StudyPage({ params }: StudyPageProps) {
   const [resetLoading, setResetLoading] = useState(false);
   const touchStartX = useRef(0);
   const studyMenuRef = useRef<HTMLDivElement>(null);
+  const loadGenRef = useRef(0);
+  const restoreAppliedForLoadGenRef = useRef<number | null>(null);
+  /** Set when the user switches Read/Cards/Quiz so we restore position after refetch (localStorage may still list the previous mode). */
+  const modeSwitchSnapshotRef = useRef<{ index: number; flipped: boolean } | null>(null);
+  const cardIndexRef = useRef(0);
+  const showAnswerRef = useRef(false);
+  const [resumeReady, setResumeReady] = useState(false);
+  const [resumeHint, setResumeHint] = useState(false);
+
+  useEffect(() => {
+    cardIndexRef.current = currentCardIndex;
+  }, [currentCardIndex]);
+
+  useEffect(() => {
+    showAnswerRef.current = showAnswer;
+  }, [showAnswer]);
+
+  const changeDeckView = useCallback(
+    (next: DeckView, fromUser: boolean) => {
+      if (fromUser) {
+        modeSwitchSnapshotRef.current = {
+          index: cardIndexRef.current,
+          flipped: showAnswerRef.current,
+        };
+      }
+      setDeckView(next);
+    },
+    [setDeckView],
+  );
+
+  const startFromBeginning = useCallback(() => {
+    clearDeckStudyResume(params.deck_id);
+    setCurrentCardIndex(0);
+    setShowAnswer(false);
+    setResumeHint(false);
+  }, [params.deck_id]);
 
   const isDev = process.env.NODE_ENV === "development";
 
@@ -77,6 +120,7 @@ export default function StudyPage({ params }: StudyPageProps) {
     try {
       await deleteDeckReviews(params.deck_id, userId);
       setResetConfirmOpen(false);
+      clearDeckStudyResume(params.deck_id);
       setCurrentCardIndex(0);
       setShowAnswer(false);
       setSessionComplete(false);
@@ -140,16 +184,123 @@ export default function StudyPage({ params }: StudyPageProps) {
   }, []);
 
   useEffect(() => {
-    setCurrentCardIndex(0);
-    setShowAnswer(false);
+    loadGenRef.current += 1;
+    restoreAppliedForLoadGenRef.current = null;
+    setResumeReady(false);
+    setResumeHint(false);
     setSessionComplete(false);
-  }, [params.deck_id]);
+  }, [params.deck_id, deckView]);
 
   useEffect(() => {
     setCurrentCardIndex(0);
     setShowAnswer(false);
-    setSessionComplete(false);
-  }, [deckView]);
+    cardIndexRef.current = 0;
+    showAnswerRef.current = false;
+    modeSwitchSnapshotRef.current = null;
+  }, [params.deck_id]);
+
+  useEffect(() => {
+    const saved = readDeckStudyResume(params.deck_id);
+    if (!saved?.mode) return;
+    if (saved.mode === "quiz" && !getStoredUserId()) return;
+    const current = parseDeckView(searchParams);
+    if (saved.mode !== current) {
+      setDeckView(saved.mode);
+    }
+  }, [params.deck_id, searchParams, setDeckView]);
+
+  useEffect(() => {
+    if (loading) return;
+
+    if (noUserForStudy) {
+      setResumeReady(true);
+      return;
+    }
+
+    if (flashcards.length === 0) {
+      setResumeReady(true);
+      return;
+    }
+
+    const g = loadGenRef.current;
+    if (restoreAppliedForLoadGenRef.current === g) {
+      setResumeReady(true);
+      return;
+    }
+    restoreAppliedForLoadGenRef.current = g;
+
+    const snapshot = modeSwitchSnapshotRef.current;
+    if (snapshot) {
+      modeSwitchSnapshotRef.current = null;
+      const idx = clampCardIndex(snapshot.index, flashcards.length);
+      setCurrentCardIndex(idx);
+      if (deckView === "read") {
+        setShowAnswer(false);
+      } else {
+        setShowAnswer(snapshot.flipped);
+      }
+      setResumeReady(true);
+      return;
+    }
+
+    const saved = readDeckStudyResume(params.deck_id);
+    let effectiveMode: DeckView | undefined = saved?.mode;
+    if (effectiveMode === "quiz" && !getStoredUserId()) {
+      effectiveMode = undefined;
+    }
+
+    if (saved && effectiveMode === deckView) {
+      const idx = clampCardIndex(saved.index, flashcards.length);
+      setCurrentCardIndex(idx);
+      if (deckView === "cards" || deckView === "quiz") {
+        setShowAnswer(!!saved.flipped);
+      } else {
+        setShowAnswer(false);
+      }
+      if (idx > 0 || !!saved.flipped) {
+        setResumeHint(true);
+      }
+    } else {
+      const idx = clampCardIndex(cardIndexRef.current, flashcards.length);
+      setCurrentCardIndex(idx);
+      if (deckView === "read") {
+        setShowAnswer(false);
+      } else {
+        setShowAnswer(showAnswerRef.current);
+      }
+    }
+
+    setResumeReady(true);
+  }, [loading, flashcards.length, deckView, params.deck_id, noUserForStudy]);
+
+  useEffect(() => {
+    if (!resumeHint) return;
+    const t = window.setTimeout(() => setResumeHint(false), 4500);
+    return () => window.clearTimeout(t);
+  }, [resumeHint]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!resumeReady) return;
+    if (loading || flashcards.length === 0 || noUserForStudy || sessionComplete) return;
+
+    writeDeckStudyResume(params.deck_id, {
+      index: currentCardIndex,
+      mode: deckView,
+      flipped: (deckView === "cards" || deckView === "quiz") && showAnswer,
+      cardCount: flashcards.length,
+    });
+  }, [
+    resumeReady,
+    params.deck_id,
+    deckView,
+    currentCardIndex,
+    showAnswer,
+    flashcards.length,
+    loading,
+    noUserForStudy,
+    sessionComplete,
+  ]);
 
   useEffect(() => {
     if (loading || flashcards.length === 0 || sessionComplete) return;
@@ -298,7 +449,7 @@ export default function StudyPage({ params }: StudyPageProps) {
             >
               Choose user
             </Link>
-            <Button variant="outline" onClick={() => setDeckView("cards")} className="w-fit">
+            <Button variant="outline" onClick={() => changeDeckView("cards", true)} className="w-fit">
               Browse all cards
             </Button>
           </div>
@@ -322,7 +473,7 @@ export default function StudyPage({ params }: StudyPageProps) {
               <p className="text-muted-foreground text-center">
                 You&apos;re all caught up! No cards are due for quiz.
               </p>
-              <Button variant="outline" onClick={() => setDeckView("cards")} className="w-fit">
+              <Button variant="outline" onClick={() => changeDeckView("cards", true)} className="w-fit">
                 Browse all cards
               </Button>
             </>
@@ -442,7 +593,7 @@ export default function StudyPage({ params }: StudyPageProps) {
           </div>
         </div>
       )}
-      <header className="shrink-0 w-full border-b border-border/40 bg-background/90 backdrop-blur-sm">
+      <header className="relative z-30 shrink-0 w-full border-b border-border/40 bg-background/90 backdrop-blur-sm">
         <div className="mx-auto max-w-4xl px-3 py-2 sm:px-6 sm:py-2.5 md:px-8 landscape-mobile:py-1.5 landscape-mobile:pl-2 landscape-mobile:pr-2">
           <div className="flex items-center gap-2 sm:gap-3">
             <Link
@@ -451,27 +602,41 @@ export default function StudyPage({ params }: StudyPageProps) {
             >
               ← Back
             </Link>
-            <div
-              className="grid min-w-0 flex-1 grid-cols-3 gap-0.5 rounded-lg border border-border/50 bg-muted/20 p-0.5 sm:mx-auto sm:flex sm:max-w-[min(100%,19rem)] sm:flex-initial"
-              role="tablist"
-              aria-label="Study mode"
-            >
-              {(["read", "cards", "quiz"] as const).map((v) => (
+            <div className="flex min-w-0 flex-1 flex-col items-stretch gap-0.5 sm:mx-auto sm:max-w-[min(100%,19rem)] sm:flex-initial">
+              <div
+                className="grid min-w-0 grid-cols-3 gap-0.5 rounded-lg border border-border/50 bg-muted/20 p-0.5 sm:flex sm:flex-1"
+                role="tablist"
+                aria-label="Study mode"
+              >
+                {(["read", "cards", "quiz"] as const).map((v) => (
+                  <button
+                    key={v}
+                    type="button"
+                    role="tab"
+                    aria-selected={deckView === v}
+                    onClick={() => changeDeckView(v, true)}
+                    className={`rounded-md px-2 py-1.5 text-center text-[11px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:min-h-8 sm:flex-1 sm:px-2 sm:text-xs ${
+                      deckView === v
+                        ? "bg-background text-foreground shadow-sm ring-1 ring-border/50"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    {v === "read" ? "Read" : v === "cards" ? "Cards" : "Quiz"}
+                  </button>
+                ))}
+              </div>
+              <div className="flex min-h-5 flex-wrap items-center justify-center gap-x-3 gap-y-0.5">
+                {resumeHint && (
+                  <span className="text-[11px] text-muted-foreground">Resumed where you left off</span>
+                )}
                 <button
-                  key={v}
                   type="button"
-                  role="tab"
-                  aria-selected={deckView === v}
-                  onClick={() => setDeckView(v)}
-                  className={`rounded-md px-2 py-1.5 text-center text-[11px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:min-h-8 sm:flex-1 sm:px-2 sm:text-xs ${
-                    deckView === v
-                      ? "bg-background text-foreground shadow-sm ring-1 ring-border/50"
-                      : "text-muted-foreground hover:text-foreground"
-                  }`}
+                  onClick={startFromBeginning}
+                  className="text-[11px] text-muted-foreground/90 underline-offset-2 hover:text-foreground hover:underline"
                 >
-                  {v === "read" ? "Read" : v === "cards" ? "Cards" : "Quiz"}
+                  Start from beginning
                 </button>
-              ))}
+              </div>
             </div>
             <div ref={studyMenuRef} className="relative shrink-0">
               <Button
@@ -486,7 +651,7 @@ export default function StudyPage({ params }: StudyPageProps) {
                 <MoreHorizontal className="size-4 landscape-mobile:size-3.5" />
               </Button>
               {studyMenuOpen && (
-                <div className="absolute right-0 top-full z-50 mt-1 w-52 rounded-lg border border-border bg-popover p-2 shadow-lg">
+                <div className="absolute right-0 top-full z-[60] mt-1 w-52 rounded-lg border border-border bg-popover p-2 shadow-lg">
                   <div className="flex items-center justify-between gap-2 px-1 py-1">
                     <span className="text-xs text-muted-foreground">Theme</span>
                     <ThemeToggle className="size-8 shrink-0 [&_svg]:size-4" />
@@ -544,7 +709,7 @@ export default function StudyPage({ params }: StudyPageProps) {
       {deckView === "read" ? (
         <div
           ref={readScrollRef}
-          className="min-h-0 w-full flex-1 touch-pan-y overflow-y-auto landscape-mobile:min-h-0"
+          className="relative z-0 min-h-0 w-full flex-1 touch-pan-y overflow-y-auto landscape-mobile:min-h-0"
         >
           <div className="mx-auto w-full max-w-2xl px-4 py-5 sm:max-w-3xl sm:px-6 sm:py-7 md:px-8 landscape-mobile:px-3 landscape-mobile:py-3">
             <article dir="auto" className="space-y-4 sm:space-y-6 landscape-mobile:space-y-3">
@@ -600,7 +765,7 @@ export default function StudyPage({ params }: StudyPageProps) {
           </div>
         </div>
       ) : (
-        <div className="flex min-h-0 w-full min-w-0 flex-1 flex-col landscape-mobile:overflow-hidden">
+        <div className="relative z-0 flex min-h-0 w-full min-w-0 flex-1 flex-col landscape-mobile:overflow-hidden">
           <div className="mx-auto flex w-full max-w-4xl min-h-0 flex-1 flex-col px-3 pt-1 sm:px-6 sm:pt-2 md:px-8 landscape-mobile:px-2 landscape-mobile:pt-0">
             <div className="flex min-h-[11rem] flex-1 flex-col justify-center landscape-mobile:min-h-0">
               <div
