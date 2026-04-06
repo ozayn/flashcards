@@ -132,17 +132,29 @@ def is_language_learning_request(topic: str) -> bool:
     return is_translation_vocab_topic(topic) or is_loanword_vocab_topic(topic)
 
 
+def _resolve_monolingual_output_code(topic: str, text: str, language_hint: str | None) -> str:
+    """ISO 639-1 for flashcard output when not a translation/vocab-special topic."""
+    text_str = (text or "").strip()
+    topic_str = (topic or "").strip()
+    source = text_str if len(text_str) > 20 else (topic_str or text_str)
+    lang = (language_hint or (detect_language(source) if source else None)) or "en"
+    return lang.lower()[:2]
+
+
+def resolve_generation_language_code(topic: str, text: str, language_hint: str | None) -> str:
+    """ISO 639-1 (or 'bilingual') matching build_language_rule — for logging."""
+    if is_language_learning_request(topic or ""):
+        return "bilingual"
+    return _resolve_monolingual_output_code(topic, text, language_hint)
+
+
 def build_language_rule(topic: str, text: str, language_hint: str | None) -> str:
     """Build language rule for TOP of prompt. Single source of truth for output language.
     Place immediately after JSON_HEADER. Language detection: text (>20 chars) over topic."""
     if is_language_learning_request(topic or ""):
         return ""  # Bilingual allowed; vocab-specific instructions handle it
-    text_str = (text or "").strip()
-    topic_str = (topic or "").strip()
-    source = text_str if len(text_str) > 20 else (topic_str or text_str)
-    lang = (language_hint or (detect_language(source) if source else None)) or "en"
-    lang = lang.lower()[:2]
-    lang_name = LANG_NAMES.get(lang, lang)
+    code = _resolve_monolingual_output_code(topic, text, language_hint)
+    lang_name = LANG_NAMES.get(code, code)
     return f"""
 LANGUAGE REQUIREMENT (HIGHEST PRIORITY):
 - ALL output (questions AND answers) MUST be in {lang_name}

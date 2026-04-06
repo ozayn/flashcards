@@ -39,6 +39,7 @@ from youtube_transcript_api import (
 from youtube_transcript_api.proxies import GenericProxyConfig, WebshareProxyConfig
 
 from app.core.auth import require_admin_key
+from app.core.gen_lifecycle_audit import generation_lifecycle_audit
 from app.core.proxy_env import parse_generic_proxy_url_list
 
 logger = logging.getLogger(__name__)
@@ -855,8 +856,12 @@ def _transcript_language_fetch_order(available: list[tuple[str, str, bool]]) -> 
     """
     Priority for youtube_transcript_api find_transcript():
     1) YOUTUBE_TRANSCRIPT_LANGUAGES (comma-separated, leftmost highest)
-    2) Common English codes if present
-    3) Any remaining languages YouTube returned (e.g. fa auto-generated only)
+    2) Remaining languages in YouTube list order (manual tracks tend to appear first).
+
+    We intentionally do NOT prefer English ahead of other tracks: many videos have
+    auto-translated English captions while the spoken language is something else;
+    picking English first caused "Original language" generation to use English text.
+    To prefer English, set YOUTUBE_TRANSCRIPT_LANGUAGES=en (or en,en-US).
     """
     codes = [t[0] for t in available]
     result: list[str] = []
@@ -877,8 +882,6 @@ def _transcript_language_fetch_order(available: list[tuple[str, str, bool]]) -> 
         for part in env_raw.split(","):
             if part.strip():
                 try_add_preference(part.strip())
-    for en in ("en", "en-US", "en-GB"):
-        try_add_preference(en)
     for c in codes:
         if c not in used:
             used.add(c)
@@ -1203,6 +1206,15 @@ async def get_transcript(payload: TranscriptRequest):
     except Exception:
         pass
 
+    picked_code = getattr(picked, "language_code", None) if picked else None
+    _raw_lang = picked_code or lang
+    response_language = str(_raw_lang).strip() if _raw_lang else None
+    picked_label = getattr(picked, "language", None) if picked else None
+    generation_lifecycle_audit(
+        f"yt_transcript_picked video_id={video_id} language_code={response_language or 'unknown'} "
+        f"language_label={picked_label!r}"
+    )
+
     if len(text.strip()) < 50:
         logger.warning(
             "[youtube] transcript video_id=%s outcome=too_short chars=%d watch_metadata_was_ok=%s",
@@ -1230,7 +1242,7 @@ async def get_transcript(payload: TranscriptRequest):
         title=title,
         transcript=text,
         segments=segments,
-        language=lang,
+        language=response_language,
         duration_seconds=duration_seconds,
         char_count=len(text),
     )

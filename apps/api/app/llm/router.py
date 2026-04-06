@@ -16,6 +16,7 @@ from app.core.gen_job_context import (
     llm_prep_stats_record_success,
 )
 from app.core.gen_job_context import generation_job_id as _generation_job_id_ctx
+from app.core.gen_lifecycle_audit import generation_lifecycle_audit
 from app.llm.cache import get_cached_response, save_cached_response
 from app.llm.provider_route import apply_provider_routing
 from app.llm.cost_tracker import log_llm_usage, log_usage_unavailable
@@ -913,6 +914,10 @@ def generate_completion(
             if cached is not None:
                 llm_prep_stats_record_success("cache", 0)
                 logger.info("%sllm_try provider=cache result=success", _life_prefix())
+                generation_lifecycle_audit(
+                    f"{_life_prefix().strip()} llm_try provider=cache result=success "
+                    f"note=cache_hit_skips_live_chain"
+                )
                 return cached
         except Exception as e:
             logger.warning("%sllm_cache_check_failed err=%s", _life_prefix(), e)
@@ -922,6 +927,8 @@ def generate_completion(
     base_order = _get_provider_order()
     order, route_label, route_reason = apply_provider_routing(base_order, llm_routing)
     chain_s = ",".join(order)
+    chain_providers = [p for p in order if p in _PROVIDER_FNS]
+    chain_first = chain_providers[0] if chain_providers else None
     logger.debug(
         "%sllm_route provider_route=%s route_reason=%s chain=%s",
         _life_prefix(),
@@ -929,8 +936,12 @@ def generate_completion(
         route_reason,
         chain_s,
     )
+    generation_lifecycle_audit(
+        f"{_life_prefix().strip()} llm_chain provider_route={route_label} route_reason={route_reason} "
+        f"chain={chain_s} first_provider={chain_first or 'none'}"
+    )
     last_error = None
-    chain_total = len([p for p in order if p in _PROVIDER_FNS])
+    chain_total = len(chain_providers)
     attempt_idx = 0
 
     for pi, provider in enumerate(order):
@@ -939,6 +950,8 @@ def generate_completion(
             continue
         attempt_idx += 1
         model = _get_model(provider)
+        next_on_fail_list = [p for p in order[pi + 1 :] if p in _PROVIDER_FNS]
+        next_on_fail = next_on_fail_list[0] if next_on_fail_list else "none"
         logger.info(
             "%sllm_try provider=%s chain_step=%d/%d model=%s phase=start",
             _life_prefix(),
@@ -946,6 +959,10 @@ def generate_completion(
             attempt_idx,
             max(chain_total, 1),
             model,
+        )
+        generation_lifecycle_audit(
+            f"{_life_prefix().strip()} llm_try start provider={provider} "
+            f"chain_step={attempt_idx}/{max(chain_total, 1)} next_on_fail={next_on_fail}"
         )
 
         retries_left = MAX_RATE_LIMIT_RETRIES
@@ -961,6 +978,12 @@ def generate_completion(
                     attempt_idx,
                     len(response_text or ""),
                     cache_ok,
+                )
+                used_fb = chain_first is not None and provider != chain_first
+                generation_lifecycle_audit(
+                    f"{_life_prefix().strip()} llm_try result=success provider={provider} "
+                    f"chain_step={attempt_idx}/{max(chain_total, 1)} first_in_chain={chain_first or 'none'} "
+                    f"used_fallback={str(used_fb).lower()}"
                 )
                 if cache_ok:
                     try:
@@ -989,6 +1012,11 @@ def generate_completion(
                         wait,
                         retries_left,
                     )
+                    generation_lifecycle_audit(
+                        f"{_life_prefix().strip()} llm_try provider={provider} "
+                        f"chain_step={attempt_idx}/{max(chain_total, 1)} result=rate_limit_retry "
+                        f"retry_in_s={wait:.1f} retries_left={retries_left} next_same_provider=true"
+                    )
                     time.sleep(wait)
                     continue
 
@@ -1004,6 +1032,10 @@ def generate_completion(
                         cat,
                         nxt[0],
                     )
+                    generation_lifecycle_audit(
+                        f"{_life_prefix().strip()} llm_try result={cat} provider={provider} "
+                        f"chain_step={attempt_idx}/{max(chain_total, 1)} next_provider={nxt[0]}"
+                    )
                 else:
                     logger.warning(
                         "%sllm_try provider=%s chain_step=%d result=%s next_provider=none",
@@ -1011,6 +1043,10 @@ def generate_completion(
                         provider,
                         attempt_idx,
                         cat,
+                    )
+                    generation_lifecycle_audit(
+                        f"{_life_prefix().strip()} llm_try result={cat} provider={provider} "
+                        f"chain_step={attempt_idx}/{max(chain_total, 1)} next_provider=none"
                     )
                 break
 

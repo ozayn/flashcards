@@ -1,3 +1,27 @@
+/** YouTube / API sometimes returns a language label instead of a code. */
+const _LANGUAGE_NAME_TO_ISO: Record<string, string> = {
+  english: "en",
+  spanish: "es",
+  french: "fr",
+  german: "de",
+  arabic: "ar",
+  persian: "fa",
+  farsi: "fa",
+  urdu: "ur",
+  hindi: "hi",
+  portuguese: "pt",
+  italian: "it",
+  japanese: "ja",
+  korean: "ko",
+  chinese: "zh",
+  russian: "ru",
+  turkish: "tr",
+  dutch: "nl",
+  polish: "pl",
+  ukrainian: "uk",
+  hebrew: "he",
+};
+
 /**
  * Normalize caption / transcript language hints to ISO 639-1 when possible.
  */
@@ -9,6 +33,8 @@ export function normalizeLangCode(raw: string | null | undefined): string | null
   if (/^[a-z]{2}$/.test(lower)) return lower;
   const m = /^([a-z]{2})[-_]/i.exec(t);
   if (m) return m[1].toLowerCase();
+  const fromName = _LANGUAGE_NAME_TO_ISO[lower.replace(/\s+/g, " ")];
+  if (fromName) return fromName;
   return null;
 }
 

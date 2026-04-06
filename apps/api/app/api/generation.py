@@ -5,7 +5,6 @@ import logging
 import os
 import re
 import secrets
-import sys
 from typing import Any, Callable, Literal, Optional
 from uuid import UUID
 
@@ -15,6 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db, AsyncSessionLocal
+from app.core.gen_lifecycle_audit import generation_lifecycle_audit as _generation_audit
 from app.core.gen_job_context import (
     generation_job_id as generation_job_id_ctx,
     llm_prep_stats_arm,
@@ -47,19 +47,10 @@ from app.utils.topic_analysis import (
     is_loanword_vocab_topic,
     is_translation_vocab_topic,
     is_vocabulary_topic,
+    resolve_generation_language_code,
 )
 
 logger = logging.getLogger(__name__)
-
-_GEN_AUDIT_PREFIX = "[MEMO_GEN_LIFECYCLE]"
-
-
-def _generation_audit(msg: str) -> None:
-    """Breadcrumb that survives misconfigured app loggers: stderr + uvicorn.error WARNING."""
-    line = f"{_GEN_AUDIT_PREFIX} {msg}"
-    print(line, file=sys.stderr, flush=True)
-    logging.getLogger("uvicorn.error").warning("%s", line)
-
 
 # Set during generate_flashcards so JSON-parse failures can log deck_id without threading it everywhere.
 generation_log_deck_id: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
@@ -3792,7 +3783,8 @@ def _sync_prepare_generated_cards_inner(
                 )
                 _generation_audit(
                     f"{_gen_log_prefix().strip()} gen_mode text_len={text_len} chunked_mode={use_chunked} "
-                    f"chunk_count={chunk_count} cards_requested={num_cards}"
+                    f"chunk_count={chunk_count} cards_requested={num_cards} "
+                    f"provider_route={_route_l} route_reason={_route_r} chain={','.join(_rb)}"
                 )
             if use_chunked:
                 try:
@@ -3846,7 +3838,8 @@ def _sync_prepare_generated_cards_inner(
                 )
                 _generation_audit(
                     f"{_gen_log_prefix().strip()} gen_mode topic_mode text_len=0 chunked_mode=false "
-                    f"chunk_count=1 cards_requested={num_cards}"
+                    f"chunk_count=1 cards_requested={num_cards} "
+                    f"provider_route={_route_l} route_reason={_route_r} chain={','.join(_tb)}"
                 )
 
             # Formula topics: one plaintext card per call (no JSON dependency)
@@ -4519,6 +4512,23 @@ async def generate_flashcards(
         _generation_audit(
             f"{_gen_log_prefix().strip()} gen_flow_before_prepare deck_id={deck_id_str}"
         )
+        _raw_req_lang = payload.language
+        _lang_hint = (
+            (_raw_req_lang or "").strip().lower()[:2] if (_raw_req_lang or "").strip() else None
+        )
+        _eff_lang = resolve_generation_language_code(
+            payload.topic or "",
+            text_input or "",
+            _lang_hint,
+        )
+        if _deck_source_type_str(deck) == SourceType.youtube.value and text_input:
+            _ym = _parse_deck_source_metadata_dict(deck)
+            _cap = _ym.get("caption_language")
+            _generation_audit(
+                f"{_gen_log_prefix().strip()} gen_yt_language "
+                f"request_language_field={_raw_req_lang!r} lang_hint={_lang_hint!r} "
+                f"yt_caption_lang_meta={_cap!r} effective_output_lang_code={_eff_lang!r}"
+            )
         cards, lifecycle_meta = await asyncio.to_thread(
             _sync_prepare_generated_cards,
             payload,
