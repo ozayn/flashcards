@@ -24,6 +24,13 @@ import { markDeckBackgroundGenerationNavigation } from "@/lib/deck-pending-gener
 import { Upload } from "lucide-react";
 import PageContainer from "@/components/layout/page-container";
 import { LongSourceTextarea } from "@/components/long-source-textarea";
+import { GenerationLanguageToggle } from "@/components/generation-language-toggle";
+import {
+  generationLanguagePayload,
+  normalizeLangCode,
+  originalLanguageToggleLabel,
+  type GenerationLangPreference,
+} from "@/lib/source-language";
 
 type GenerationMode = "topic" | "text" | "youtube" | "url" | "import";
 
@@ -47,6 +54,7 @@ function CreateDeckForm() {
   const [emptyDeckMode, setEmptyDeckMode] = useState(false);
   const [useNameAsTopic, setUseNameAsTopic] = useState(false);
   const [cardCount, setCardCount] = useState(10);
+  const [genLangMode, setGenLangMode] = useState<GenerationLangPreference>("source");
   const { cardCountOptions, usage } = useTierLimits();
   const [loading, setLoading] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState("");
@@ -114,6 +122,8 @@ function CreateDeckForm() {
 
   const topicForGeneration =
     topicTrimmed || (useNameAsTopic && !topicTrimmed ? nameTrimmed : "");
+
+  const genLangSourceLabelCreate = originalLanguageToggleLabel(null);
 
   function handleImportFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const files = e.target.files;
@@ -350,7 +360,8 @@ function CreateDeckForm() {
           deck_id: deckId,
           text: transcript.transcript.slice(0, GENERATION_TEXT_MAX_CHARS),
           num_cards: cardCount,
-          language: transcript.language || "en",
+          ...generationLanguagePayload(genLangMode, normalizeLangCode(transcript.language)),
+          youtube_route_reason: "youtube_transcript",
         }).catch(() => {});
 
         markDeckBackgroundGenerationNavigation(deckId);
@@ -388,6 +399,7 @@ function CreateDeckForm() {
           deck_id: deckId,
           text: article.text.slice(0, GENERATION_TEXT_MAX_CHARS),
           num_cards: cardCount,
+          ...generationLanguagePayload(genLangMode, null),
         }).catch(() => {});
 
         markDeckBackgroundGenerationNavigation(deckId);
@@ -423,7 +435,7 @@ function CreateDeckForm() {
           deck_id: deckId,
           text: textTrimmed,
           num_cards: cardCount,
-          language: "en",
+          ...generationLanguagePayload(genLangMode, null),
         }).catch(() => {});
         markDeckBackgroundGenerationNavigation(deckId);
       } else if (generationMode === "topic" && effectiveTopic) {
@@ -431,7 +443,7 @@ function CreateDeckForm() {
           deck_id: deckId,
           topic: effectiveTopic,
           num_cards: cardCount,
-          language: "en",
+          ...generationLanguagePayload(genLangMode, null),
         }).catch(() => {});
         markDeckBackgroundGenerationNavigation(deckId);
       }
@@ -588,7 +600,7 @@ function CreateDeckForm() {
                     disabled={loading}
                   />
                 </div>
-                <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-muted-foreground">
                   <span className="shrink-0">Cards</span>
                   <select
                     id="cardCount-topic"
@@ -604,6 +616,13 @@ function CreateDeckForm() {
                       </option>
                     ))}
                   </select>
+                  <GenerationLanguageToggle
+                    value={genLangMode}
+                    onChange={setGenLangMode}
+                    sourceLabel={genLangSourceLabelCreate}
+                    disabled={loading}
+                    className="sm:ml-1"
+                  />
                 </div>
               </div>
             )}
@@ -693,7 +712,7 @@ function CreateDeckForm() {
                     }
                   />
                 </div>
-                <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-muted-foreground">
                   <span className="shrink-0">Cards</span>
                   <select
                     id="cardCount-text"
@@ -709,6 +728,13 @@ function CreateDeckForm() {
                       </option>
                     ))}
                   </select>
+                  <GenerationLanguageToggle
+                    value={genLangMode}
+                    onChange={setGenLangMode}
+                    sourceLabel={genLangSourceLabelCreate}
+                    disabled={loading}
+                    className="sm:ml-1"
+                  />
                 </div>
               </div>
             )}
@@ -732,7 +758,7 @@ function CreateDeckForm() {
                     className="min-w-0"
                   />
                 </div>
-                <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-muted-foreground">
                   <span className="shrink-0">Cards</span>
                   <select
                     id="cardCount-yt"
@@ -748,6 +774,13 @@ function CreateDeckForm() {
                       </option>
                     ))}
                   </select>
+                  <GenerationLanguageToggle
+                    value={genLangMode}
+                    onChange={setGenLangMode}
+                    sourceLabel={genLangSourceLabelCreate}
+                    disabled={loading}
+                    className="sm:ml-1"
+                  />
                 </div>
               </div>
             )}
@@ -771,7 +804,7 @@ function CreateDeckForm() {
                     className="min-w-0"
                   />
                 </div>
-                <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-muted-foreground">
                   <span className="shrink-0">Cards</span>
                   <select
                     id="cardCount-url"
@@ -787,6 +820,13 @@ function CreateDeckForm() {
                       </option>
                     ))}
                   </select>
+                  <GenerationLanguageToggle
+                    value={genLangMode}
+                    onChange={setGenLangMode}
+                    sourceLabel={genLangSourceLabelCreate}
+                    disabled={loading}
+                    className="sm:ml-1"
+                  />
                 </div>
               </div>
             )}

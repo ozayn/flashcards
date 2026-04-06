@@ -828,18 +828,22 @@ export async function generateFlashcards(data: {
   topic?: string;
   text?: string;
   num_cards?: number;
+  /** ISO 639-1; omit for server-side inference from source. */
   language?: string;
+  /** YouTube deck + text: API log label for Gemini-first routing (optional). */
+  youtube_route_reason?: "youtube_transcript" | "youtube_text";
 }) {
+  const { num_cards = 10, language, ...rest } = data;
+  const body: Record<string, unknown> = { ...rest, num_cards };
+  if (language != null && language !== "") {
+    body.language = language;
+  }
   const res = await fetch(`${API_BASE}/generate-flashcards`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({
-      ...data,
-      num_cards: data.num_cards ?? 10,
-      language: data.language ?? "en",
-    }),
+    body: JSON.stringify(body),
   });
 
   if (!res.ok) {
@@ -854,16 +858,20 @@ export async function generateFlashcardsBackground(data: {
   topic?: string;
   text?: string;
   num_cards?: number;
+  /** ISO 639-1; omit for server-side inference from source. */
   language?: string;
+  /** YouTube deck + text: API log label for Gemini-first routing (optional). */
+  youtube_route_reason?: "youtube_transcript" | "youtube_text";
 }) {
+  const { num_cards = 10, language, ...rest } = data;
+  const body: Record<string, unknown> = { ...rest, num_cards };
+  if (language != null && language !== "") {
+    body.language = language;
+  }
   const res = await fetch(`${API_BASE}/generate-flashcards/background`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      ...data,
-      num_cards: data.num_cards ?? 10,
-      language: data.language ?? "en",
-    }),
+    body: JSON.stringify(body),
   });
 
   if (!res.ok) {

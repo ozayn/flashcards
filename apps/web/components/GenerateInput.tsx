@@ -16,6 +16,13 @@ import {
   TranscriptFetchError,
 } from "@/lib/api";
 import { getStoredUserId } from "@/components/user-selector";
+import { GenerationLanguageToggle } from "@/components/generation-language-toggle";
+import {
+  generationLanguagePayload,
+  normalizeLangCode,
+  originalLanguageToggleLabel,
+  type GenerationLangPreference,
+} from "@/lib/source-language";
 
 const YT_REGEX = /(?:youtube\.com\/watch\?.*v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/shorts\/)/i;
 
@@ -51,6 +58,7 @@ export function GenerateInput({
     watchMetadataOk?: boolean;
     code?: string | null;
   } | null>(null);
+  const [genLangMode, setGenLangMode] = useState<GenerationLangPreference>("source");
 
   const trimmed = value.trim();
   const isYT = isYouTubeUrl(trimmed);
@@ -120,7 +128,8 @@ export function GenerateInput({
           deck_id: deckId,
           text: transcript.transcript.slice(0, 50000),
           num_cards: 10,
-          language: transcript.language || "en",
+          ...generationLanguagePayload(genLangMode, normalizeLangCode(transcript.language)),
+          youtube_route_reason: "youtube_transcript",
         }).catch(() => {});
 
         router.push(`/decks/${deckId}`);
@@ -153,6 +162,7 @@ export function GenerateInput({
           deck_id: deckId,
           text: article.text.slice(0, 50000),
           num_cards: 10,
+          ...generationLanguagePayload(genLangMode, null),
         }).catch(() => {});
 
         router.push(`/decks/${deckId}`);
@@ -180,7 +190,7 @@ export function GenerateInput({
           deck_id: deckId,
           topic: trimmed,
           num_cards: 10,
-          language: "en",
+          ...generationLanguagePayload(genLangMode, null),
         }).catch(() => {});
 
         router.push(`/decks/${deckId}`);
@@ -249,6 +259,12 @@ export function GenerateInput({
       )}
       {!ytFallback && (
         <div className="flex flex-col items-center gap-2">
+          <GenerationLanguageToggle
+            value={genLangMode}
+            onChange={setGenLangMode}
+            sourceLabel={originalLanguageToggleLabel(null)}
+            disabled={loading}
+          />
           <Button
             type="submit"
             size="lg"

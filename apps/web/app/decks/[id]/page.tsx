@@ -47,7 +47,14 @@ import {
   clearDeckBackgroundGenerationPending,
 } from "@/lib/deck-pending-generation";
 import { formatDeckCreatedCalendarDate } from "@/lib/format-deck-date";
+import {
+  generationLanguagePayload,
+  normalizeLangCode,
+  originalLanguageToggleLabel,
+  type GenerationLangPreference,
+} from "@/lib/source-language";
 import PageContainer from "@/components/layout/page-container";
+import { GenerationLanguageToggle } from "@/components/generation-language-toggle";
 import FormattedText from "@/components/FormattedText";
 import { FlashcardModal } from "@/components/FlashcardModal";
 import { DeckGenerationBadge, isDeckGeneratingLike } from "@/components/DeckGenerationBadge";
@@ -99,7 +106,35 @@ interface Flashcard {
   answer_detailed?: string | null;
 }
 
+/**
+ * Coalesce overlapping initial deck+flashcards loads for the same id (e.g. React Strict Mode
+ * running the mount effect twice in dev). One in-flight promise per deckId; cleared when settled.
+ */
+const deckInitialLoadInflight = new Map<
+  string,
+  Promise<{ deck: Deck; flashcards: Flashcard[] }>
+>();
+
+async function fetchDeckPageInitialBundle(
+  deckId: string,
+): Promise<{ deck: Deck; flashcards: Flashcard[] }> {
+  const hit = deckInitialLoadInflight.get(deckId);
+  if (hit) return hit;
+  const p = Promise.all([getDeck(deckId), getFlashcards(deckId)]).then(([deck, flashcards]) => ({
+    deck: deck as Deck,
+    flashcards: Array.isArray(flashcards) ? (flashcards as Flashcard[]) : [],
+  }));
+  deckInitialLoadInflight.set(deckId, p);
+  void p.finally(() => {
+    deckInitialLoadInflight.delete(deckId);
+  });
+  return p;
+}
+
 const UNCATEGORIZED = "__uncategorized__";
+
+/** Poll interval while `generation_status` is queued/generating (deck only; cards once when finished). */
+const DECK_GENERATION_POLL_MS = 4500;
 
 function slugFromTitle(title: string): string {
   return (
@@ -330,6 +365,7 @@ export default function DeckPage({ params }: DeckPageProps) {
   const [genTextUploadStatus, setGenTextUploadStatus] = useState<string | null>(null);
   const [useNameAsTopic, setUseNameAsTopic] = useState(false);
   const [cardCount, setCardCount] = useState(10);
+  const [genLangMode, setGenLangMode] = useState<GenerationLangPreference>("source");
   const { cardCountOptions, usage: tierUsage } = useTierLimits();
   const { data: session, status: sessionStatus } = useSession();
   const isPlatformAdmin = Boolean(session?.isPlatformAdmin);
@@ -385,6 +421,14 @@ export default function DeckPage({ params }: DeckPageProps) {
   const [genPanelExpanded, setGenPanelExpanded] = useState(true);
   const prevFlashcardCountRef = useRef(-1);
 
+  const deckCaptionLang = useMemo(() => {
+    if (deck?.source_type !== "youtube") return null;
+    const ym = parseYoutubeDeckSourceMetadata(deck.source_metadata);
+    return normalizeLangCode(ym?.caption_language ?? null);
+  }, [deck?.source_type, deck?.source_metadata]);
+
+  const genLangSourceLabel = originalLanguageToggleLabel(deckCaptionLang);
+
   useEffect(() => {
     const n = flashcards.length;
     const prev = prevFlashcardCountRef.current;
@@ -396,6 +440,10 @@ export default function DeckPage({ params }: DeckPageProps) {
     }
     prevFlashcardCountRef.current = n;
   }, [flashcards.length]);
+
+  useEffect(() => {
+    setGenLangMode("source");
+  }, [params.id]);
 
   useEffect(() => {
     setGridMenuOpenId(null);
@@ -416,13 +464,12 @@ export default function DeckPage({ params }: DeckPageProps) {
     let cancelled = false;
     async function fetchData() {
       try {
-        const [deckData, flashcardsData] = await Promise.all([
-          getDeck(params.id),
-          getFlashcards(params.id),
-        ]);
+        const { deck: deckData, flashcards: flashcardsData } = await fetchDeckPageInitialBundle(
+          params.id,
+        );
         if (!cancelled) {
           setDeck(deckData);
-          setFlashcards(Array.isArray(flashcardsData) ? flashcardsData : []);
+          setFlashcards(flashcardsData);
         }
         if (!cancelled && deckData?.category_id) {
           try {
@@ -457,17 +504,39 @@ export default function DeckPage({ params }: DeckPageProps) {
 
   useEffect(() => {
     if (!deckGenerating) return;
-    const interval = setInterval(async () => {
+    let cancelled = false;
+    let inFlight = false;
+
+    async function pollOnce() {
+      if (cancelled || inFlight) return;
+      inFlight = true;
       try {
-        const [deckData, flashcardsData] = await Promise.all([
-          getDeck(params.id),
-          getFlashcards(params.id),
-        ]);
+        const deckData = await getDeck(params.id);
+        if (cancelled) return;
         setDeck(deckData);
-        setFlashcards(Array.isArray(flashcardsData) ? flashcardsData : []);
-      } catch { /* ignore polling errors */ }
-    }, 4000);
-    return () => clearInterval(interval);
+        const stillGenerating = isDeckGeneratingLike(deckData?.generation_status);
+        if (!stillGenerating) {
+          try {
+            const flashcardsData = await getFlashcards(params.id);
+            if (!cancelled) {
+              setFlashcards(Array.isArray(flashcardsData) ? flashcardsData : []);
+            }
+          } catch {
+            /* ignore */
+          }
+        }
+      } catch {
+        /* ignore polling errors */
+      } finally {
+        inFlight = false;
+      }
+    }
+
+    const interval = setInterval(pollOnce, DECK_GENERATION_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
   }, [deckGenerating, params.id]);
 
   useEffect(() => {
@@ -548,10 +617,24 @@ export default function DeckPage({ params }: DeckPageProps) {
     setImportResult(null);
     setGenActionError(null);
     try {
+      const langOpts = generationLanguagePayload(genLangMode, deckCaptionLang);
       if (genMode === "text") {
-        await generateFlashcards({ deck_id: deck.id, text: textTrimmed, num_cards: cardCount, language: "en" });
+        await generateFlashcards({
+          deck_id: deck.id,
+          text: textTrimmed,
+          num_cards: cardCount,
+          ...langOpts,
+          ...(deck.source_type === "youtube"
+            ? { youtube_route_reason: "youtube_text" as const }
+            : {}),
+        });
       } else {
-        await generateFlashcards({ deck_id: deck.id, topic: effectiveTopic, num_cards: cardCount, language: "en" });
+        await generateFlashcards({
+          deck_id: deck.id,
+          topic: effectiveTopic,
+          num_cards: cardCount,
+          ...langOpts,
+        });
       }
       setGenTopic("");
       setGenText("");
@@ -1466,6 +1549,12 @@ export default function DeckPage({ params }: DeckPageProps) {
                           <option key={n} value={n}>{n}</option>
                         ))}
                       </select>
+                      <GenerationLanguageToggle
+                        value={genLangMode}
+                        onChange={setGenLangMode}
+                        sourceLabel={genLangSourceLabel}
+                        className="sm:ml-1"
+                      />
                     </div>
                   </div>
                 )}
@@ -1534,6 +1623,12 @@ export default function DeckPage({ params }: DeckPageProps) {
                           <option key={n} value={n}>{n}</option>
                         ))}
                       </select>
+                      <GenerationLanguageToggle
+                        value={genLangMode}
+                        onChange={setGenLangMode}
+                        sourceLabel={genLangSourceLabel}
+                        className="sm:ml-1"
+                      />
                     </div>
                   </div>
                 )}

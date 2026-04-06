@@ -904,8 +904,8 @@ def generate_completion(
     """
     Generate completion using primary provider with fallback.
     Tries providers in order until one succeeds.
-    Optional llm_routing (text job hints: chunked_mode, text_len, source_type, num_cards)
-    may reorder Groq vs Gemini (see provider_route.apply_provider_routing).
+    Optional llm_routing (text job hints: chunked_mode, text_len, source_type, num_cards,
+    youtube_route_reason) may reorder Groq vs Gemini (see provider_route.apply_provider_routing).
     """
     if not skip_cache:
         try:

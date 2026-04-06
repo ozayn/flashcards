@@ -2,6 +2,7 @@
 Gemini-first vs Groq-first ordering for heavy text/transcript LLM jobs.
 
 Tunable via env (see long_text_threshold and related helpers).
+YouTube decks with a non-empty text body always prefer Gemini first (see should_prefer_gemini_first).
 """
 from __future__ import annotations
 
@@ -17,17 +18,6 @@ def long_text_threshold_chars() -> int:
         except ValueError:
             pass
     return 12000
-
-
-def youtube_long_transcript_min_chars() -> int:
-    """Prefer Gemini first for YouTube when transcript is at least this long."""
-    raw = (os.environ.get("GENERATION_GEMINI_FIRST_YOUTUBE_MIN_CHARS") or "").strip()
-    if raw:
-        try:
-            return max(1000, min(int(raw), 50000))
-        except ValueError:
-            pass
-    return 8000
 
 
 def high_cards_threshold() -> int:
@@ -55,20 +45,26 @@ def high_cards_min_text_chars() -> int:
 def should_prefer_gemini_first(routing: dict) -> tuple[bool, str]:
     """
     Decide if Gemini should be tried before Groq for this text job.
-    routing keys: chunked_mode (bool), text_len (int), source_type (str|None), num_cards (int|None).
+    routing keys: chunked_mode (bool), text_len (int), source_type (str|None), num_cards (int|None),
+    optional youtube_route_reason: "youtube_transcript" | "youtube_text" (log label only).
     Returns (prefer_gemini, reason_token) — reason is for logs only.
     """
     if routing.get("chunked_mode"):
         return True, "chunked_text"
 
     tl = int(routing.get("text_len") or 0)
+    st = (routing.get("source_type") or "").strip().lower()
+    # YouTube + any non-empty passage: Gemini first even below chunk / long-text thresholds
+    # (avoids long Groq rate-limit backoff on medium single-chunk transcript jobs).
+    if st == "youtube" and tl > 0:
+        rr = (routing.get("youtube_route_reason") or "youtube_transcript").strip().lower()
+        if rr not in ("youtube_transcript", "youtube_text"):
+            rr = "youtube_transcript"
+        return True, rr
+
     thr = long_text_threshold_chars()
     if tl >= thr:
         return True, "long_text"
-
-    st = (routing.get("source_type") or "").strip().lower()
-    if st == "youtube" and tl >= youtube_long_transcript_min_chars():
-        return True, "youtube_long_transcript"
 
     nc = routing.get("num_cards")
     if nc is not None and tl >= high_cards_min_text_chars() and int(nc) >= high_cards_threshold():

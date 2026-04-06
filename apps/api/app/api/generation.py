@@ -5,7 +5,8 @@ import logging
 import os
 import re
 import secrets
-from typing import Any, Callable, Optional
+import sys
+from typing import Any, Callable, Literal, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -42,12 +43,23 @@ from app.schemas.flashcard import DIFFICULTY_TO_INT
 from app.utils.topic_analysis import (
     build_language_rule,
     build_vocab_instruction,
+    detect_language,
     is_loanword_vocab_topic,
     is_translation_vocab_topic,
     is_vocabulary_topic,
 )
 
 logger = logging.getLogger(__name__)
+
+_GEN_AUDIT_PREFIX = "[MEMO_GEN_LIFECYCLE]"
+
+
+def _generation_audit(msg: str) -> None:
+    """Breadcrumb that survives misconfigured app loggers: stderr + uvicorn.error WARNING."""
+    line = f"{_GEN_AUDIT_PREFIX} {msg}"
+    print(line, file=sys.stderr, flush=True)
+    logging.getLogger("uvicorn.error").warning("%s", line)
+
 
 # Set during generate_flashcards so JSON-parse failures can log deck_id without threading it everywhere.
 generation_log_deck_id: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
@@ -203,7 +215,10 @@ class GenerateFlashcardsRequest(BaseModel):
     topic: Optional[str] = Field(None, min_length=1, description="Topic for flashcard generation")
     text: Optional[str] = Field(None, min_length=1, description="Text/notes to generate flashcards from")
     num_cards: int = Field(default=10, ge=1, le=50, description="Number of cards to generate")
-    language: Optional[str] = Field(default="en", description="Output language (ISO 639-1, e.g. en, de, fa)")
+    language: Optional[str] = Field(
+        default=None,
+        description="Output language (ISO 639-1, e.g. en, ar). Omit to infer from source text/topic.",
+    )
     strict_text_only: bool = Field(
         default=True,
         description="When true (default for text mode), only output cards whose answers are directly supported by the passage. Discard unsupported cards.",
@@ -211,6 +226,10 @@ class GenerateFlashcardsRequest(BaseModel):
     include_background: bool = Field(
         default=False,
         description="When false (default), do not create generic background cards (e.g. 'What is dopamine?') unless directly discussed in the passage.",
+    )
+    youtube_route_reason: Optional[Literal["youtube_transcript", "youtube_text"]] = Field(
+        default=None,
+        description="For YouTube decks with text: log label for provider routing (Gemini-first either way).",
     )
 
     @model_validator(mode="after")
@@ -1472,7 +1491,13 @@ def _sync_generate_source_summary(
         else:
             kind = "passage"
         title = (deck.source_topic or deck.source_title or "").strip()
-        lang = (lang_hint or "en").strip()[:12]
+        raw_hint = (lang_hint or "").strip()
+        if raw_hint:
+            lang = raw_hint[:12].lower()
+        else:
+            sample = body[:12000] if len(body) > 12000 else body
+            detected = detect_language(sample)
+            lang = (detected or "en").lower()[:12]
         excerpt = _sample_text_for_prompt(body, max_chars=16000)
         title_block = f"Title/context: {title}\n\n" if title else ""
         prompt = f"""You summarize sources for a study app. Write in the same language as the source (match the excerpt; BCP-47 hint: {lang}).
@@ -3514,6 +3539,15 @@ RELAXED_TEXT_GROUNDING_RULES = """GROUNDING PREFERENCES (text-based generation):
 - Prefer questions that test understanding of what THIS specific text says, not general domain knowledge."""
 
 
+def _safe_background_finished_error(exc: BaseException) -> str:
+    """Short error token for background-gen logs (no user text, no secrets)."""
+    if isinstance(exc, HTTPException):
+        return f"HTTPException status={exc.status_code}"
+    if isinstance(exc, RateLimitError):
+        return "RateLimitError"
+    return type(exc).__name__
+
+
 async def _run_generation_background(
     payload: GenerateFlashcardsRequest,
     trusted_acting_user_id: Optional[str],
@@ -3524,19 +3558,57 @@ async def _run_generation_background(
     (generating → completed / failed) and never commits — the commit is
     normally done by the get_db dependency.  We always commit at the end
     so the final status (completed or failed) is persisted.
+
+    POST /generate-flashcards/background schedules this via asyncio.create_task only.
+    Grep: generation_background_started | generation_background_finished | MEMO_GEN_LIFECYCLE
     """
     deck_id_str = str(payload.deck_id)
-    async with AsyncSessionLocal() as db:
-        try:
-            await generate_flashcards(payload, db, trusted_acting_user_id)
-            logger.info("[bg-gen] Completed for deck %s", deck_id_str)
-        except Exception as exc:
-            logger.error("[bg-gen] Failed for deck %s: %s", deck_id_str, exc)
-        finally:
+    _generation_audit(f"bg_worker_enter deck_id={deck_id_str}")
+    pre_job = secrets.token_hex(6)
+    pre_job_tok = generation_job_id_ctx.set(pre_job)
+    try:
+        async with AsyncSessionLocal() as db:
             try:
-                await db.commit()
-            except Exception:
-                await db.rollback()
+                _generation_audit(
+                    f"[gen_job={pre_job}] generation_background_started deck_id={deck_id_str}"
+                )
+                logger.info(
+                    "[gen_job=%s] generation_background_started deck_id=%s",
+                    pre_job,
+                    deck_id_str,
+                )
+                _generation_audit(
+                    f"[gen_job={pre_job}] bg_before_await_generate_flashcards deck_id={deck_id_str}"
+                )
+                await generate_flashcards(payload, db, trusted_acting_user_id)
+                _generation_audit(
+                    f"[gen_job={pre_job}] generation_background_finished deck_id={deck_id_str} success=true"
+                )
+                logger.info(
+                    "[gen_job=%s] generation_background_finished deck_id=%s success=true",
+                    pre_job,
+                    deck_id_str,
+                )
+            except Exception as exc:
+                err_tok = _safe_background_finished_error(exc)
+                _generation_audit(
+                    f"[gen_job={pre_job}] generation_background_finished deck_id={deck_id_str} "
+                    f"success=false error={err_tok}"
+                )
+                logger.warning(
+                    "[gen_job=%s] generation_background_finished deck_id=%s success=false error=%s",
+                    pre_job,
+                    deck_id_str,
+                    err_tok,
+                )
+            finally:
+                try:
+                    await db.commit()
+                except Exception:
+                    await db.rollback()
+    finally:
+        generation_job_id_ctx.reset(pre_job_tok)
+        _generation_audit(f"bg_worker_exit deck_id={deck_id_str} gen_job={pre_job}")
 
 
 @router.post("/background", response_model=BackgroundGenerationResponse, status_code=202)
@@ -3581,8 +3653,22 @@ async def generate_flashcards_background(
     deck.generated_by_ai = True
     deck.generation_status = GenerationStatus.queued.value
     await db.flush()
+    # Commit now so the background task's new DB session sees `queued` (not an uncommitted write).
+    await db.commit()
 
-    asyncio.create_task(_run_generation_background(payload, trusted_id))
+    task = asyncio.create_task(_run_generation_background(payload, trusted_id))
+
+    def _bg_done(t: asyncio.Task) -> None:
+        if t.cancelled():
+            _generation_audit(f"bg_task_cancelled deck_id={deck_id_str}")
+            return
+        exc = t.exception()
+        if exc is not None:
+            _generation_audit(
+                f"bg_task_done deck_id={deck_id_str} unhandled={type(exc).__name__}"
+            )
+
+    task.add_done_callback(_bg_done)
 
     return BackgroundGenerationResponse(deck_id=deck_id_str, status="queued")
 
@@ -3677,6 +3763,10 @@ def _sync_prepare_generated_cards_inner(
                 "source_type": routing_source_type,
                 "num_cards": num_cards,
             }
+            if (routing_source_type or "").strip().lower() == "youtube" and text_len > 0:
+                text_llm_routing["youtube_route_reason"] = (
+                    payload.youtube_route_reason or "youtube_transcript"
+                )
             _rb, _route_l, _route_r = apply_provider_routing(_get_provider_order(), text_llm_routing)
             lifecycle_meta["chunked_mode"] = use_chunked
             lifecycle_meta["chunk_count"] = chunk_count
@@ -3699,6 +3789,10 @@ def _sync_prepare_generated_cards_inner(
                     num_cards,
                     _route_l,
                     _route_r,
+                )
+                _generation_audit(
+                    f"{_gen_log_prefix().strip()} gen_mode text_len={text_len} chunked_mode={use_chunked} "
+                    f"chunk_count={chunk_count} cards_requested={num_cards}"
                 )
             if use_chunked:
                 try:
@@ -3749,6 +3843,10 @@ def _sync_prepare_generated_cards_inner(
                     num_cards,
                     _route_l,
                     _route_r,
+                )
+                _generation_audit(
+                    f"{_gen_log_prefix().strip()} gen_mode topic_mode text_len=0 chunked_mode=false "
+                    f"chunk_count=1 cards_requested={num_cards}"
                 )
 
             # Formula topics: one plaintext card per call (no JSON dependency)
@@ -4405,17 +4503,31 @@ async def generate_flashcards(
 
     routing_source_type = deck.source_type.value if deck.source_type else None
 
-    job_id = secrets.token_hex(6)
-    job_tok = generation_job_id_ctx.set(job_id)
+    existing_job = generation_job_id_ctx.get()
+    if existing_job is None:
+        job_id = secrets.token_hex(6)
+        job_tok = generation_job_id_ctx.set(job_id)
+    else:
+        job_id = existing_job
+        job_tok = None
     _gen_log_token = generation_log_deck_id.set(deck_id_str)
     try:
         logger.info("%sgen_source %s", _gen_log_prefix(), _format_gen_source_kv(deck, text_input))
+        _generation_audit(
+            f"{_gen_log_prefix().strip()} gen_source {_format_gen_source_kv(deck, text_input)}"
+        )
+        _generation_audit(
+            f"{_gen_log_prefix().strip()} gen_flow_before_prepare deck_id={deck_id_str}"
+        )
         cards, lifecycle_meta = await asyncio.to_thread(
             _sync_prepare_generated_cards,
             payload,
             deck_id_str,
             text_input,
             routing_source_type,
+        )
+        _generation_audit(
+            f"{_gen_log_prefix().strip()} gen_prepare_done raw_card_count={len(cards)} deck_id={deck_id_str}"
         )
 
         topic_str = (payload.topic or "").strip()
@@ -4506,6 +4618,7 @@ async def generate_flashcards(
         # RULE: Only 503 when ZERO valid cards. created >= 1 → SUCCESS.
         if created == 0:
             prep = lifecycle_meta.get("llm_prep") or {}
+            raw_n = len(cards)
             logger.error(
                 "%sgen_outcome success=false created=0 reason=cards_filtered_or_invalid "
                 "final_provider=%s llm_fallback=%s chunked_mode=%s chunk_count=%s",
@@ -4514,6 +4627,11 @@ async def generate_flashcards(
                 bool(prep.get("any_fallback")),
                 lifecycle_meta.get("chunked_mode"),
                 lifecycle_meta.get("chunk_count"),
+            )
+            _generation_audit(
+                f"{_gen_log_prefix().strip()} gen_outcome success=false created=0 "
+                f"reason=no_cards_inserted raw_cards={raw_n} batch_dup={skipped_batch_dup} "
+                f"db_dup={skipped_db_dup} final_provider={prep.get('last_provider')}"
             )
             raise HTTPException(
                 status_code=503,
@@ -4559,6 +4677,10 @@ async def generate_flashcards(
             lifecycle_meta.get("chunk_count"),
             lifecycle_meta.get("used_chunked_text_generation"),
         )
+        _generation_audit(
+            f"{_gen_log_prefix().strip()} gen_outcome success=true created={created} "
+            f"final_provider={prep.get('last_provider') or 'unknown'}"
+        )
         if text_input:
             logger.debug(
                 "%s[text-mode] final_created=%d skipped_batch_dup=%d skipped_db_dup=%d",
@@ -4576,11 +4698,16 @@ async def generate_flashcards(
             _gen_log_prefix(),
             getattr(e, "status_code", "?"),
         )
+        _generation_audit(
+            f"{_gen_log_prefix().strip()} gen_outcome success=false kind=http_exception "
+            f"status={getattr(e, 'status_code', '?')}"
+        )
         deck.generation_status = GenerationStatus.failed.value
         await db.flush()
         raise
     except RateLimitError as e:
         logger.warning("%sgen_outcome success=false kind=rate_limit err=%s", _gen_log_prefix(), e)
+        _generation_audit(f"{_gen_log_prefix().strip()} gen_outcome success=false kind=rate_limit")
         deck.generation_status = GenerationStatus.failed.value
         await db.flush()
         raise HTTPException(
@@ -4589,6 +4716,9 @@ async def generate_flashcards(
         )
     except RuntimeError as e:
         logger.warning("%sgen_outcome success=false kind=runtime_err err=%s", _gen_log_prefix(), e)
+        _generation_audit(
+            f"{_gen_log_prefix().strip()} gen_outcome success=false kind=runtime_err"
+        )
         deck.generation_status = GenerationStatus.failed.value
         await db.flush()
         if "all llm providers failed" in str(e).lower():
@@ -4599,9 +4729,13 @@ async def generate_flashcards(
         raise
     except Exception as e:
         logger.warning("%sgen_outcome success=false kind=%s", _gen_log_prefix(), type(e).__name__)
+        _generation_audit(
+            f"{_gen_log_prefix().strip()} gen_outcome success=false kind={type(e).__name__}"
+        )
         deck.generation_status = GenerationStatus.failed.value
         await db.flush()
         raise
     finally:
         generation_log_deck_id.reset(_gen_log_token)
-        generation_job_id_ctx.reset(job_tok)
+        if job_tok is not None:
+            generation_job_id_ctx.reset(job_tok)

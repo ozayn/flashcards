@@ -35,6 +35,23 @@ from app.models import User, Deck, Flashcard, Review  # noqa: F401 - register mo
 
 _is_production = os.environ.get("ENVIRONMENT", "development").lower() == "production"
 
+
+def _configure_application_loggers() -> None:
+    """Ensure app.* loggers emit at INFO (or LOG_LEVEL) so lifecycle logs are visible.
+
+    Uvicorn configures its own loggers; without an explicit level, the root logger
+    can remain WARNING and drop app.api.generation INFO lines.
+    """
+    import logging
+
+    raw = (os.environ.get("LOG_LEVEL") or "INFO").strip().upper()
+    level = getattr(logging, raw, None)
+    if not isinstance(level, int):
+        level = logging.INFO
+    logging.getLogger("app").setLevel(level)
+    # LLM router is under app.llm
+    logging.getLogger("app.llm").setLevel(level)
+
 # If no .env file was loaded, treat process env as "configured" when any of these are set
 # (typical for Railway/Fly/Docker). Used only for startup logging — not validation.
 _ENV_CONFIG_SIGNAL_KEYS = (
@@ -195,6 +212,7 @@ async def protected_ping():
 async def startup():
     import logging
 
+    _configure_application_loggers()
     attach_dev_access_log_filter()
 
     log = logging.getLogger("uvicorn.error")
