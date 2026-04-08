@@ -57,6 +57,10 @@ import {
 import PageContainer from "@/components/layout/page-container";
 import { GenerationLanguageToggle } from "@/components/generation-language-toggle";
 import FormattedText from "@/components/FormattedText";
+import {
+  buildAnswerDisplayText,
+  shouldShowAnswerDetailed,
+} from "@/lib/format-flashcard-answer-display";
 import { FlashcardModal } from "@/components/FlashcardModal";
 import { FlashcardBookmarkStar } from "@/components/flashcard-bookmark-star";
 import { DeckGenerationBadge, isDeckGeneratingLike } from "@/components/DeckGenerationBadge";
@@ -105,6 +109,7 @@ interface Flashcard {
   id: string;
   question: string;
   answer_short: string;
+  answer_example?: string | null;
   answer_detailed?: string | null;
   bookmarked?: boolean;
 }
@@ -284,33 +289,52 @@ function exportDeckAsTxt(
       const lineTitle = `${i + 1}. ${title}`;
 
       const shortTrim = (card.answer_short || "").trim();
+      const exampleFieldTrim = (card.answer_example || "").trim();
       const detailedTrim = (card.answer_detailed || "").trim();
-      const { definition, example, plain } = parseAnswerForExport(
-        card.answer_short || ""
-      );
 
       lines.push(CARD_DIVIDER);
       lines.push(lineTitle);
       lines.push("");
 
-      if (plain) {
-        lines.push(plain);
+      if (exampleFieldTrim) {
+        if (shortTrim) {
+          lines.push(shortTrim);
+        } else {
+          lines.push("(empty definition)");
+        }
+        lines.push("");
+        lines.push("Example:");
+        lines.push(collapseBlankLines(exampleFieldTrim));
       } else {
-        if (definition) {
-          lines.push("Definition:");
-          lines.push(definition);
-        }
-        if (example) {
-          lines.push("");
-          lines.push("Example:");
-          lines.push(example);
-        }
-        if (!definition && !example) {
-          lines.push(shortTrim || "(empty answer)");
+        const { definition, example, plain } = parseAnswerForExport(
+          card.answer_short || ""
+        );
+
+        if (plain) {
+          lines.push(plain);
+        } else {
+          if (definition) {
+            lines.push("Definition:");
+            lines.push(definition);
+          }
+          if (example) {
+            lines.push("");
+            lines.push("Example:");
+            lines.push(example);
+          }
+          if (!definition && !example) {
+            lines.push(shortTrim || "(empty answer)");
+          }
         }
       }
 
-      if (detailedTrim && detailedTrim !== shortTrim) {
+      if (
+        shouldShowAnswerDetailed(
+          card.answer_detailed,
+          card.answer_short,
+          card.answer_example
+        )
+      ) {
         lines.push("");
         lines.push("More detail:");
         lines.push(collapseBlankLines(detailedTrim));
@@ -404,7 +428,9 @@ export default function DeckPage({ params }: DeckPageProps) {
       cards = cards.filter(
         (c) =>
           c.question.toLowerCase().includes(q) ||
-          c.answer_short.toLowerCase().includes(q)
+          c.answer_short.toLowerCase().includes(q) ||
+          (c.answer_example || "").toLowerCase().includes(q) ||
+          (c.answer_detailed || "").toLowerCase().includes(q)
       );
     }
     if (currentUserId && cardBookmarkFilter === "bookmarked") {
@@ -2032,7 +2058,10 @@ export default function DeckPage({ params }: DeckPageProps) {
                       </div>
                       <div dir="auto" className="text-sm text-muted-foreground leading-relaxed max-mobile:text-[13px] line-clamp-2">
                         <FormattedText
-                          text={card.answer_short}
+                          text={buildAnswerDisplayText(
+                            card.answer_short,
+                            card.answer_example
+                          )}
                           className="text-inherit"
                           variant="answer"
                         />
@@ -2135,7 +2164,10 @@ export default function DeckPage({ params }: DeckPageProps) {
                     </div>
                     <div dir="auto" className="text-sm text-muted-foreground leading-relaxed line-clamp-3">
                       <FormattedText
-                        text={card.answer_short}
+                        text={buildAnswerDisplayText(
+                            card.answer_short,
+                            card.answer_example
+                          )}
                         className="text-inherit"
                         variant="answer"
                       />

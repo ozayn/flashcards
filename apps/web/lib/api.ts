@@ -877,6 +877,7 @@ export async function setFlashcardBookmark(
   deck_id: string;
   question: string;
   answer_short: string;
+  answer_example?: string | null;
   answer_detailed?: string | null;
   difficulty: string;
   created_at: string;
@@ -900,6 +901,7 @@ export async function createFlashcard(data: {
   deck_id: string;
   question: string;
   answer_short: string;
+  answer_example?: string;
   answer_detailed?: string;
   difficulty?: string;
 }) {
@@ -920,7 +922,12 @@ export async function createFlashcard(data: {
 
 export async function importFlashcards(data: {
   deck_id: string;
-  cards: { question: string; answer_short: string; answer_detailed?: string }[];
+  cards: {
+    question: string;
+    answer_short: string;
+    answer_example?: string;
+    answer_detailed?: string;
+  }[];
 }): Promise<{ created: number; skipped: number }> {
   const res = await fetch(`${API_BASE}/flashcards/import`, {
     method: "POST",
@@ -948,6 +955,7 @@ export async function updateFlashcard(
   data: {
     question?: string;
     answer_short?: string;
+    answer_example?: string | null;
     answer_detailed?: string;
     difficulty?: string;
   }

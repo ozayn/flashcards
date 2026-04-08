@@ -48,6 +48,7 @@ from app.llm.router import (
 from app.models import Deck, Flashcard, User
 from app.models.enums import GenerationStatus, SourceType
 from app.schemas.flashcard import DIFFICULTY_TO_INT
+from app.utils.import_answer_split import resolve_import_answer_fields
 from app.utils.topic_analysis import (
     build_language_rule,
     build_vocab_instruction,
@@ -4846,15 +4847,32 @@ async def generate_flashcards(
             ):
                 break
 
+            answer_example = raw_card.get("answer_example")
             answer_detailed = raw_card.get("answer_detailed")
             difficulty_str = raw_card.get("difficulty", "medium")
             if difficulty_str not in DIFFICULTY_TO_INT:
                 difficulty_str = "medium"
             difficulty = DIFFICULTY_TO_INT[difficulty_str]
 
-            answer_short = str(answer_short or "")[:1000]
+            answer_short = str(answer_short or "")
             if _is_formula_topic(topic_str):
                 answer_short = normalize_latex(answer_short)
+            if answer_example:
+                answer_example = str(answer_example)
+                if _is_formula_topic(topic_str):
+                    answer_example = normalize_latex(answer_example)
+            else:
+                answer_example = None
+
+            answer_short, answer_example = resolve_import_answer_fields(
+                answer_short, answer_example
+            )
+            answer_short = answer_short[:1000]
+            if answer_example:
+                answer_example = answer_example[:10000]
+            else:
+                answer_example = None
+
             if answer_detailed:
                 answer_detailed = str(answer_detailed)[:10000]
                 if _is_formula_topic(topic_str):
@@ -4868,6 +4886,7 @@ async def generate_flashcards(
                 deck_id=deck_id_str,
                 question=question_for_save,
                 answer_short=answer_short,
+                answer_example=answer_example,
                 answer_detailed=(answer_detailed if answer_detailed else None),
                 difficulty=difficulty,
             )

@@ -19,6 +19,7 @@ from app.core.user_tier import (
     user_has_elevated_tier,
 )
 from app.models import Deck, Flashcard, FlashcardBookmark, User
+from app.utils.import_answer_split import resolve_import_answer_fields
 from app.schemas.flashcard import (
     DIFFICULTY_TO_INT,
     INT_TO_DIFFICULTY,
@@ -131,10 +132,16 @@ async def update_flashcard(
     if not deck:
         raise HTTPException(status_code=404, detail="Deck not found")
     await assert_may_mutate_deck(db, trusted_id, deck)
+    update_payload = data.model_dump(exclude_unset=True)
     if data.question is not None:
         flashcard.question = data.question
     if data.answer_short is not None:
         flashcard.answer_short = data.answer_short
+    if "answer_example" in update_payload:
+        ex = update_payload["answer_example"]
+        flashcard.answer_example = (
+            None if ex is None else (str(ex).strip() or None)
+        )
     if data.answer_detailed is not None:
         flashcard.answer_detailed = data.answer_detailed
     if data.difficulty is not None:
@@ -191,6 +198,7 @@ async def create_flashcard(
         deck_id=payload.deck_id,
         question=payload.question,
         answer_short=payload.answer_short,
+        answer_example=payload.answer_example,
         answer_detailed=payload.answer_detailed,
         difficulty=DIFFICULTY_TO_INT.get(payload.difficulty, 1),
     )
@@ -203,6 +211,7 @@ async def create_flashcard(
         deck_id=flashcard.deck_id,
         question=flashcard.question,
         answer_short=flashcard.answer_short,
+        answer_example=flashcard.answer_example,
         answer_detailed=flashcard.answer_detailed,
         difficulty=INT_TO_DIFFICULTY.get(flashcard.difficulty, "medium"),
         created_at=flashcard.created_at,
@@ -213,6 +222,7 @@ async def create_flashcard(
 class _ImportCard(BaseModel):
     question: str = Field(..., min_length=1)
     answer_short: str = Field(..., min_length=1)
+    answer_example: str | None = None
     answer_detailed: str | None = None
 
 
@@ -262,10 +272,14 @@ async def import_flashcards(
             continue
         if slots_remaining is not None and created >= slots_remaining:
             break
+        answer_short, answer_example = resolve_import_answer_fields(
+            card.answer_short, card.answer_example
+        )
         db.add(Flashcard(
             deck_id=payload.deck_id,
             question=card.question,
-            answer_short=card.answer_short,
+            answer_short=answer_short,
+            answer_example=answer_example,
             answer_detailed=card.answer_detailed,
             difficulty=1,
         ))

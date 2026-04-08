@@ -10,7 +10,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { getFlashcard, updateFlashcard } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import PageContainer from "@/components/layout/page-container";
@@ -24,14 +23,20 @@ export default function EditCardPage({ params }: EditCardPageProps) {
   const router = useRouter();
   const [question, setQuestion] = useState("");
   const [answerShort, setAnswerShort] = useState("");
+  const [answerExample, setAnswerExample] = useState("");
   const [answerDetailed, setAnswerDetailed] = useState("");
   const [difficulty, setDifficulty] = useState<"easy" | "medium" | "hard">("medium");
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const questionRef = useRef<HTMLTextAreaElement>(null);
-  const answerShortRef = useRef<HTMLInputElement>(null);
+  const answerRef = useRef<HTMLTextAreaElement>(null);
+  const answerExampleRef = useRef<HTMLTextAreaElement>(null);
   const answerDetailedRef = useRef<HTMLTextAreaElement>(null);
+
+  const cardTextareaClass = cn(
+    "w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-2 text-base text-start transition-colors outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50 md:text-sm resize-y"
+  );
 
   useEffect(() => {
     async function fetchCard() {
@@ -39,6 +44,7 @@ export default function EditCardPage({ params }: EditCardPageProps) {
         const data = await getFlashcard(params.card_id);
         setQuestion(data.question);
         setAnswerShort(data.answer_short);
+        setAnswerExample(data.answer_example ?? "");
         setAnswerDetailed(data.answer_detailed ?? "");
         setDifficulty((data.difficulty as "easy" | "medium" | "hard") ?? "medium");
       } catch {
@@ -59,7 +65,8 @@ export default function EditCardPage({ params }: EditCardPageProps) {
       await updateFlashcard(params.card_id, {
         question,
         answer_short: answerShort,
-        answer_detailed: answerDetailed || undefined,
+        answer_example: answerExample.trim() === "" ? null : answerExample.trim(),
+        answer_detailed: answerDetailed.trim() || undefined,
         difficulty,
       });
 
@@ -131,37 +138,67 @@ export default function EditCardPage({ params }: EditCardPageProps) {
                   onChange={(e) => setQuestion(e.target.value)}
                   placeholder="e.g. What is the capital of France?"
                   rows={3}
-                  className={cn(
-                    "w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-1.5 text-base text-start transition-colors outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50 md:text-sm"
-                  )}
+                  className={cardTextareaClass}
                 />
               </div>
               <div className="space-y-2">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <label htmlFor="answerShort" className="text-sm font-medium">
-                    Short Answer
+                  <label htmlFor="answer" className="text-sm font-medium">
+                    Answer{" "}
+                    <span className="font-normal text-muted-foreground">
+                      (main definition)
+                    </span>
                   </label>
                   <FlashcardMarkdownToolbar
-                    inputRef={answerShortRef}
+                    inputRef={answerRef}
                     value={answerShort}
                     onChange={setAnswerShort}
                   />
                 </div>
-                <Input
-                  ref={answerShortRef}
-                  id="answerShort"
+                <textarea
+                  ref={answerRef}
+                  id="answer"
                   dir="auto"
                   required
                   value={answerShort}
                   onChange={(e) => setAnswerShort(e.target.value)}
-                  placeholder="e.g. Paris"
-                  className="text-start"
+                  placeholder="Core answer or definition only — put examples in the field below."
+                  rows={5}
+                  className={cardTextareaClass}
+                />
+              </div>
+              <div className="space-y-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <label htmlFor="answerExample" className="text-sm font-medium">
+                    Example{" "}
+                    <span className="font-normal text-muted-foreground">
+                      (optional)
+                    </span>
+                  </label>
+                  <FlashcardMarkdownToolbar
+                    inputRef={answerExampleRef}
+                    value={answerExample}
+                    onChange={setAnswerExample}
+                  />
+                </div>
+                <textarea
+                  ref={answerExampleRef}
+                  id="answerExample"
+                  dir="auto"
+                  value={answerExample}
+                  onChange={(e) => setAnswerExample(e.target.value)}
+                  placeholder="Sample sentences, typical usage, or concrete examples."
+                  rows={5}
+                  className={cardTextareaClass}
                 />
               </div>
               <div className="space-y-2">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <label htmlFor="answerDetailed" className="text-sm font-medium">
-                    Detailed Answer (optional)
+                    Detailed explanation / notes{" "}
+                    <span className="font-normal text-muted-foreground">
+                      (optional)
+                    </span>
                   </label>
                   <FlashcardMarkdownToolbar
                     inputRef={answerDetailedRef}
@@ -175,11 +212,9 @@ export default function EditCardPage({ params }: EditCardPageProps) {
                   dir="auto"
                   value={answerDetailed}
                   onChange={(e) => setAnswerDetailed(e.target.value)}
-                  placeholder="Additional context or explanation..."
-                  rows={3}
-                  className={cn(
-                    "w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-1.5 text-base text-start transition-colors outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50 md:text-sm"
-                  )}
+                  placeholder="Extra context, mnemonics, or longer notes."
+                  rows={6}
+                  className={cardTextareaClass}
                 />
               </div>
               <div className="space-y-2">

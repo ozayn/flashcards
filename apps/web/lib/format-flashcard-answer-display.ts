@@ -53,3 +53,34 @@ export function parseAnswerParagraphs(rawText: string): ParsedAnswerParagraph[] 
     return { type: "example" as const, label, body };
   });
 }
+
+/**
+ * Compose primary answer for display: core definition (`answer_short`) plus optional
+ * `answer_example` as its own Example block (matches parseAnswerParagraphs styling).
+ */
+export function buildAnswerDisplayText(
+  answerShort: string,
+  answerExample?: string | null
+): string {
+  const core = (answerShort || "").replace(/\r\n/g, "\n").trimEnd();
+  const ex = (answerExample || "").replace(/\r\n/g, "\n").trim();
+  if (!ex) return core;
+  if (!core) return `Example:\n${ex}`;
+  return `${core}\n\nExample:\n${ex}`;
+}
+
+/** Whether to show the separate detailed/notes field below the main answer. */
+export function shouldShowAnswerDetailed(
+  answerDetailed: string | null | undefined,
+  answerShort: string,
+  answerExample?: string | null
+): boolean {
+  const d = (answerDetailed || "").replace(/\r\n/g, "\n").trim();
+  if (!d) return false;
+  const shortTrim = (answerShort || "").replace(/\r\n/g, "\n").trim();
+  const exTrim = (answerExample || "").replace(/\r\n/g, "\n").trim();
+  if (d === shortTrim) return false;
+  if (d === exTrim) return false;
+  if (d === buildAnswerDisplayText(answerShort, answerExample).trim()) return false;
+  return true;
+}

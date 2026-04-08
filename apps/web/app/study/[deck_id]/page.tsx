@@ -9,6 +9,10 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { Flashcard } from "@/components/study/Flashcard";
 import FormattedText from "@/components/FormattedText";
 import {
+  buildAnswerDisplayText,
+  shouldShowAnswerDetailed,
+} from "@/lib/format-flashcard-answer-display";
+import {
   getFlashcards,
   getUserSettings,
   updateUserSettings,
@@ -34,6 +38,7 @@ interface StudyFlashcard {
   id: string;
   question: string;
   answer_short: string;
+  answer_example?: string | null;
   answer_detailed?: string | null;
   bookmarked?: boolean;
 }
@@ -833,20 +838,26 @@ export default function StudyPage({ params }: StudyPageProps) {
               />
               <hr className="border-border" />
               <FormattedText
-                text={card.answer_short}
+                text={buildAnswerDisplayText(
+                  card.answer_short,
+                  card.answer_example
+                )}
                 className="whitespace-pre-line text-lg leading-relaxed sm:text-2xl lg:text-[1.75rem] landscape-mobile:text-xl landscape-mobile:leading-snug"
                 variant="answer"
               />
-              {card.answer_detailed &&
-                card.answer_detailed.trim() !== card.answer_short.trim() && (
-                  <div className="border-l-2 border-border pl-3 sm:pl-4">
-                    <FormattedText
-                      text={card.answer_detailed}
-                      className="whitespace-pre-line text-base leading-relaxed text-muted-foreground sm:text-lg lg:text-xl landscape-mobile:text-base"
-                      variant="answer"
-                    />
-                  </div>
-                )}
+              {shouldShowAnswerDetailed(
+                card.answer_detailed,
+                card.answer_short,
+                card.answer_example
+              ) ? (
+                <div className="border-l-2 border-border pl-3 sm:pl-4">
+                  <FormattedText
+                    text={card.answer_detailed ?? ""}
+                    className="whitespace-pre-line text-base leading-relaxed text-muted-foreground sm:text-lg lg:text-xl landscape-mobile:text-base"
+                    variant="answer"
+                  />
+                </div>
+              ) : null}
             </article>
             <nav
               className="mt-5 flex items-center justify-center gap-5 pb-3 landscape-mobile:mt-4 landscape-mobile:gap-4 landscape-mobile:pb-2"
@@ -917,18 +928,24 @@ export default function StudyPage({ params }: StudyPageProps) {
                     <>
                       <div className="flex min-h-0 w-full flex-1 cursor-pointer flex-col items-stretch justify-start overflow-y-auto">
                         <FormattedText
-                          text={card.answer_short}
+                          text={buildAnswerDisplayText(
+                            card.answer_short,
+                            card.answer_example
+                          )}
                           className="mt-5 whitespace-pre-line text-xl leading-relaxed sm:mt-7 sm:text-2xl lg:text-[1.75rem] landscape-mobile:mt-2 landscape-mobile:text-xl landscape-mobile:leading-snug"
                           variant="answer"
                         />
-                        {card.answer_detailed &&
-                          card.answer_detailed.trim() !== card.answer_short.trim() && (
-                            <FormattedText
-                              text={card.answer_detailed}
-                              className="mt-3 whitespace-pre-line text-base leading-relaxed text-muted-foreground sm:mt-4 sm:text-lg lg:text-xl landscape-mobile:mt-2 landscape-mobile:text-base landscape-mobile:leading-snug"
-                              variant="answer"
-                            />
-                          )}
+                        {shouldShowAnswerDetailed(
+                          card.answer_detailed,
+                          card.answer_short,
+                          card.answer_example
+                        ) ? (
+                          <FormattedText
+                            text={card.answer_detailed ?? ""}
+                            className="mt-3 whitespace-pre-line text-base leading-relaxed text-muted-foreground sm:mt-4 sm:text-lg lg:text-xl landscape-mobile:mt-2 landscape-mobile:text-base landscape-mobile:leading-snug"
+                            variant="answer"
+                          />
+                        ) : null}
                       </div>
                       {deckView === "quiz" && showAnswer && (
                         <div

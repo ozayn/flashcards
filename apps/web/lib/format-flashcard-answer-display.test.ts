@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   applyExampleParagraphBreaks,
+  buildAnswerDisplayText,
   parseAnswerParagraphs,
+  shouldShowAnswerDetailed,
 } from "./format-flashcard-answer-display";
 
 describe("applyExampleParagraphBreaks", () => {
@@ -76,5 +78,40 @@ describe("parseAnswerParagraphs", () => {
     const blocks = parseAnswerParagraphs("See Counterexample: here.");
     expect(blocks).toHaveLength(1);
     expect(blocks[0]).toMatchObject({ type: "plain", text: "See Counterexample: here." });
+  });
+});
+
+describe("buildAnswerDisplayText", () => {
+  it("returns only core when no example", () => {
+    expect(buildAnswerDisplayText("Core def.", null)).toBe("Core def.");
+  });
+
+  it("prefixes Example when only example is set", () => {
+    expect(buildAnswerDisplayText("", "e.g. usage")).toBe("Example:\ne.g. usage");
+  });
+
+  it("joins core and example with blank line", () => {
+    expect(buildAnswerDisplayText("A monoid is …", "ℕ under +")).toContain(
+      "A monoid is …\n\nExample:\n"
+    );
+  });
+});
+
+describe("shouldShowAnswerDetailed", () => {
+  it("hides when detailed duplicates core or example or full composed answer", () => {
+    expect(shouldShowAnswerDetailed("", "a", null)).toBe(false);
+    expect(shouldShowAnswerDetailed("a", "a", null)).toBe(false);
+    expect(shouldShowAnswerDetailed("ex", "a", "ex")).toBe(false);
+    expect(
+      shouldShowAnswerDetailed(
+        buildAnswerDisplayText("a", "b"),
+        "a",
+        "b"
+      )
+    ).toBe(false);
+  });
+
+  it("shows when detailed is distinct notes", () => {
+    expect(shouldShowAnswerDetailed("Extra notes only here", "def", null)).toBe(true);
   });
 });

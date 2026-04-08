@@ -21,6 +21,7 @@ class Flashcard(Base):
     )
     question: Mapped[str] = mapped_column(Text, nullable=False)
     answer_short: Mapped[str] = mapped_column(String(1000), nullable=False)
+    answer_example: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     answer_detailed: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     difficulty: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     created_at: Mapped[datetime] = mapped_column(

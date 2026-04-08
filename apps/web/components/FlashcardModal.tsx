@@ -7,12 +7,18 @@ import { Button } from "@/components/ui/button";
 import { FlashcardBookmarkStar } from "@/components/flashcard-bookmark-star";
 import { FlashcardFlip } from "@/components/FlashcardFlip";
 import FormattedText from "@/components/FormattedText";
+import {
+  buildAnswerDisplayText,
+  shouldShowAnswerDetailed,
+} from "@/lib/format-flashcard-answer-display";
 import { cn } from "@/lib/utils";
 
 export interface FlashcardModalCard {
   id: string;
   question: string;
   answer_short: string;
+  answer_example?: string | null;
+  answer_detailed?: string | null;
   bookmarked?: boolean;
 }
 
@@ -220,12 +226,33 @@ export function FlashcardModal({
                     </p>
                     <div dir="auto" className="text-base leading-relaxed text-foreground">
                       <FormattedText
-                        text={card.answer_short}
+                        text={buildAnswerDisplayText(
+                          card.answer_short,
+                          card.answer_example
+                        )}
                         className="text-inherit"
                         variant="answer"
                       />
                     </div>
                   </div>
+                  {shouldShowAnswerDetailed(
+                    card.answer_detailed,
+                    card.answer_short,
+                    card.answer_example
+                  ) ? (
+                    <div>
+                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1.5">
+                        Notes
+                      </p>
+                      <div dir="auto" className="text-base leading-relaxed text-muted-foreground">
+                        <FormattedText
+                          text={card.answer_detailed ?? ""}
+                          className="text-inherit"
+                          variant="answer"
+                        />
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               </div>
               <div className="hidden sm:flex w-11 md:w-12 shrink-0 items-center justify-center pr-1 md:pr-2">
@@ -300,7 +327,10 @@ export function FlashcardModal({
                     }
                     answer={
                       <FormattedText
-                        text={card.answer_short}
+                        text={buildAnswerDisplayText(
+                          card.answer_short,
+                          card.answer_example
+                        )}
                         className="whitespace-pre-line text-xl sm:text-2xl lg:text-[1.75rem] leading-relaxed text-foreground"
                         variant="answer"
                       />

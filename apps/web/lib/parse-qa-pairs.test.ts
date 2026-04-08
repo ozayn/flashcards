@@ -83,4 +83,38 @@ Q: Only
 A: One`)
     ).toBeNull();
   });
+
+  it("splits Example: into answer_example (regression: re-import / paste Q&A)", () => {
+    const text = `Q: What is photosynthesis?
+A: Plants convert light to chemical energy.
+
+Example:
+A leaf absorbing sunlight.
+
+Q: Second card?
+A: Short answer only.`;
+
+    const pairs = parseQAPairs(text);
+    expect(pairs).not.toBeNull();
+    expect(pairs).toHaveLength(2);
+    expect(pairs![0]!.answer_short).toBe(
+      "Plants convert light to chemical energy."
+    );
+    expect(pairs![0]!.answer_example).toBe("A leaf absorbing sunlight.");
+    expect(pairs![1]!.answer_short).toBe("Short answer only.");
+    expect(pairs![1]!.answer_example).toBeUndefined();
+  });
+
+  it("splits same-line A: ... Example: ... into answer_example", () => {
+    const text = `Q: One
+A: Paris is the capital. Example: It hosts the Louvre.
+
+Q: Two
+A: Beta`;
+
+    const pairs = parseQAPairs(text);
+    expect(pairs).not.toBeNull();
+    expect(pairs![0]!.answer_short).toBe("Paris is the capital.");
+    expect(pairs![0]!.answer_example).toBe("It hosts the Louvre.");
+  });
 });

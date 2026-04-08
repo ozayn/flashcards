@@ -6,6 +6,7 @@ from pydantic import BaseModel, model_validator
 class GeneratedFlashcard(BaseModel):
     question: str
     answer_short: str
+    answer_example: Optional[str] = None
     answer_detailed: Optional[str] = None
 
     @model_validator(mode="before")

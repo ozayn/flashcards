@@ -12,6 +12,7 @@ class FlashcardCreate(BaseModel):
     deck_id: str = Field(..., description="Deck ID")
     question: str = Field(..., min_length=1)
     answer_short: str = Field(..., min_length=1, max_length=1000)
+    answer_example: Optional[str] = None
     answer_detailed: Optional[str] = None
     difficulty: Literal["easy", "medium", "hard"] = Field(default="medium")
 
@@ -19,6 +20,7 @@ class FlashcardCreate(BaseModel):
 class FlashcardUpdate(BaseModel):
     question: Optional[str] = Field(None, min_length=1)
     answer_short: Optional[str] = Field(None, min_length=1, max_length=1000)
+    answer_example: Optional[str] = None
     answer_detailed: Optional[str] = None
     difficulty: Optional[Literal["easy", "medium", "hard"]] = None
 
@@ -28,6 +30,7 @@ class FlashcardResponse(BaseModel):
     deck_id: str
     question: str
     answer_short: str
+    answer_example: Optional[str] = None
     answer_detailed: Optional[str] = None
     difficulty: str
     created_at: datetime
@@ -43,6 +46,7 @@ class FlashcardResponse(BaseModel):
             deck_id=flashcard.deck_id,
             question=flashcard.question,
             answer_short=flashcard.answer_short,
+            answer_example=flashcard.answer_example,
             answer_detailed=flashcard.answer_detailed,
             difficulty=INT_TO_DIFFICULTY.get(flashcard.difficulty, "medium"),
             created_at=flashcard.created_at,

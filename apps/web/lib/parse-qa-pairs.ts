@@ -7,14 +7,20 @@
  *   mark a hard boundary so the next card label never appends to the prior answer.
  */
 
+import { splitImportAnswerOnExampleMarker } from "@/lib/import-answer-split";
+
 /** Whole line is only a structural "Card N" label (content not stored). */
 const CARD_HEADING_LINE = /^\s*Card\s+\d+\s*:?\s*$/i;
 
-export function parseQAPairs(
-  text: string
-): { question: string; answer_short: string }[] | null {
+export type ParsedQAPair = {
+  question: string;
+  answer_short: string;
+  answer_example?: string;
+};
+
+export function parseQAPairs(text: string): ParsedQAPair[] | null {
   const lines = text.split(/\n/);
-  const pairs: { question: string; answer_short: string }[] = [];
+  const pairs: ParsedQAPair[] = [];
   let currentQ: string | null = null;
   let currentA: string[] = [];
 
@@ -22,7 +28,12 @@ export function parseQAPairs(
     if (currentQ !== null && currentA.length > 0) {
       const q = currentQ.trim();
       const a = currentA.join("\n").trim();
-      if (q && a) pairs.push({ question: q, answer_short: a });
+      if (q && a) {
+        const { main, example } = splitImportAnswerOnExampleMarker(a);
+        const row: ParsedQAPair = { question: q, answer_short: main };
+        if (example) row.answer_example = example;
+        pairs.push(row);
+      }
     }
     currentQ = null;
     currentA = [];

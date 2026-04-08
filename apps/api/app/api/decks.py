@@ -147,6 +147,7 @@ async def duplicate_deck(
             deck_id=new_deck.id,
             question=card.question,
             answer_short=card.answer_short,
+            answer_example=card.answer_example,
             answer_detailed=card.answer_detailed,
             difficulty=card.difficulty,
         ))

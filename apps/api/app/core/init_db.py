@@ -168,6 +168,21 @@ async def init_db() -> None:
         await conn.run_sync(_migrate_decks)
     logger.info("Applied decks column migrations")
 
+    async with engine.begin() as conn:
+        def _migrate_flashcards_answer_example(sync_conn):
+            _add_column_if_missing(
+                sync_conn,
+                "flashcards",
+                "answer_example",
+                "ALTER TABLE flashcards ADD COLUMN answer_example TEXT",
+                pg_if_not_exists=(
+                    "ALTER TABLE flashcards ADD COLUMN IF NOT EXISTS answer_example TEXT"
+                ),
+            )
+
+        await conn.run_sync(_migrate_flashcards_answer_example)
+    logger.info("Applied flashcards answer_example column migration")
+
     # Make source_type nullable for PostgreSQL (allows NULL for existing/legacy rows)
     if not _IS_SQLITE:
         async with engine.begin() as conn:
