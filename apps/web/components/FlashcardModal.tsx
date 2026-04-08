@@ -193,9 +193,9 @@ export function FlashcardModal({
                     <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1.5">
                       Question
                     </p>
-                    <p dir="auto" className="text-base font-medium leading-relaxed text-foreground">
-                      {card.question}
-                    </p>
+                    <div dir="auto" className="text-base font-medium leading-relaxed text-foreground">
+                      <FormattedText text={card.question} className="text-inherit" />
+                    </div>
                   </div>
                   <div>
                     <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1.5">
@@ -277,9 +277,9 @@ export function FlashcardModal({
                   <FlashcardFlip
                     key={card.id}
                     question={
-                      <span className="text-2xl sm:text-3xl lg:text-4xl font-medium leading-snug sm:leading-relaxed text-foreground">
-                        {card.question}
-                      </span>
+                      <div className="text-2xl sm:text-3xl lg:text-4xl font-medium leading-snug sm:leading-relaxed text-foreground">
+                        <FormattedText text={card.question} className="text-inherit" />
+                      </div>
                     }
                     answer={
                       <FormattedText

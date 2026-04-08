@@ -1,7 +1,12 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { BlockMath, InlineMath } from "react-katex";
 import { parseAnswerParagraphs } from "@/lib/format-flashcard-answer-display";
+import {
+  parseInlineMarkdownTree,
+  type InlineMdNode,
+} from "@/lib/inline-markdown";
 import { cn } from "@/lib/utils";
 
 type Props = {
@@ -28,15 +33,39 @@ function repairLatex(math: string): string {
     .replace(/\^leftarrow/g, "\\leftarrow");
 }
 
-/** Render text with $$...$$ as block math. No modification of formula content - backslashes preserved. */
-function renderMixed(text: string) {
+function renderInlineMarkdownNodes(
+  nodes: InlineMdNode[],
+  keyPrefix: string
+): ReactNode[] {
+  return nodes.map((n, i) => {
+    const k = `${keyPrefix}-${i}`;
+    if (n.type === "text") {
+      return <span key={k}>{n.value}</span>;
+    }
+    if (n.type === "italic") {
+      return (
+        <em key={k} className="italic">
+          {n.value}
+        </em>
+      );
+    }
+    return (
+      <strong key={k} className="font-semibold">
+        {renderInlineMarkdownNodes(n.children, k)}
+      </strong>
+    );
+  });
+}
+
+/** Render text with $$...$$ as block math, then **bold** / *italic* on each text segment. */
+function renderMixed(text: string, keyPrefix: string) {
   const parts = text.split(/(\$\$[\s\S]*?\$\$)/);
   return parts.map((part, i) => {
     if (part.startsWith("$$")) {
       const raw = part.replace(/\$\$/g, "").trim();
       const math = repairLatex(raw);
       return (
-        <span key={i} className="katex-block overflow-visible my-2">
+        <span key={`${keyPrefix}-m${i}`} className="katex-block overflow-visible my-2">
           <BlockMath
             math={math}
             errorColor="#888"
@@ -57,7 +86,12 @@ function renderMixed(text: string) {
         </span>
       );
     }
-    return <span key={i}>{part}</span>;
+    const tree = parseInlineMarkdownTree(part);
+    return (
+      <span key={`${keyPrefix}-t${i}`}>
+        {renderInlineMarkdownNodes(tree, `${keyPrefix}-t${i}`)}
+      </span>
+    );
   });
 }
 
@@ -80,7 +114,7 @@ export default function FormattedText({
           {blocks.map((block, i) =>
             block.type === "plain" ? (
               <div key={i} className="min-w-0 whitespace-pre-line">
-                {renderMixed(block.text)}
+                {renderMixed(block.text, `a${i}`)}
               </div>
             ) : (
               <div key={i} className="min-w-0 whitespace-pre-line">
@@ -88,7 +122,7 @@ export default function FormattedText({
                 {block.body ? (
                   <>
                     {" "}
-                    {renderMixed(block.body)}
+                    {renderMixed(block.body, `a${i}b`)}
                   </>
                 ) : null}
               </div>
@@ -111,7 +145,7 @@ export default function FormattedText({
         className={className ? `whitespace-pre-line ${className}` : "whitespace-pre-line"}
         dir="auto"
       >
-        {renderMixed(text)}
+        {renderMixed(text, "q")}
       </div>
     );
   } catch {

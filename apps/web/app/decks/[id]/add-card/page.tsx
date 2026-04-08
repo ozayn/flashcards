@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { createFlashcard } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import PageContainer from "@/components/layout/page-container";
+import { FlashcardMarkdownToolbar } from "@/components/flashcard-markdown-toolbar";
 
 interface AddCardPageProps {
   params: { id: string };
@@ -28,6 +29,9 @@ export default function AddCardPage({ params }: AddCardPageProps) {
   const [difficulty, setDifficulty] = useState<"easy" | "medium" | "hard">("medium");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const questionRef = useRef<HTMLTextAreaElement>(null);
+  const answerShortRef = useRef<HTMLInputElement>(null);
+  const answerDetailedRef = useRef<HTMLTextAreaElement>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -71,10 +75,18 @@ export default function AddCardPage({ params }: AddCardPageProps) {
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-2">
-                <label htmlFor="question" className="text-sm font-medium">
-                  Question
-                </label>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <label htmlFor="question" className="text-sm font-medium">
+                    Question
+                  </label>
+                  <FlashcardMarkdownToolbar
+                    inputRef={questionRef}
+                    value={question}
+                    onChange={setQuestion}
+                  />
+                </div>
                 <textarea
+                  ref={questionRef}
                   id="question"
                   dir="auto"
                   required
@@ -88,10 +100,18 @@ export default function AddCardPage({ params }: AddCardPageProps) {
                 />
               </div>
               <div className="space-y-2">
-                <label htmlFor="answerShort" className="text-sm font-medium">
-                  Short Answer
-                </label>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <label htmlFor="answerShort" className="text-sm font-medium">
+                    Short Answer
+                  </label>
+                  <FlashcardMarkdownToolbar
+                    inputRef={answerShortRef}
+                    value={answerShort}
+                    onChange={setAnswerShort}
+                  />
+                </div>
                 <Input
+                  ref={answerShortRef}
                   id="answerShort"
                   dir="auto"
                   required
@@ -102,10 +122,18 @@ export default function AddCardPage({ params }: AddCardPageProps) {
                 />
               </div>
               <div className="space-y-2">
-                <label htmlFor="answerDetailed" className="text-sm font-medium">
-                  Detailed Answer (optional)
-                </label>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <label htmlFor="answerDetailed" className="text-sm font-medium">
+                    Detailed Answer (optional)
+                  </label>
+                  <FlashcardMarkdownToolbar
+                    inputRef={answerDetailedRef}
+                    value={answerDetailed}
+                    onChange={setAnswerDetailed}
+                  />
+                </div>
                 <textarea
+                  ref={answerDetailedRef}
                   id="answerDetailed"
                   dir="auto"
                   value={answerDetailed}

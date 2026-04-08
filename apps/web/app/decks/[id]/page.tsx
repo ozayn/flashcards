@@ -1938,8 +1938,8 @@ export default function DeckPage({ params }: DeckPageProps) {
                     className="flex-1 min-w-0 text-start cursor-pointer hover:opacity-90 transition-opacity"
                   >
                     <div className="flex flex-col gap-1.5">
-                      <div dir="auto" className="font-semibold text-xl leading-snug max-mobile:text-lg max-mobile:leading-snug">
-                        {card.question}
+                      <div dir="auto" className="min-w-0 font-semibold text-xl leading-snug max-mobile:text-lg max-mobile:leading-snug">
+                        <FormattedText text={card.question} className="text-inherit font-inherit" />
                       </div>
                       <div dir="auto" className="text-sm text-muted-foreground leading-relaxed max-mobile:text-[13px] line-clamp-2">
                         <FormattedText
@@ -2020,8 +2020,11 @@ export default function DeckPage({ params }: DeckPageProps) {
                     onClick={() => setModalCardIndex(index)}
                     className="flex-1 text-start cursor-pointer p-4 max-mobile:p-3.5 hover:bg-muted/30 transition-colors"
                   >
-                    <div dir="auto" className="font-semibold text-base leading-snug line-clamp-3 mb-2">
-                      {card.question}
+                    <div dir="auto" className="min-w-0 mb-2">
+                      <FormattedText
+                        text={card.question}
+                        className="font-semibold text-base leading-snug line-clamp-3 text-inherit"
+                      />
                     </div>
                     <div dir="auto" className="text-sm text-muted-foreground leading-relaxed line-clamp-3">
                       <FormattedText
