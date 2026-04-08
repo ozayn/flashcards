@@ -1,10 +1,17 @@
 "use client";
 
 import { BlockMath, InlineMath } from "react-katex";
+import { parseAnswerParagraphs } from "@/lib/format-flashcard-answer-display";
+import { cn } from "@/lib/utils";
 
 type Props = {
   text: string;
   className?: string;
+  /**
+   * Answer side only: insert a paragraph break before `Example:` / `Examples:` when needed.
+   * Questions and other copy should use default.
+   */
+  variant?: "default" | "answer";
 };
 
 /** Repair common LLM LaTeX mistakes and JSON-escape corruption.
@@ -54,18 +61,65 @@ function renderMixed(text: string) {
   });
 }
 
-export default function FormattedText({ text, className }: Props) {
+export default function FormattedText({
+  text,
+  className,
+  variant = "default",
+}: Props) {
   if (!text) return null;
+
+  if (variant === "answer") {
+    const blocks = parseAnswerParagraphs(text);
+    if (blocks.length === 0) return null;
+    try {
+      return (
+        <div
+          className={cn("flex flex-col gap-y-4", className)}
+          dir="auto"
+        >
+          {blocks.map((block, i) =>
+            block.type === "plain" ? (
+              <div key={i} className="min-w-0 whitespace-pre-line">
+                {renderMixed(block.text)}
+              </div>
+            ) : (
+              <div key={i} className="min-w-0 whitespace-pre-line">
+                <span className="italic text-muted-foreground">{block.label}</span>
+                {block.body ? (
+                  <>
+                    {" "}
+                    {renderMixed(block.body)}
+                  </>
+                ) : null}
+              </div>
+            )
+          )}
+        </div>
+      );
+    } catch {
+      return (
+        <div className={cn("whitespace-pre-line", className)} dir="auto">
+          {text}
+        </div>
+      );
+    }
+  }
 
   try {
     return (
-      <div className={className ? `whitespace-pre-line ${className}` : "whitespace-pre-line"} dir="auto">
+      <div
+        className={className ? `whitespace-pre-line ${className}` : "whitespace-pre-line"}
+        dir="auto"
+      >
         {renderMixed(text)}
       </div>
     );
   } catch {
     return (
-      <div className={className ? `whitespace-pre-line ${className}` : "whitespace-pre-line"} dir="auto">
+      <div
+        className={className ? `whitespace-pre-line ${className}` : "whitespace-pre-line"}
+        dir="auto"
+      >
         {text}
       </div>
     );

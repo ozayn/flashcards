@@ -893,41 +893,7 @@ export async function importFlashcards(data: {
   return res.json();
 }
 
-export function parseQAPairs(
-  text: string
-): { question: string; answer_short: string }[] | null {
-  const lines = text.split(/\n/);
-  const pairs: { question: string; answer_short: string }[] = [];
-  let currentQ: string | null = null;
-  let currentA: string[] = [];
-
-  const flushPair = () => {
-    if (currentQ !== null && currentA.length > 0) {
-      const q = currentQ.trim();
-      const a = currentA.join("\n").trim();
-      if (q && a) pairs.push({ question: q, answer_short: a });
-    }
-    currentQ = null;
-    currentA = [];
-  };
-
-  for (const line of lines) {
-    const qMatch = line.match(/^Q:\s*(.+)/i);
-    const aMatch = line.match(/^A:\s*(.+)/i);
-
-    if (qMatch) {
-      flushPair();
-      currentQ = qMatch[1];
-    } else if (aMatch && currentQ !== null) {
-      currentA.push(aMatch[1]);
-    } else if (currentA.length > 0 && line.trim()) {
-      currentA.push(line);
-    }
-  }
-  flushPair();
-
-  return pairs.length >= 2 ? pairs : null;
-}
+export { parseQAPairs } from "./parse-qa-pairs";
 
 export async function getFlashcard(flashcardId: string) {
   const res = await fetch(`${API_BASE}/flashcards/${flashcardId}`, {

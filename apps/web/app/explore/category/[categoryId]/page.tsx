@@ -475,6 +475,7 @@ export default function CategoryExplorePage({ params }: CategoryExplorePageProps
               <FormattedText
                 text={card.answer_short}
                 className="whitespace-pre-line text-lg sm:text-2xl lg:text-[1.75rem] leading-relaxed"
+                variant="answer"
               />
               {card.answer_detailed &&
                 card.answer_detailed.trim() !== card.answer_short.trim() && (
@@ -482,6 +483,7 @@ export default function CategoryExplorePage({ params }: CategoryExplorePageProps
                     <FormattedText
                       text={card.answer_detailed}
                       className="whitespace-pre-line text-base sm:text-lg lg:text-xl text-muted-foreground leading-relaxed"
+                      variant="answer"
                     />
                   </div>
                 )}
@@ -543,12 +545,14 @@ export default function CategoryExplorePage({ params }: CategoryExplorePageProps
                       <FormattedText
                         text={card.answer_short}
                         className="mt-5 whitespace-pre-line text-xl leading-relaxed sm:mt-7 sm:text-2xl lg:text-[1.75rem] landscape-mobile:mt-2 landscape-mobile:text-xl"
+                        variant="answer"
                       />
                       {card.answer_detailed &&
                         card.answer_detailed.trim() !== card.answer_short.trim() && (
                           <FormattedText
                             text={card.answer_detailed}
                             className="mt-3 whitespace-pre-line text-base leading-relaxed text-muted-foreground sm:mt-4 sm:text-lg lg:text-xl landscape-mobile:mt-2"
+                            variant="answer"
                           />
                         )}
                     </div>

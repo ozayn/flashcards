@@ -202,7 +202,11 @@ export function FlashcardModal({
                       Answer
                     </p>
                     <div dir="auto" className="text-base leading-relaxed text-foreground">
-                      <FormattedText text={card.answer_short} className="text-inherit" />
+                      <FormattedText
+                        text={card.answer_short}
+                        className="text-inherit"
+                        variant="answer"
+                      />
                     </div>
                   </div>
                 </div>
@@ -281,6 +285,7 @@ export function FlashcardModal({
                       <FormattedText
                         text={card.answer_short}
                         className="whitespace-pre-line text-xl sm:text-2xl lg:text-[1.75rem] leading-relaxed text-foreground"
+                        variant="answer"
                       />
                     }
                     className="w-full"

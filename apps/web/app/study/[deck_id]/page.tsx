@@ -721,6 +721,7 @@ export default function StudyPage({ params }: StudyPageProps) {
               <FormattedText
                 text={card.answer_short}
                 className="whitespace-pre-line text-lg leading-relaxed sm:text-2xl lg:text-[1.75rem] landscape-mobile:text-xl landscape-mobile:leading-snug"
+                variant="answer"
               />
               {card.answer_detailed &&
                 card.answer_detailed.trim() !== card.answer_short.trim() && (
@@ -728,6 +729,7 @@ export default function StudyPage({ params }: StudyPageProps) {
                     <FormattedText
                       text={card.answer_detailed}
                       className="whitespace-pre-line text-base leading-relaxed text-muted-foreground sm:text-lg lg:text-xl landscape-mobile:text-base"
+                      variant="answer"
                     />
                   </div>
                 )}
@@ -790,12 +792,14 @@ export default function StudyPage({ params }: StudyPageProps) {
                         <FormattedText
                           text={card.answer_short}
                           className="mt-5 whitespace-pre-line text-xl leading-relaxed sm:mt-7 sm:text-2xl lg:text-[1.75rem] landscape-mobile:mt-2 landscape-mobile:text-xl landscape-mobile:leading-snug"
+                          variant="answer"
                         />
                         {card.answer_detailed &&
                           card.answer_detailed.trim() !== card.answer_short.trim() && (
                             <FormattedText
                               text={card.answer_detailed}
                               className="mt-3 whitespace-pre-line text-base leading-relaxed text-muted-foreground sm:mt-4 sm:text-lg lg:text-xl landscape-mobile:mt-2 landscape-mobile:text-base landscape-mobile:leading-snug"
+                              variant="answer"
                             />
                           )}
                       </div>

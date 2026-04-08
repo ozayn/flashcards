@@ -1942,7 +1942,11 @@ export default function DeckPage({ params }: DeckPageProps) {
                         {card.question}
                       </div>
                       <div dir="auto" className="text-sm text-muted-foreground leading-relaxed max-mobile:text-[13px] line-clamp-2">
-                        <FormattedText text={card.answer_short} className="text-inherit" />
+                        <FormattedText
+                          text={card.answer_short}
+                          className="text-inherit"
+                          variant="answer"
+                        />
                       </div>
                     </div>
                   </button>
@@ -2020,7 +2024,11 @@ export default function DeckPage({ params }: DeckPageProps) {
                       {card.question}
                     </div>
                     <div dir="auto" className="text-sm text-muted-foreground leading-relaxed line-clamp-3">
-                      <FormattedText text={card.answer_short} className="text-inherit" />
+                      <FormattedText
+                        text={card.answer_short}
+                        className="text-inherit"
+                        variant="answer"
+                      />
                     </div>
                   </button>
                   {!isReadOnly && (
