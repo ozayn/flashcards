@@ -94,6 +94,7 @@ export type UserRow = {
   role: string;
   plan: string;
   created_at: string;
+  picture_url?: string | null;
   usage?: UserUsageLimits | null;
 };
 
@@ -226,14 +227,17 @@ export async function getUsers(): Promise<UserRow[]> {
   return p;
 }
 
-/** User row from admin list/update (same shape as public user API). */
+/** User row from admin list (includes activity aggregate); PATCH returns the same shape. */
 export type AdminUserRow = {
   id: string;
   email: string;
   name: string;
   role: string;
   plan: string;
+  access_role: "owner" | "admin" | "user";
   created_at: string;
+  picture_url?: string | null;
+  last_active_at?: string | null;
 };
 
 /** Requires signed-in Google session; proxy sends acting-user headers; API checks ADMIN_EMAILS on backend user. */

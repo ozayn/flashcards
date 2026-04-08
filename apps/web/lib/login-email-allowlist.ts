@@ -86,3 +86,13 @@ export function evaluateAllowedLoginEmail(
 export function isEmailAllowedForLogin(email: string | null | undefined): boolean {
   return evaluateAllowedLoginEmail(email).allowed;
 }
+
+/**
+ * Sorted allowlist entries as compared at runtime (trim + lowercase each segment).
+ * For SIGNIN_ALLOWLIST_DEBUG / support — do not log in untrusted environments.
+ */
+export function listAllowedLoginEmailsNormalized(): string[] {
+  return Array.from(
+    parseAllowedLoginEmails(process.env.ALLOWED_LOGIN_EMAILS)
+  ).sort();
+}

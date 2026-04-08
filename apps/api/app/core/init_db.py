@@ -251,6 +251,21 @@ async def init_db() -> None:
         await conn.run_sync(_migrate_google_sub)
     logger.info("Applied google_sub column migration")
 
+    async with engine.begin() as conn:
+        def _migrate_users_picture_url(sync_conn):
+            _add_column_if_missing(
+                sync_conn,
+                "users",
+                "picture_url",
+                "ALTER TABLE users ADD COLUMN picture_url TEXT",
+                pg_if_not_exists=(
+                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS picture_url VARCHAR(2048)"
+                ),
+            )
+
+        await conn.run_sync(_migrate_users_picture_url)
+    logger.info("Applied users.picture_url column migration")
+
     # Ensure reviewrating enum has all values (PostgreSQL only; SQLite uses CHECK)
     if not _IS_SQLITE:
         async with engine.begin() as conn:

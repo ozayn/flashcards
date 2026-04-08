@@ -18,6 +18,8 @@ class User(Base):
     )
     # Stable Google subject (OpenID "sub"); null for legacy/local users only.
     google_sub: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True)
+    # Profile image URL from Google OAuth sync; null for legacy or before first sign-in.
+    picture_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     role: Mapped[UserRole] = mapped_column(

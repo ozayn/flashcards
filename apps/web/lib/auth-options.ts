@@ -2,7 +2,10 @@ import type { NextAuthOptions } from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
 import { getBackendUrl } from "@/lib/backend-url";
 import { isAdminEmailAllowlisted } from "@/lib/admin-email-allowlist";
-import { evaluateAllowedLoginEmail } from "@/lib/login-email-allowlist";
+import {
+  evaluateAllowedLoginEmail,
+  listAllowedLoginEmailsNormalized,
+} from "@/lib/login-email-allowlist";
 
 function googleProviders() {
   const id = process.env.GOOGLE_CLIENT_ID?.trim();
@@ -44,6 +47,7 @@ export const authOptions: NextAuthOptions = {
             googleEmailPresent: ev.googleEmailPresent,
             comparedEmail: ev.comparedEmail,
             allowlistEntryCount: ev.allowlistEntryCount,
+            allowlistEntriesNormalized: listAllowedLoginEmailsNormalized(),
             matchedAllowlist: ev.allowed,
             denyReason: ev.denyReason,
           })
@@ -63,6 +67,8 @@ export const authOptions: NextAuthOptions = {
             denyReason: ev.denyReason,
             comparedEmail: ev.comparedEmail,
             allowlistEntryCount: ev.allowlistEntryCount,
+            hintEnv:
+              "Allowlist is read from the Next.js process: ALLOWED_LOGIN_EMAILS in apps/web/.env.local (not only apps/api/.env). Restart next dev after edits.",
           })
         );
         return false;
@@ -100,6 +106,7 @@ export const authOptions: NextAuthOptions = {
             google_sub: account.providerAccountId,
             email: prof?.email ?? token.email ?? undefined,
             name: (prof?.name ?? token.name ?? "Google user").trim() || "Google user",
+            picture: nextPicture || undefined,
           }),
         });
         if (!res.ok) {

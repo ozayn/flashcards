@@ -15,6 +15,8 @@ import {
   type UserActivityEntry,
 } from "@/lib/api";
 import { History, Pencil, RotateCw, Trash2 } from "lucide-react";
+import { AccountAvatar } from "@/components/account-avatar";
+import { cn } from "@/lib/utils";
 
 const ADMIN_ACTIVITY_LIMIT = 15;
 
@@ -66,6 +68,60 @@ function formatCreated(iso: string) {
   } catch {
     return iso;
   }
+}
+
+function AccessRoleBadge({ role }: { role: AdminUserRow["access_role"] }) {
+  const label =
+    role === "owner" ? "Owner" : role === "admin" ? "Admin" : "User";
+  return (
+    <span
+      className={cn(
+        "inline-flex rounded-full border px-2 py-0.5 text-[11px] font-medium",
+        role === "owner" &&
+          "border-violet-500/30 bg-violet-500/[0.08] text-foreground dark:border-violet-400/25 dark:bg-violet-400/[0.12]",
+        role === "admin" &&
+          "border-foreground/12 bg-muted/80 text-foreground",
+        role === "user" &&
+          "border-border/70 bg-background text-muted-foreground"
+      )}
+    >
+      {label}
+    </span>
+  );
+}
+
+function PlanBadge({ plan }: { plan: string }) {
+  const p = (plan || "").toLowerCase();
+  const isPaid = p === "pro";
+  const label = isPaid ? "Paid" : p === "free" ? "Free" : plan || "—";
+  return (
+    <span
+      className={cn(
+        "inline-flex rounded-full border px-2 py-0.5 text-[11px] font-medium",
+        isPaid
+          ? "border-emerald-500/25 bg-emerald-500/[0.06] text-foreground dark:border-emerald-400/20 dark:bg-emerald-400/[0.08]"
+          : "border-border/70 bg-muted/40 text-muted-foreground"
+      )}
+    >
+      {label}
+    </span>
+  );
+}
+
+function adminRowInitials(name: string, email: string): string {
+  const n = name.trim();
+  if (n) {
+    const parts = n.split(/\s+/).filter(Boolean);
+    if (parts.length >= 2) {
+      const a = parts[0]![0] ?? "";
+      const b = parts[parts.length - 1]![0] ?? "";
+      return (a + b).toUpperCase();
+    }
+    return n.slice(0, 2).toUpperCase();
+  }
+  const em = email.trim();
+  if (em.length > 0) return em[0]!.toUpperCase();
+  return "?";
 }
 
 export function AdminUsersClient() {
@@ -320,6 +376,15 @@ export function AdminUsersClient() {
                 <th className="px-2 py-2 text-left text-xs font-medium text-muted-foreground">
                   Email
                 </th>
+                <th className="whitespace-nowrap px-2 py-2 text-left text-xs font-medium text-muted-foreground">
+                  Role
+                </th>
+                <th className="whitespace-nowrap px-2 py-2 text-left text-xs font-medium text-muted-foreground">
+                  Plan
+                </th>
+                <th className="whitespace-nowrap px-2 py-2 text-left text-xs font-medium text-muted-foreground">
+                  Last active
+                </th>
                 <th className="hidden px-2 py-2 text-left text-xs font-medium text-muted-foreground sm:table-cell">
                   Created
                 </th>
@@ -334,16 +399,36 @@ export function AdminUsersClient() {
                 return (
                   <Fragment key={u.id}>
                   <tr className="border-b border-border/60 last:border-0">
-                    <td className="max-w-[10rem] px-2 py-1.5 align-middle sm:max-w-none">
+                    <td className="max-w-[12rem] px-2 py-1.5 align-middle sm:max-w-none">
                       {editing ? (
-                        <input
-                          className="h-8 w-full min-w-[6rem] rounded border border-input bg-background px-2 text-sm"
-                          value={draftName}
-                          onChange={(e) => setDraftName(e.target.value)}
-                          aria-label="Name"
-                        />
+                        <div className="flex min-w-0 items-center gap-2">
+                          <div className="relative h-8 w-8 shrink-0 overflow-hidden rounded-full bg-muted">
+                            <AccountAvatar
+                              initials={adminRowInitials(draftName, draftEmail)}
+                              imageUrl={u.picture_url}
+                              sizePx={32}
+                              className="size-full"
+                            />
+                          </div>
+                          <input
+                            className="h-8 min-w-0 flex-1 rounded border border-input bg-background px-2 text-sm"
+                            value={draftName}
+                            onChange={(e) => setDraftName(e.target.value)}
+                            aria-label="Name"
+                          />
+                        </div>
                       ) : (
-                        <span className="break-words">{u.name}</span>
+                        <div className="flex min-w-0 items-center gap-2">
+                          <div className="relative h-8 w-8 shrink-0 overflow-hidden rounded-full bg-muted">
+                            <AccountAvatar
+                              initials={adminRowInitials(u.name, u.email)}
+                              imageUrl={u.picture_url}
+                              sizePx={32}
+                              className="size-full"
+                            />
+                          </div>
+                          <span className="min-w-0 break-words">{u.name}</span>
+                        </div>
                       )}
                     </td>
                     <td className="max-w-[12rem] px-2 py-1.5 align-middle sm:max-w-none">
@@ -357,6 +442,24 @@ export function AdminUsersClient() {
                         />
                       ) : (
                         <span className="break-all text-muted-foreground">{u.email}</span>
+                      )}
+                    </td>
+                    <td className="whitespace-nowrap px-2 py-1.5 align-middle">
+                      <AccessRoleBadge role={u.access_role} />
+                    </td>
+                    <td className="whitespace-nowrap px-2 py-1.5 align-middle">
+                      <PlanBadge plan={u.plan} />
+                    </td>
+                    <td className="whitespace-nowrap px-2 py-1.5 align-middle text-xs text-muted-foreground">
+                      {u.last_active_at ? (
+                        <span
+                          title={formatCreated(u.last_active_at)}
+                          className="tabular-nums"
+                        >
+                          {formatRelativeTimeAdmin(u.last_active_at) || "—"}
+                        </span>
+                      ) : (
+                        "—"
                       )}
                     </td>
                     <td className="hidden whitespace-nowrap px-2 py-1.5 align-middle text-xs text-muted-foreground sm:table-cell">
@@ -440,7 +543,7 @@ export function AdminUsersClient() {
                   </tr>
                   {activityUserId === u.id ? (
                     <tr className="border-b border-border/60 bg-muted/20 last:border-0">
-                      <td colSpan={4} className="px-3 py-2.5">
+                      <td colSpan={7} className="px-3 py-2.5">
                         <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                           Recent activity
                         </p>

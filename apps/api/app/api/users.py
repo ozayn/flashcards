@@ -56,13 +56,20 @@ def _synthetic_email_for_google_sub(google_sub: str) -> str:
     return f"g-{safe}@oauth.memo.local"
 
 
+def _apply_google_profile_to_user(user: User, payload: GoogleOAuthSyncRequest) -> None:
+    if payload.name and user.name != payload.name:
+        user.name = payload.name.strip() or user.name
+    pic = (payload.picture or "").strip()
+    if pic:
+        user.picture_url = pic[:2048]
+
+
 async def _upsert_google_oauth_user(db: AsyncSession, payload: GoogleOAuthSyncRequest) -> User:
     """Find or create a user row for this Google account. Does not touch legacy-only rows."""
     result = await db.execute(select(User).where(User.google_sub == payload.google_sub))
     existing = result.scalar_one_or_none()
     if existing:
-        if payload.name and existing.name != payload.name:
-            existing.name = payload.name
+        _apply_google_profile_to_user(existing, payload)
         await db.flush()
         await db.refresh(existing)
         return existing
@@ -80,6 +87,9 @@ async def _upsert_google_oauth_user(db: AsyncSession, payload: GoogleOAuthSyncRe
         if row is not None and row.google_sub is None:
             preferred = None
         elif row is not None and row.google_sub == payload.google_sub:
+            _apply_google_profile_to_user(row, payload)
+            await db.flush()
+            await db.refresh(row)
             return row
         elif row is not None:
             preferred = None
@@ -91,10 +101,12 @@ async def _upsert_google_oauth_user(db: AsyncSession, payload: GoogleOAuthSyncRe
             break
         email_to_use = f"g-{secrets.token_hex(6)}@oauth.memo.local"
 
+    pic = (payload.picture or "").strip()[:2048] or None
     user = User(
         email=email_to_use,
         name=payload.name.strip() or "Google user",
         google_sub=payload.google_sub,
+        picture_url=pic,
     )
     db.add(user)
     await db.flush()

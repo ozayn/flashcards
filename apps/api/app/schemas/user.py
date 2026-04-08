@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Literal, Optional
 
 from pydantic import BaseModel, EmailStr, Field, model_validator
 
@@ -12,6 +12,7 @@ class GoogleOAuthSyncRequest(BaseModel):
     google_sub: str = Field(..., min_length=1, max_length=255)
     email: Optional[str] = Field(default=None, max_length=255)
     name: str = Field(default="Google user", min_length=1, max_length=255)
+    picture: Optional[str] = Field(default=None, max_length=2048)
 
 
 class UserCreate(BaseModel):
@@ -37,9 +38,24 @@ class UserResponse(BaseModel):
     role: UserRole
     plan: Plan
     created_at: datetime
+    picture_url: Optional[str] = None
     usage: Optional[UserUsageLimits] = None
 
     model_config = {"from_attributes": True}
+
+
+class UserAdminListItem(BaseModel):
+    """Admin users table: base profile plus last activity aggregate."""
+
+    id: str
+    email: str
+    name: str
+    role: UserRole
+    plan: Plan
+    access_role: Literal["owner", "admin", "user"]
+    created_at: datetime
+    picture_url: Optional[str] = None
+    last_active_at: Optional[datetime] = None
 
 
 class UserSettingsResponse(BaseModel):

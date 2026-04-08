@@ -20,16 +20,45 @@ from app.core.email_identity import (
     normalize_email_for_identity,
 )
 from app.core.platform_admin import require_platform_admin
-from app.models import Category, Deck, Flashcard, GenerationJobMetric, Review, User
+from app.core.product_admin import user_access_role_for_admin_list
+from app.models import Category, Deck, Flashcard, GenerationJobMetric, Review, User, UserActivity
 from app.schemas.deck import DeckResponse
 from app.schemas.user import (
     UserActivityItem,
+    UserAdminListItem,
     UserAdminUpdate,
     UserDeletePreviewResponse,
     UserResponse,
 )
 
 router = APIRouter(prefix="/admin", tags=["admin"])
+
+
+async def _latest_activity_at(
+    db: AsyncSession, user_id: str
+) -> datetime | None:
+    r = await db.execute(
+        select(func.max(UserActivity.created_at)).where(
+            UserActivity.user_id == user_id
+        )
+    )
+    return r.scalar_one_or_none()
+
+
+def _user_to_admin_list_item(
+    user: User, last_active_at: datetime | None
+) -> UserAdminListItem:
+    return UserAdminListItem(
+        id=user.id,
+        email=user.email,
+        name=user.name,
+        role=user.role,
+        plan=user.plan,
+        access_role=user_access_role_for_admin_list(user),
+        created_at=user.created_at,
+        picture_url=user.picture_url,
+        last_active_at=last_active_at,
+    )
 
 
 class LegacyBulkTransferPreviewResponse(BaseModel):
@@ -136,13 +165,25 @@ async def _transfer_legacy_deck_to_admin_user(
 
 @router.get(
     "/users",
-    response_model=List[UserResponse],
+    response_model=List[UserAdminListItem],
     dependencies=[Depends(require_platform_admin)],
 )
 async def admin_list_users(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(User).order_by(User.created_at))
-    users = result.scalars().all()
-    return [UserResponse.model_validate(u) for u in users]
+    last_active_sq = (
+        select(
+            UserActivity.user_id,
+            func.max(UserActivity.created_at).label("last_active_at"),
+        )
+        .group_by(UserActivity.user_id)
+        .subquery()
+    )
+    result = await db.execute(
+        select(User, last_active_sq.c.last_active_at)
+        .outerjoin(last_active_sq, User.id == last_active_sq.c.user_id)
+        .order_by(User.created_at)
+    )
+    rows = result.all()
+    return [_user_to_admin_list_item(u, last_active) for u, last_active in rows]
 
 
 @router.get(
@@ -295,7 +336,7 @@ async def admin_delete_user(user_id: str, db: AsyncSession = Depends(get_db)):
 
 @router.patch(
     "/users/{user_id}",
-    response_model=UserResponse,
+    response_model=UserAdminListItem,
     dependencies=[Depends(require_platform_admin)],
 )
 async def admin_update_user(
@@ -322,7 +363,8 @@ async def admin_update_user(
 
     await db.flush()
     await db.refresh(user)
-    return UserResponse.model_validate(user)
+    last_active = await _latest_activity_at(db, user.id)
+    return _user_to_admin_list_item(user, last_active)
 
 
 @router.post(

@@ -9,13 +9,30 @@ import { Button } from "@/components/ui/button";
 
 function signInErrorMessage(error: string | null): string | null {
   if (!error) return null;
-  if (error === "AccessDenied") {
-    return "This Google account isn’t allowed to sign in. Use an email on the app allowlist (exact address from Google). Check server logs for “[auth] Google sign-in AccessDenied”.";
-  }
+  if (error === "AccessDenied") return null;
   if (error === "Callback") {
     return "Sign-in couldn’t finish. The account may not be authorized.";
   }
   return null;
+}
+
+function AccessDeniedNotice() {
+  return (
+    <div
+      className="rounded-lg border border-amber-500/20 bg-amber-500/[0.06] px-3 py-2.5 text-left dark:border-amber-500/25 dark:bg-amber-500/[0.08]"
+      role="alert"
+    >
+      <p className="text-sm font-medium text-foreground">
+        This account can’t sign in here.
+      </p>
+      <p className="mt-1 text-xs text-muted-foreground">
+        Please use an approved Google account.
+      </p>
+      <p className="mt-1.5 text-[11px] leading-snug text-muted-foreground">
+        If you think this is a mistake, contact the app administrator.
+      </p>
+    </div>
+  );
 }
 
 function SignInFormInner({
@@ -44,18 +61,19 @@ function SignInFormInner({
     }
   };
 
+  const accessDenied = oauthError === "AccessDenied";
   const errorText =
     localError ??
     oauthMessage ??
     (oauthError === "Configuration"
       ? "Sign-in isn’t configured on this server."
-      : oauthError
+      : oauthError && !accessDenied
         ? "Sign-in didn’t complete. Try again."
         : null);
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-background px-4 py-8 text-foreground">
-      <div className="w-full max-w-[22rem] space-y-5 rounded-xl border border-border/60 bg-card px-6 py-7 shadow-sm">
+    <div className="flex min-h-screen flex-col items-center justify-center bg-background px-4 py-6 text-foreground sm:py-8">
+      <div className="w-full max-w-[22rem] space-y-4 rounded-xl border border-border/60 bg-card px-5 py-6 shadow-sm sm:px-6">
         <Link
           href="/"
           className="flex items-center justify-center gap-2 rounded-lg py-0.5 outline-none ring-offset-background transition-colors hover:opacity-90 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
@@ -65,22 +83,24 @@ function SignInFormInner({
           <span className="text-sm font-semibold tracking-tight">MemoNext</span>
         </Link>
 
-        <div className="space-y-1 text-center">
+        <div className="space-y-0.5 text-center">
           <h1 className="text-lg font-semibold tracking-tight">Sign in</h1>
           <p className="text-xs text-muted-foreground">Continue with your Google account.</p>
         </div>
 
-        {errorText ? (
-          <p
-            className="rounded-md border border-destructive/25 bg-destructive/5 px-3 py-2 text-center text-sm text-destructive"
+        {accessDenied ? (
+          <AccessDeniedNotice />
+        ) : errorText ? (
+          <div
+            className="rounded-lg border border-border/80 bg-muted/40 px-3 py-2.5 text-center"
             role="alert"
           >
-            {errorText}
-          </p>
+            <p className="text-sm text-foreground">{errorText}</p>
+          </div>
         ) : null}
 
         <Button
-          className="h-11 w-full gap-2 font-medium"
+          className="h-10 w-full gap-2 font-medium sm:h-11"
           disabled={!googleConfigured || busy}
           onClick={() => void handleGoogle()}
         >
@@ -106,10 +126,10 @@ function SignInFormInner({
         </Button>
 
         {!googleConfigured ? (
-          <div className="space-y-1 text-center text-xs text-muted-foreground">
+          <div className="space-y-1 text-center text-[11px] leading-snug text-muted-foreground">
             <p>Add Google OAuth env vars to the web app and restart.</p>
             {missingRequiredKeys.length > 0 ? (
-              <p className="break-words font-mono text-[11px] text-foreground/80">
+              <p className="break-words font-mono text-[10px] text-foreground/70">
                 Missing: {missingRequiredKeys.join(", ")}
               </p>
             ) : null}
@@ -117,15 +137,15 @@ function SignInFormInner({
         ) : null}
 
         {googleConfigured && !nextAuthUrlPresent ? (
-          <p className="text-center text-xs text-amber-800/90 dark:text-amber-400/90">
+          <p className="text-center text-[11px] leading-snug text-amber-800/85 dark:text-amber-400/85">
             Set <span className="font-mono">NEXTAUTH_URL</span> to your public site URL for OAuth redirects.
           </p>
         ) : null}
 
-        <p className="text-center">
+        <p className="pt-0.5 text-center">
           <Link
             href="/decks"
-            className="text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+            className="text-[11px] text-muted-foreground/80 underline-offset-4 transition-colors hover:text-muted-foreground hover:underline"
           >
             Continue without signing in
           </Link>
