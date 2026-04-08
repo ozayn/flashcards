@@ -21,6 +21,9 @@ import { cn } from "@/lib/utils";
 import { AccountAvatar } from "@/components/account-avatar";
 import type { Session } from "next-auth";
 
+/** Caps menu height vs viewport so the panel stays on-screen (mobile-friendly with dvh). */
+const ACCOUNT_MENU_MAX_H = "max-h-[min(28rem,calc(100dvh-4rem))]";
+
 /** OAuth profile photo only when the navbar selection is the signed-in backend user. */
 function navbarProfileImageUrl(
   session: Session | null | undefined,
@@ -335,14 +338,14 @@ export function UserSelector() {
 
   const menuCardStyleSection =
     cardSettings ? (
-      <div className="border-t border-border px-3 py-2">
-        <p className="text-xs font-medium text-muted-foreground mb-2">Flashcard style</p>
-        <div className="flex flex-col gap-1">
+      <div className="border-t border-border px-3 py-1.5">
+        <p className="mb-1.5 text-xs font-medium text-muted-foreground">Flashcard style</p>
+        <div className="flex flex-col gap-0.5">
           {(["paper", "minimal", "modern", "anki"] as const).map((style) => (
             <label
               key={style}
               className={cn(
-                "flex items-center gap-2 px-2 py-1 rounded-md cursor-pointer text-sm",
+                "flex cursor-pointer items-center gap-2 rounded-md px-2 py-0.5 text-sm",
                 cardSettings.card_style === style && "bg-accent"
               )}
             >
@@ -424,7 +427,10 @@ export function UserSelector() {
         </button>
         {open && (
           <div
-            className="absolute right-0 top-full z-50 mt-1 w-56 max-w-[calc(100vw-2rem)] rounded-md border border-border bg-popover py-1 shadow-lg"
+            className={cn(
+              "absolute right-0 top-full z-50 mt-1 flex w-56 max-w-[calc(100vw-2rem)] flex-col overflow-y-auto overscroll-contain rounded-md border border-border bg-popover py-1 shadow-lg",
+              ACCOUNT_MENU_MAX_H
+            )}
             role="menu"
           >
             {(session?.user?.name || session?.user?.email) && (
@@ -537,97 +543,109 @@ export function UserSelector() {
       </button>
       {open && (
         <div
-          className="absolute right-0 top-full z-50 mt-1 min-w-[11rem] w-56 max-w-[calc(100vw-2rem)] rounded-md border border-border bg-popover py-1 shadow-lg"
+          className={cn(
+            "absolute right-0 top-full z-50 mt-1 flex min-w-[11rem] w-56 max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-md border border-border bg-popover py-1 shadow-lg",
+            ACCOUNT_MENU_MAX_H
+          )}
           role="menu"
         >
-          {(selectedUser?.name || selectedUser?.email || session?.user?.name || session?.user?.email) && (
-            <div className="px-3 py-2 border-b border-border">
-              {(selectedUser?.name || session?.user?.name) ? (
-                <p className="text-sm font-medium truncate">
-                  {selectedUser?.name ?? session?.user?.name}
-                </p>
-              ) : null}
-              {(selectedUser?.email || session?.user?.email) ? (
-                <p className="text-xs text-muted-foreground truncate">
-                  {selectedUser?.email ?? session?.user?.email}
-                </p>
-              ) : null}
-            </div>
-          )}
-          {menuAccountLinks}
-          {menuCardStyleSection}
-          <div className="border-t border-border mt-1 pt-1">
-            <p className="px-3 pt-1.5 pb-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-              Switch user
-            </p>
-            {users.map((user) => (
-              <button
-                key={user.id}
-                type="button"
-                role="menuitem"
-                onClick={() => handleSelect(user.id)}
-                className={cn(
-                  "w-full px-3 py-2 text-left text-sm text-popover-foreground hover:bg-accent hover:text-accent-foreground",
-                  user.id === selectedUserId && "bg-accent/50 font-medium"
-                )}
-              >
-                {user.name}
-              </button>
-            ))}
-            {showAddForm ? (
-              <div className="p-2">
-                <form onSubmit={handleAddUser} className="space-y-2">
-                  <input
-                    id="add-user-email-dropdown"
-                    name="email"
-                    type="email"
-                    placeholder="Email"
-                    value={addEmail}
-                    onChange={(e) => setAddEmail(e.target.value)}
-                    required
-                    autoComplete="email"
-                    className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm"
-                  />
-                  <input
-                    id="add-user-name-dropdown"
-                    name="name"
-                    type="text"
-                    placeholder="Name"
-                    value={addName}
-                    onChange={(e) => setAddName(e.target.value)}
-                    required
-                    autoComplete="name"
-                    className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm"
-                  />
-                  {addError && <p className="text-xs text-destructive">{addError}</p>}
-                  <div className="flex gap-2">
-                    <button
-                      type="submit"
-                      disabled={addLoading}
-                      className="rounded-md bg-primary px-2 py-1.5 text-sm text-primary-foreground hover:bg-primary/80 disabled:opacity-50"
-                    >
-                      {addLoading ? "Adding..." : "Add"}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => { setShowAddForm(false); setAddError(null); }}
-                      className="rounded-md border border-input px-2 py-1.5 text-sm hover:bg-muted"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </form>
+          <div className="shrink-0">
+            {(selectedUser?.name || selectedUser?.email || session?.user?.name || session?.user?.email) && (
+              <div className="border-b border-border px-3 py-2">
+                {(selectedUser?.name || session?.user?.name) ? (
+                  <p className="truncate text-sm font-medium">
+                    {selectedUser?.name ?? session?.user?.name}
+                  </p>
+                ) : null}
+                {(selectedUser?.email || session?.user?.email) ? (
+                  <p className="truncate text-xs text-muted-foreground">
+                    {selectedUser?.email ?? session?.user?.email}
+                  </p>
+                ) : null}
               </div>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setShowAddForm(true)}
-                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-              >
-                <Plus className="size-4" />
-                Add user
-              </button>
             )}
+            {menuAccountLinks}
+            {menuCardStyleSection}
+          </div>
+
+          <div className="mt-1 flex min-h-0 flex-1 flex-col border-t border-border">
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+              <p className="sticky top-0 z-[1] border-b border-border/60 bg-popover px-3 pb-1 pt-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                Switch user
+              </p>
+              <div className="pb-0.5">
+                {users.map((user) => (
+                  <button
+                    key={user.id}
+                    type="button"
+                    role="menuitem"
+                    onClick={() => handleSelect(user.id)}
+                    className={cn(
+                      "w-full px-3 py-1.5 text-left text-sm leading-tight text-popover-foreground hover:bg-accent hover:text-accent-foreground",
+                      user.id === selectedUserId && "bg-accent/50 font-medium"
+                    )}
+                  >
+                    {user.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="shrink-0 border-t border-border/80 bg-popover pt-0.5">
+              {showAddForm ? (
+                <div className="p-2">
+                  <form onSubmit={handleAddUser} className="space-y-2">
+                    <input
+                      id="add-user-email-dropdown"
+                      name="email"
+                      type="email"
+                      placeholder="Email"
+                      value={addEmail}
+                      onChange={(e) => setAddEmail(e.target.value)}
+                      required
+                      autoComplete="email"
+                      className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm"
+                    />
+                    <input
+                      id="add-user-name-dropdown"
+                      name="name"
+                      type="text"
+                      placeholder="Name"
+                      value={addName}
+                      onChange={(e) => setAddName(e.target.value)}
+                      required
+                      autoComplete="name"
+                      className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm"
+                    />
+                    {addError && <p className="text-xs text-destructive">{addError}</p>}
+                    <div className="flex gap-2">
+                      <button
+                        type="submit"
+                        disabled={addLoading}
+                        className="rounded-md bg-primary px-2 py-1.5 text-sm text-primary-foreground hover:bg-primary/80 disabled:opacity-50"
+                      >
+                        {addLoading ? "Adding..." : "Add"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setShowAddForm(false); setAddError(null); }}
+                        className="rounded-md border border-input px-2 py-1.5 text-sm hover:bg-muted"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setShowAddForm(true)}
+                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                >
+                  <Plus className="size-4 shrink-0" />
+                  Add user
+                </button>
+              )}
+            </div>
           </div>
         </div>
       )}
