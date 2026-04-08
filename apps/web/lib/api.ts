@@ -843,16 +843,56 @@ export async function deleteCategory(id: string, userId: string) {
 
 export async function getFlashcards(
   deckId: string,
-  options?: { dueOnly?: boolean; userId?: string }
+  options?: { dueOnly?: boolean; userId?: string; bookmarkedOnly?: boolean }
 ) {
   const dueOnly = options?.dueOnly ?? false;
   const userId = options?.userId;
-  let url = `${API_BASE}/decks/${deckId}/flashcards?due_only=${dueOnly}`;
+  const bookmarkedOnly = options?.bookmarkedOnly ?? false;
+  const params = new URLSearchParams();
+  params.set("due_only", String(dueOnly));
   if (dueOnly && userId) {
-    url += `&user_id=${encodeURIComponent(userId)}`;
+    params.set("user_id", userId);
   }
-  const res = await fetch(url, { cache: "no-store" });
-  if (!res.ok) throw new Error("Failed to fetch flashcards");
+  if (bookmarkedOnly) {
+    params.set("bookmarked_only", "true");
+  }
+  const res = await fetch(
+    `${API_BASE}/decks/${encodeURIComponent(deckId)}/flashcards?${params}`,
+    { cache: "no-store" }
+  );
+  if (!res.ok) {
+    if (res.status === 401 && bookmarkedOnly) {
+      throw new Error("BOOKMARK_AUTH");
+    }
+    throw new Error("Failed to fetch flashcards");
+  }
+  return res.json();
+}
+
+export async function setFlashcardBookmark(
+  flashcardId: string,
+  bookmarked: boolean
+): Promise<{
+  id: string;
+  deck_id: string;
+  question: string;
+  answer_short: string;
+  answer_detailed?: string | null;
+  difficulty: string;
+  created_at: string;
+  bookmarked: boolean;
+}> {
+  const res = await fetch(
+    `${API_BASE}/flashcards/${encodeURIComponent(flashcardId)}/bookmark`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ bookmarked }),
+    }
+  );
+  if (!res.ok) {
+    throw new Error(await readApiErrorMessage(res, "Failed to update bookmark"));
+  }
   return res.json();
 }
 

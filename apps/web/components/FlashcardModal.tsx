@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { X, ChevronLeft, ChevronRight, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { FlashcardBookmarkStar } from "@/components/flashcard-bookmark-star";
 import { FlashcardFlip } from "@/components/FlashcardFlip";
 import FormattedText from "@/components/FormattedText";
 import { cn } from "@/lib/utils";
@@ -12,6 +13,7 @@ export interface FlashcardModalCard {
   id: string;
   question: string;
   answer_short: string;
+  bookmarked?: boolean;
 }
 
 export interface FlashcardModalProps {
@@ -21,6 +23,9 @@ export interface FlashcardModalProps {
   onClose: () => void;
   /** Optional: base path for edit link, e.g. /decks/abc/edit-card */
   editBasePath?: string;
+  /** When set, show save control and call with the desired bookmark state */
+  onBookmarkToggle?: (cardId: string, bookmarked: boolean) => void;
+  bookmarkPendingId?: string | null;
 }
 
 type ViewMode = "details" | "flashcard";
@@ -31,6 +36,8 @@ export function FlashcardModal({
   isOpen,
   onClose,
   editBasePath,
+  onBookmarkToggle,
+  bookmarkPendingId,
 }: FlashcardModalProps) {
   const [currentIndex, setCurrentIndex] = useState(initialIndex);
   const [viewMode, setViewMode] = useState<ViewMode>("details");
@@ -122,6 +129,16 @@ export function FlashcardModal({
           </span>
 
           <div className="flex items-center gap-1 min-w-0 justify-end">
+            {onBookmarkToggle && card ? (
+              <FlashcardBookmarkStar
+                bookmarked={Boolean(card.bookmarked)}
+                busy={bookmarkPendingId === card.id}
+                onToggle={() =>
+                  onBookmarkToggle(card.id, !card.bookmarked)
+                }
+                className="mr-0.5"
+              />
+            ) : null}
             <div className="flex rounded-lg border border-border p-0.5 bg-muted/30">
               <button
                 type="button"

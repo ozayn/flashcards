@@ -33,6 +33,7 @@ import {
   getCategories,
   getDeck,
   getFlashcards,
+  setFlashcardBookmark,
   getRelatedDecks,
   importFlashcards,
   moveDeckToCategory,
@@ -57,6 +58,7 @@ import PageContainer from "@/components/layout/page-container";
 import { GenerationLanguageToggle } from "@/components/generation-language-toggle";
 import FormattedText from "@/components/FormattedText";
 import { FlashcardModal } from "@/components/FlashcardModal";
+import { FlashcardBookmarkStar } from "@/components/flashcard-bookmark-star";
 import { DeckGenerationBadge, isDeckGeneratingLike } from "@/components/DeckGenerationBadge";
 import { AdminTransferDeckConfirmModal } from "@/components/AdminTransferDeckConfirmModal";
 import { LongSourceTextarea } from "@/components/long-source-textarea";
@@ -104,6 +106,7 @@ interface Flashcard {
   question: string;
   answer_short: string;
   answer_detailed?: string | null;
+  bookmarked?: boolean;
 }
 
 /**
@@ -373,6 +376,8 @@ export default function DeckPage({ params }: DeckPageProps) {
   const [cardsExpanded, setCardsExpanded] = useState(false);
   const [cardSearch, setCardSearch] = useState("");
   const [cardSort, setCardSort] = useState<"newest" | "oldest" | "az">("newest");
+  const [cardBookmarkFilter, setCardBookmarkFilter] = useState<"all" | "bookmarked">("all");
+  const [bookmarkPendingId, setBookmarkPendingId] = useState<string | null>(null);
 
   type SortOption = typeof cardSort;
   const SORT_OPTIONS: { value: SortOption; label: string }[] = [
@@ -402,13 +407,39 @@ export default function DeckPage({ params }: DeckPageProps) {
           c.answer_short.toLowerCase().includes(q)
       );
     }
+    if (currentUserId && cardBookmarkFilter === "bookmarked") {
+      cards = cards.filter((c) => c.bookmarked);
+    }
     if (cardSort === "oldest") {
       cards.reverse();
     } else if (cardSort === "az") {
       cards.sort((a, b) => a.question.localeCompare(b.question));
     }
     return cards;
-  }, [flashcards, cardSearch, cardSort]);
+  }, [flashcards, cardSearch, cardSort, cardBookmarkFilter, currentUserId]);
+
+  const handleBookmarkToggle = async (cardId: string, next: boolean) => {
+    if (!currentUserId) return;
+    setBookmarkPendingId(cardId);
+    try {
+      await setFlashcardBookmark(cardId, next);
+      setFlashcards((prev) =>
+        prev.map((c) => (c.id === cardId ? { ...c, bookmarked: next } : c))
+      );
+    } catch {
+      /* ignore */
+    } finally {
+      setBookmarkPendingId(null);
+    }
+  };
+
+  useEffect(() => {
+    function onUserChange() {
+      if (!getStoredUserId()) setCardBookmarkFilter("all");
+    }
+    window.addEventListener("flashcard_user_changed", onUserChange);
+    return () => window.removeEventListener("flashcard_user_changed", onUserChange);
+  }, []);
 
   const PREVIEW_LIMIT_LIST = 12;
   const PREVIEW_LIMIT_GRID = 9;
@@ -1460,7 +1491,9 @@ export default function DeckPage({ params }: DeckPageProps) {
                 <Download className="size-3.5 shrink-0 mr-1.5 opacity-70" aria-hidden />
                 Export
               </Button>
-              {isReadOnly && (
+              {isReadOnly &&
+              sessionStatus === "authenticated" &&
+              Boolean(session?.backendUserId) ? (
                 <Button
                   type="button"
                   variant="outline"
@@ -1471,7 +1504,7 @@ export default function DeckPage({ params }: DeckPageProps) {
                 >
                   {duplicating ? "Saving…" : "Save copy"}
                 </Button>
-              )}
+              ) : null}
             </div>
             {dupError ? (
               <p className="text-sm text-destructive mt-1.5 max-w-md">{dupError}</p>
@@ -1899,6 +1932,40 @@ export default function DeckPage({ params }: DeckPageProps) {
                   <option key={o.value} value={o.value}>{o.label}</option>
                 ))}
               </select>
+              {currentUserId ? (
+                <div
+                  className="inline-flex h-8 shrink-0 rounded-md border border-border/60 bg-muted/20 p-0.5"
+                  role="radiogroup"
+                  aria-label="Show cards"
+                >
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={cardBookmarkFilter === "all"}
+                    onClick={() => setCardBookmarkFilter("all")}
+                    className={`rounded px-2.5 text-xs font-medium transition-colors ${
+                      cardBookmarkFilter === "all"
+                        ? "bg-background text-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    All
+                  </button>
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={cardBookmarkFilter === "bookmarked"}
+                    onClick={() => setCardBookmarkFilter("bookmarked")}
+                    className={`rounded px-2.5 text-xs font-medium transition-colors ${
+                      cardBookmarkFilter === "bookmarked"
+                        ? "bg-background text-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    Saved
+                  </button>
+                </div>
+              ) : null}
               {isSearching && (
                 <span className="text-xs text-muted-foreground">
                   {processedCards.length} result{processedCards.length === 1 ? "" : "s"}
@@ -1924,19 +1991,41 @@ export default function DeckPage({ params }: DeckPageProps) {
           ) : flashcards.length === 0 ? (
             null
           ) : processedCards.length === 0 ? (
-            <p className="text-muted-foreground text-sm">No cards match your search.</p>
+            <p className="text-muted-foreground text-sm">
+              {currentUserId && cardBookmarkFilter === "bookmarked"
+                ? isSearching
+                  ? "No saved cards match your search."
+                  : "No saved cards in this deck."
+                : "No cards match your search."}
+            </p>
           ) : cardView === "list" ? (
             <div className="space-y-3 max-mobile:space-y-2.5">
-              {visibleCards.map((card, index) => (
+              {visibleCards.map((card) => (
                 <div
                   key={card.id}
                   className="flashcard-item group rounded-xl border border-neutral-200 px-4 py-3 flex items-start justify-between gap-3 bg-white dark:bg-neutral-900 dark:border-neutral-700 max-mobile:p-3.5 max-mobile:rounded-[12px]"
                 >
-                  <button
-                    type="button"
-                    onClick={() => setModalCardIndex(index)}
-                    className="flex-1 min-w-0 text-start cursor-pointer hover:opacity-90 transition-opacity"
-                  >
+                  <div className="flex min-w-0 flex-1 items-start gap-1">
+                    {currentUserId ? (
+                      <FlashcardBookmarkStar
+                        bookmarked={Boolean(card.bookmarked)}
+                        busy={bookmarkPendingId === card.id}
+                        onToggle={() =>
+                          handleBookmarkToggle(card.id, !card.bookmarked)
+                        }
+                        compact
+                        className="mt-0.5"
+                      />
+                    ) : null}
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setModalCardIndex(
+                          processedCards.findIndex((c) => c.id === card.id)
+                        )
+                      }
+                      className="min-w-0 flex-1 text-start cursor-pointer hover:opacity-90 transition-opacity"
+                    >
                     <div className="flex flex-col gap-1.5">
                       <div dir="auto" className="min-w-0 font-semibold text-xl leading-snug max-mobile:text-lg max-mobile:leading-snug">
                         <FormattedText text={card.question} className="text-inherit font-inherit" />
@@ -1949,7 +2038,8 @@ export default function DeckPage({ params }: DeckPageProps) {
                         />
                       </div>
                     </div>
-                  </button>
+                    </button>
+                  </div>
                   {!isReadOnly && (
                     <div className="relative flex-shrink-0 mt-0.5">
                       <button
@@ -2010,16 +2100,33 @@ export default function DeckPage({ params }: DeckPageProps) {
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 max-mobile:gap-2.5">
-              {visibleCards.map((card, index) => (
+              {visibleCards.map((card) => (
                 <div
                   key={card.id}
                   className="group rounded-xl border border-neutral-200 bg-white dark:bg-neutral-900 dark:border-neutral-700 flex flex-col overflow-hidden"
                 >
-                  <button
-                    type="button"
-                    onClick={() => setModalCardIndex(index)}
-                    className="flex-1 text-start cursor-pointer p-4 max-mobile:p-3.5 hover:bg-muted/30 transition-colors"
-                  >
+                  <div className="flex flex-1 flex-col">
+                    <div className="flex items-start gap-1 px-4 pt-3 max-mobile:px-3.5 max-mobile:pt-3">
+                      {currentUserId ? (
+                        <FlashcardBookmarkStar
+                          bookmarked={Boolean(card.bookmarked)}
+                          busy={bookmarkPendingId === card.id}
+                          onToggle={() =>
+                            handleBookmarkToggle(card.id, !card.bookmarked)
+                          }
+                          compact
+                          className="shrink-0"
+                        />
+                      ) : null}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setModalCardIndex(
+                            processedCards.findIndex((c) => c.id === card.id)
+                          )
+                        }
+                        className="min-w-0 flex-1 text-start cursor-pointer hover:opacity-90 transition-opacity"
+                      >
                     <div dir="auto" className="min-w-0 mb-2">
                       <FormattedText
                         text={card.question}
@@ -2033,7 +2140,9 @@ export default function DeckPage({ params }: DeckPageProps) {
                         variant="answer"
                       />
                     </div>
-                  </button>
+                      </button>
+                    </div>
+                  </div>
                   {!isReadOnly && (
                     <div className="relative flex items-center px-3 py-1.5 border-t border-border/50">
                       <button
@@ -2174,6 +2283,10 @@ export default function DeckPage({ params }: DeckPageProps) {
           isOpen={modalCardIndex !== null}
           onClose={() => setModalCardIndex(null)}
           editBasePath={isReadOnly ? undefined : `/decks/${params.id}/edit-card`}
+          onBookmarkToggle={
+            currentUserId ? handleBookmarkToggle : undefined
+          }
+          bookmarkPendingId={bookmarkPendingId}
         />
 
         {!isReadOnly && deleteConfirmId && (

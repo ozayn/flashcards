@@ -8,7 +8,16 @@ import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Flashcard } from "@/components/study/Flashcard";
 import FormattedText from "@/components/FormattedText";
-import { getFlashcards, getUserSettings, updateUserSettings, submitReview, deleteDeckReviews, type UserSettings } from "@/lib/api";
+import {
+  getFlashcards,
+  getUserSettings,
+  updateUserSettings,
+  submitReview,
+  deleteDeckReviews,
+  setFlashcardBookmark,
+  type UserSettings,
+} from "@/lib/api";
+import { FlashcardBookmarkStar } from "@/components/flashcard-bookmark-star";
 import {
   clampCardIndex,
   clearDeckStudyResume,
@@ -26,6 +35,7 @@ interface StudyFlashcard {
   question: string;
   answer_short: string;
   answer_detailed?: string | null;
+  bookmarked?: boolean;
 }
 
 /** Submodes inside the deck Explore experience (URL: ?view= read | cards | quiz). Legacy ?mode=study maps to quiz. */
@@ -82,6 +92,17 @@ export default function StudyPage({ params }: StudyPageProps) {
   const showAnswerRef = useRef(false);
   const [resumeReady, setResumeReady] = useState(false);
   const [resumeHint, setResumeHint] = useState(false);
+  const [bookmarkBusyId, setBookmarkBusyId] = useState<string | null>(null);
+
+  const bookmarksOnlyParam = searchParams.get("bookmarks") === "1";
+
+  const toggleBookmarksOnly = useCallback(() => {
+    const p = new URLSearchParams(searchParams.toString());
+    if (p.get("bookmarks") === "1") p.delete("bookmarks");
+    else p.set("bookmarks", "1");
+    const q = p.toString();
+    router.replace(q ? `${pathname}?${q}` : pathname, { scroll: false });
+  }, [pathname, router, searchParams]);
 
   useEffect(() => {
     cardIndexRef.current = currentCardIndex;
@@ -133,6 +154,15 @@ export default function StudyPage({ params }: StudyPageProps) {
   }
 
   useEffect(() => {
+    if (bookmarksOnlyParam && !getStoredUserId()) {
+      const p = new URLSearchParams(searchParams.toString());
+      p.delete("bookmarks");
+      const q = p.toString();
+      router.replace(q ? `${pathname}?${q}` : pathname, { scroll: false });
+    }
+  }, [bookmarksOnlyParam, pathname, router, searchParams, userChangeKey]);
+
+  useEffect(() => {
     setLoading(true);
     setNoUserForStudy(false);
     async function fetchFlashcards() {
@@ -144,13 +174,25 @@ export default function StudyPage({ params }: StudyPageProps) {
         setLoading(false);
         return;
       }
+      const bookmarkedOnly = Boolean(bookmarksOnlyParam && userId);
       try {
         const data = await getFlashcards(params.deck_id, {
           dueOnly,
           userId: dueOnly ? userId ?? undefined : undefined,
+          bookmarkedOnly,
         });
         setFlashcards(Array.isArray(data) ? data : []);
-      } catch {
+      } catch (err) {
+        if (
+          err instanceof Error &&
+          err.message === "BOOKMARK_AUTH" &&
+          bookmarksOnlyParam
+        ) {
+          const p = new URLSearchParams(searchParams.toString());
+          p.delete("bookmarks");
+          const q = p.toString();
+          router.replace(q ? `${pathname}?${q}` : pathname, { scroll: false });
+        }
         setFlashcards([]);
       } finally {
         setLoading(false);
@@ -158,13 +200,36 @@ export default function StudyPage({ params }: StudyPageProps) {
     }
 
     fetchFlashcards();
-  }, [params.deck_id, deckView, userChangeKey]);
+  }, [params.deck_id, deckView, userChangeKey, bookmarksOnlyParam, pathname, router]);
 
   useEffect(() => {
     const handleUserChanged = () => setUserChangeKey((k) => k + 1);
     window.addEventListener("flashcard_user_changed", handleUserChanged);
     return () => window.removeEventListener("flashcard_user_changed", handleUserChanged);
   }, []);
+
+  useEffect(() => {
+    if (flashcards.length === 0) return;
+    setCurrentCardIndex((i) => Math.min(i, Math.max(0, flashcards.length - 1)));
+  }, [flashcards.length]);
+
+  const handleBookmarkToggle = useCallback(
+    async (cardId: string, next: boolean) => {
+      if (!getStoredUserId()) return;
+      setBookmarkBusyId(cardId);
+      try {
+        await setFlashcardBookmark(cardId, next);
+        setFlashcards((prev) =>
+          prev.map((c) => (c.id === cardId ? { ...c, bookmarked: next } : c))
+        );
+      } catch {
+        /* ignore */
+      } finally {
+        setBookmarkBusyId(null);
+      }
+    },
+    []
+  );
 
   useEffect(() => {
     const userId = getStoredUserId();
@@ -471,23 +536,48 @@ export default function StudyPage({ params }: StudyPageProps) {
           {deckView === "quiz" ? (
             <>
               <p className="text-muted-foreground text-center">
-                You&apos;re all caught up! No cards are due for quiz.
+                {bookmarksOnlyParam
+                  ? "No saved cards are due for quiz right now."
+                  : "You&apos;re all caught up! No cards are due for quiz."}
               </p>
-              <Button variant="outline" onClick={() => changeDeckView("cards", true)} className="w-fit">
-                Browse all cards
-              </Button>
+              {bookmarksOnlyParam ? (
+                <div className="flex flex-col sm:flex-row gap-2 justify-center">
+                  <Button variant="outline" onClick={toggleBookmarksOnly} className="w-fit">
+                    Show all due cards
+                  </Button>
+                  <Button variant="outline" onClick={() => changeDeckView("cards", true)} className="w-fit">
+                    Browse all cards
+                  </Button>
+                </div>
+              ) : (
+                <Button variant="outline" onClick={() => changeDeckView("cards", true)} className="w-fit">
+                  Browse all cards
+                </Button>
+              )}
             </>
           ) : (
             <>
               <p className="text-muted-foreground text-center">
-                No flashcards in this deck yet.
+                {bookmarksOnlyParam
+                  ? "No saved cards in this deck."
+                  : "No flashcards in this deck yet."}
               </p>
-              <Link
-                href={`/decks/${params.deck_id}/add-card`}
-                className="inline-flex h-10 items-center justify-center rounded-lg bg-neutral-900 text-white hover:bg-neutral-800 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200 px-5 text-sm font-medium w-fit"
-              >
-                Add Cards
-              </Link>
+              {bookmarksOnlyParam ? (
+                <Button
+                  variant="outline"
+                  onClick={toggleBookmarksOnly}
+                  className="w-fit"
+                >
+                  Show all cards
+                </Button>
+              ) : (
+                <Link
+                  href={`/decks/${params.deck_id}/add-card`}
+                  className="inline-flex h-10 items-center justify-center rounded-lg bg-neutral-900 text-white hover:bg-neutral-800 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200 px-5 text-sm font-medium w-fit"
+                >
+                  Add Cards
+                </Link>
+              )}
             </>
           )}
         </div>
@@ -636,6 +726,19 @@ export default function StudyPage({ params }: StudyPageProps) {
                 >
                   Start from beginning
                 </button>
+                {getStoredUserId() ? (
+                  <button
+                    type="button"
+                    onClick={toggleBookmarksOnly}
+                    className={`text-[11px] underline-offset-2 hover:underline ${
+                      bookmarksOnlyParam
+                        ? "font-medium text-foreground"
+                        : "text-muted-foreground/90 hover:text-foreground"
+                    }`}
+                  >
+                    {bookmarksOnlyParam ? "Saved only · Show all" : "Saved only"}
+                  </button>
+                ) : null}
               </div>
             </div>
             <div ref={studyMenuRef} className="relative shrink-0">
@@ -712,7 +815,18 @@ export default function StudyPage({ params }: StudyPageProps) {
           className="relative z-0 min-h-0 w-full flex-1 touch-pan-y overflow-y-auto landscape-mobile:min-h-0"
         >
           <div className="mx-auto w-full max-w-2xl px-4 py-5 sm:max-w-3xl sm:px-6 sm:py-7 md:px-8 landscape-mobile:px-3 landscape-mobile:py-3">
-            <article dir="auto" className="space-y-4 sm:space-y-6 landscape-mobile:space-y-3">
+            <article dir="auto" className="relative space-y-4 sm:space-y-6 landscape-mobile:space-y-3">
+              {getStoredUserId() ? (
+                <div className="absolute right-0 top-0 z-10 landscape-mobile:-top-1">
+                  <FlashcardBookmarkStar
+                    bookmarked={Boolean(card.bookmarked)}
+                    busy={bookmarkBusyId === card.id}
+                    onToggle={() =>
+                      handleBookmarkToggle(card.id, !card.bookmarked)
+                    }
+                  />
+                </div>
+              ) : null}
               <FormattedText
                 text={card.question}
                 className="text-2xl font-medium leading-snug sm:text-3xl sm:leading-relaxed lg:text-4xl landscape-mobile:text-2xl landscape-mobile:leading-snug"
@@ -768,7 +882,7 @@ export default function StudyPage({ params }: StudyPageProps) {
         </div>
       ) : (
         <div className="relative z-0 flex min-h-0 w-full min-w-0 flex-1 flex-col landscape-mobile:overflow-hidden">
-          <div className="mx-auto flex w-full max-w-4xl min-h-0 flex-1 flex-col px-3 pt-1 sm:px-6 sm:pt-2 md:px-8 landscape-mobile:px-2 landscape-mobile:pt-0">
+            <div className="mx-auto flex w-full max-w-4xl min-h-0 flex-1 flex-col px-3 pt-1 sm:px-6 sm:pt-2 md:px-8 landscape-mobile:px-2 landscape-mobile:pt-0">
             <div className="flex min-h-[11rem] flex-1 flex-col justify-center landscape-mobile:min-h-0">
               <div
                 onTouchStart={handleTouchStart}
@@ -776,6 +890,19 @@ export default function StudyPage({ params }: StudyPageProps) {
                 dir="auto"
                 className="flashcard relative mx-auto flex w-full max-w-2xl touch-pan-y flex-col overflow-hidden rounded-2xl shadow-md sm:max-w-3xl aspect-[3/2] landscape-mobile:aspect-auto landscape-mobile:max-h-[min(28rem,calc(100dvh-6.75rem-env(safe-area-inset-top,0px)-env(safe-area-inset-bottom,0px)))] landscape-mobile:min-h-[11rem] landscape-mobile:w-full transition-shadow duration-200 hover:shadow-lg"
               >
+                {getStoredUserId() ? (
+                  <div className="pointer-events-auto absolute right-2 top-2 z-20 sm:right-3 sm:top-3">
+                    <FlashcardBookmarkStar
+                      bookmarked={Boolean(card.bookmarked)}
+                      busy={bookmarkBusyId === card.id}
+                      onToggle={() =>
+                        handleBookmarkToggle(card.id, !card.bookmarked)
+                      }
+                      compact
+                      className="bg-background/80 backdrop-blur-sm"
+                    />
+                  </div>
+                ) : null}
                 <Flashcard
                   cardStyle={userSettings.card_style}
                   front={

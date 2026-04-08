@@ -25,7 +25,7 @@ from app.core.user_tier import (
     assert_may_create_deck_for_user,
     user_has_elevated_tier,
 )
-from app.models import Category, Deck, Flashcard, Review, User
+from app.models import Category, Deck, Flashcard, FlashcardBookmark, Review, User
 from app.schemas.deck import DeckCreate, DeckMoveRequest, DeckResponse, DeckUpdate
 from app.schemas.flashcard import FlashcardResponse
 
@@ -162,6 +162,9 @@ async def get_deck_flashcards(
     deck_id: str,
     due_only: bool = Query(False, description="Return only cards due for review"),
     user_id: Optional[str] = Query(None, description="User ID (required when due_only=true)"),
+    bookmarked_only: bool = Query(
+        False, description="Return only cards bookmarked by the signed-in user"
+    ),
     db: AsyncSession = Depends(get_db),
     trusted_id: Optional[str] = Depends(get_trusted_acting_user_id),
 ):
@@ -171,6 +174,12 @@ async def get_deck_flashcards(
     if not deck_for_access:
         raise HTTPException(status_code=404, detail="Deck not found")
     await assert_may_read_deck(db, trusted_id, deck_for_access)
+
+    if bookmarked_only and not trusted_id:
+        raise HTTPException(
+            status_code=401,
+            detail="Sign in to filter bookmarked cards",
+        )
 
     result = await db.execute(
         select(Flashcard).where(Flashcard.deck_id == deck_id).order_by(Flashcard.created_at)
@@ -209,7 +218,24 @@ async def get_deck_flashcards(
         not_due_ids = {row[0] for row in not_due_ids_result.all()}
         flashcards = [f for f in flashcards if f.id not in not_due_ids]
 
-    return [FlashcardResponse.from_flashcard(f) for f in flashcards]
+    bookmarked_ids: set[str] = set()
+    if trusted_id and flashcards:
+        fc_ids = [f.id for f in flashcards]
+        bm_rows = await db.execute(
+            select(FlashcardBookmark.flashcard_id).where(
+                FlashcardBookmark.user_id == trusted_id,
+                FlashcardBookmark.flashcard_id.in_(fc_ids),
+            )
+        )
+        bookmarked_ids = {row[0] for row in bm_rows.all()}
+
+    if bookmarked_only:
+        flashcards = [f for f in flashcards if f.id in bookmarked_ids]
+
+    return [
+        FlashcardResponse.from_flashcard(f, bookmarked=f.id in bookmarked_ids)
+        for f in flashcards
+    ]
 
 
 @router.get("/{deck_id}", response_model=DeckResponse)

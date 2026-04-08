@@ -7,6 +7,7 @@ from app.models import (  # noqa: F401 - register models
     UserActivity,
     Deck,
     Flashcard,
+    FlashcardBookmark,
     Review,
     Category,
     GenerationJobMetric,

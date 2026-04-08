@@ -31,7 +31,7 @@ from app.core.init_db import init_db
 from app.core.auth import require_admin_key
 from app.core.dev_logging import attach_dev_access_log_filter
 from app.llm.direct_outbound import log_llm_outbound_isolation_once
-from app.models import User, Deck, Flashcard, Review  # noqa: F401 - register models
+from app.models import User, Deck, Flashcard, Review, FlashcardBookmark  # noqa: F401 - register models
 
 _is_production = os.environ.get("ENVIRONMENT", "development").lower() == "production"
 

@@ -11,8 +11,10 @@ import {
   getCategories,
   getFlashcards,
   getUserSettings,
+  setFlashcardBookmark,
   type UserSettings,
 } from "@/lib/api";
+import { FlashcardBookmarkStar } from "@/components/flashcard-bookmark-star";
 import { getStoredUserId } from "@/components/user-selector";
 
 interface CategoryExplorePageProps {
@@ -30,6 +32,7 @@ interface ExploreFlashcard {
   question: string;
   answer_short: string;
   answer_detailed?: string | null;
+  bookmarked?: boolean;
 }
 
 type ExploreView = "read" | "cards";
@@ -54,6 +57,7 @@ export default function CategoryExplorePage({ params }: CategoryExplorePageProps
     card_style: "paper",
   });
   const touchStartX = useRef(0);
+  const [bookmarkBusyId, setBookmarkBusyId] = useState<string | null>(null);
 
   useEffect(() => {
     const userId = getStoredUserId();
@@ -115,6 +119,29 @@ export default function CategoryExplorePage({ params }: CategoryExplorePageProps
       loadDeckCards(decks[currentDeckIndex].id);
     }
   }, [decks, currentDeckIndex, categoryComplete, loadDeckCards]);
+
+  useEffect(() => {
+    if (flashcards.length === 0) return;
+    setCurrentCardIndex((i) => Math.min(i, Math.max(0, flashcards.length - 1)));
+  }, [flashcards.length]);
+
+  const handleBookmarkToggle = useCallback(
+    async (cardId: string, next: boolean) => {
+      if (!getStoredUserId()) return;
+      setBookmarkBusyId(cardId);
+      try {
+        await setFlashcardBookmark(cardId, next);
+        setFlashcards((prev) =>
+          prev.map((c) => (c.id === cardId ? { ...c, bookmarked: next } : c))
+        );
+      } catch {
+        /* ignore */
+      } finally {
+        setBookmarkBusyId(null);
+      }
+    },
+    []
+  );
 
   const handleNext = useCallback(() => {
     setShowAnswer(false);
@@ -466,7 +493,18 @@ export default function CategoryExplorePage({ params }: CategoryExplorePageProps
       {exploreView === "read" ? (
         <div ref={readScrollRef} className="min-h-0 w-full flex-1 touch-pan-y overflow-y-auto">
           <div className="mx-auto w-full max-w-2xl px-4 py-5 sm:max-w-3xl sm:px-6 sm:py-7 md:px-8 landscape-mobile:px-3 landscape-mobile:py-3">
-            <article dir="auto" className="space-y-4 sm:space-y-6 landscape-mobile:space-y-3">
+            <article dir="auto" className="relative space-y-4 sm:space-y-6 landscape-mobile:space-y-3">
+              {getStoredUserId() ? (
+                <div className="absolute right-0 top-0 z-10 landscape-mobile:-top-1">
+                  <FlashcardBookmarkStar
+                    bookmarked={Boolean(card.bookmarked)}
+                    busy={bookmarkBusyId === card.id}
+                    onToggle={() =>
+                      handleBookmarkToggle(card.id, !card.bookmarked)
+                    }
+                  />
+                </div>
+              ) : null}
               <FormattedText
                 text={card.question}
                 className="text-2xl sm:text-3xl lg:text-4xl font-medium leading-snug sm:leading-relaxed"
@@ -530,6 +568,19 @@ export default function CategoryExplorePage({ params }: CategoryExplorePageProps
                 dir="auto"
                 className="flashcard relative mx-auto flex w-full max-w-2xl touch-pan-y flex-col overflow-hidden rounded-2xl shadow-md sm:max-w-3xl aspect-[3/2] landscape-mobile:aspect-auto landscape-mobile:max-h-[min(28rem,calc(100dvh-6.75rem-env(safe-area-inset-top,0px)-env(safe-area-inset-bottom,0px)))] landscape-mobile:min-h-[11rem] landscape-mobile:w-full transition-shadow duration-200 hover:shadow-lg"
               >
+                {getStoredUserId() ? (
+                  <div className="pointer-events-auto absolute right-2 top-2 z-20 sm:right-3 sm:top-3">
+                    <FlashcardBookmarkStar
+                      bookmarked={Boolean(card.bookmarked)}
+                      busy={bookmarkBusyId === card.id}
+                      onToggle={() =>
+                        handleBookmarkToggle(card.id, !card.bookmarked)
+                      }
+                      compact
+                      className="bg-background/80 backdrop-blur-sm"
+                    />
+                  </div>
+                ) : null}
                 <Flashcard
                   cardStyle={userSettings.card_style}
                   front={

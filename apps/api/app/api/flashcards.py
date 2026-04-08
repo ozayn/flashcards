@@ -2,7 +2,7 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -18,7 +18,7 @@ from app.core.user_tier import (
     count_flashcards_in_deck,
     user_has_elevated_tier,
 )
-from app.models import Deck, Flashcard, User
+from app.models import Deck, Flashcard, FlashcardBookmark, User
 from app.schemas.flashcard import (
     DIFFICULTY_TO_INT,
     INT_TO_DIFFICULTY,
@@ -28,6 +28,66 @@ from app.schemas.flashcard import (
 )
 
 router = APIRouter(prefix="/flashcards", tags=["flashcards"])
+
+
+async def _flashcard_bookmarked(
+    db: AsyncSession, user_id: str, flashcard_id: str
+) -> bool:
+    r = await db.execute(
+        select(FlashcardBookmark).where(
+            FlashcardBookmark.user_id == user_id,
+            FlashcardBookmark.flashcard_id == flashcard_id,
+        )
+    )
+    return r.scalar_one_or_none() is not None
+
+
+class BookmarkSetRequest(BaseModel):
+    bookmarked: bool
+
+
+@router.put("/{flashcard_id}/bookmark", response_model=FlashcardResponse)
+async def set_flashcard_bookmark(
+    flashcard_id: str,
+    body: BookmarkSetRequest,
+    db: AsyncSession = Depends(get_db),
+    trusted_id: Optional[str] = Depends(get_trusted_acting_user_id),
+):
+    """Bookmark or unbookmark a flashcard for the signed-in user."""
+    if not trusted_id:
+        raise HTTPException(status_code=401, detail="Sign in to bookmark cards")
+    result = await db.execute(select(Flashcard).where(Flashcard.id == flashcard_id))
+    flashcard = result.scalar_one_or_none()
+    if not flashcard:
+        raise HTTPException(status_code=404, detail="Flashcard not found")
+    deck_result = await db.execute(select(Deck).where(Deck.id == flashcard.deck_id))
+    deck = deck_result.scalar_one_or_none()
+    if not deck:
+        raise HTTPException(status_code=404, detail="Deck not found")
+    await assert_may_read_deck(db, trusted_id, deck)
+
+    if body.bookmarked:
+        existing = await db.execute(
+            select(FlashcardBookmark).where(
+                FlashcardBookmark.user_id == trusted_id,
+                FlashcardBookmark.flashcard_id == flashcard_id,
+            )
+        )
+        if existing.scalar_one_or_none() is None:
+            db.add(
+                FlashcardBookmark(user_id=trusted_id, flashcard_id=flashcard_id)
+            )
+            await db.flush()
+    else:
+        await db.execute(
+            delete(FlashcardBookmark).where(
+                FlashcardBookmark.user_id == trusted_id,
+                FlashcardBookmark.flashcard_id == flashcard_id,
+            )
+        )
+        await db.flush()
+
+    return FlashcardResponse.from_flashcard(flashcard, bookmarked=body.bookmarked)
 
 
 @router.get("/{flashcard_id}", response_model=FlashcardResponse)
@@ -46,7 +106,12 @@ async def get_flashcard(
     if not deck:
         raise HTTPException(status_code=404, detail="Deck not found")
     await assert_may_read_deck(db, trusted_id, deck)
-    return FlashcardResponse.from_flashcard(flashcard)
+    bookmarked = (
+        await _flashcard_bookmarked(db, trusted_id, flashcard.id)
+        if trusted_id
+        else False
+    )
+    return FlashcardResponse.from_flashcard(flashcard, bookmarked=bookmarked)
 
 
 @router.patch("/{flashcard_id}", response_model=FlashcardResponse)
@@ -76,7 +141,12 @@ async def update_flashcard(
         flashcard.difficulty = DIFFICULTY_TO_INT.get(data.difficulty, 1)
     await db.flush()
     await db.refresh(flashcard)
-    return FlashcardResponse.from_flashcard(flashcard)
+    bookmarked = (
+        await _flashcard_bookmarked(db, trusted_id, flashcard.id)
+        if trusted_id
+        else False
+    )
+    return FlashcardResponse.from_flashcard(flashcard, bookmarked=bookmarked)
 
 
 @router.delete("/{flashcard_id}", status_code=204)
@@ -136,6 +206,7 @@ async def create_flashcard(
         answer_detailed=flashcard.answer_detailed,
         difficulty=INT_TO_DIFFICULTY.get(flashcard.difficulty, "medium"),
         created_at=flashcard.created_at,
+        bookmarked=False,
     )
 
 

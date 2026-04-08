@@ -31,11 +31,12 @@ class FlashcardResponse(BaseModel):
     answer_detailed: Optional[str] = None
     difficulty: str
     created_at: datetime
+    bookmarked: bool = False
 
     model_config = {"from_attributes": True}
 
     @classmethod
-    def from_flashcard(cls, flashcard) -> "FlashcardResponse":
+    def from_flashcard(cls, flashcard, *, bookmarked: bool = False) -> "FlashcardResponse":
         """Build response from Flashcard ORM model (converts difficulty int to str)."""
         return cls(
             id=flashcard.id,
@@ -45,4 +46,5 @@ class FlashcardResponse(BaseModel):
             answer_detailed=flashcard.answer_detailed,
             difficulty=INT_TO_DIFFICULTY.get(flashcard.difficulty, "medium"),
             created_at=flashcard.created_at,
+            bookmarked=bookmarked,
         )
