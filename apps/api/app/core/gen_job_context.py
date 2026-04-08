@@ -36,6 +36,73 @@ def llm_prep_stats_reset() -> None:
         "cards_success_counts": {},
         "cards_success_order": [],
     }
+    grounding_stats_reset()
+
+
+def grounding_stats_reset() -> None:
+    """Reset per-job grounding verifier counters (same thread / arm scope as card prep)."""
+    _tls.grounding = {
+        "calls": 0,
+        "total_ms": 0,
+        "changed_count": 0,
+        "all_removed_count": 0,
+        "fallback_count": 0,
+        "noop_count": 0,
+    }
+
+
+def grounding_stats_record_pass(
+    elapsed_ms: int,
+    *,
+    before_count: int,
+    after_verifier: int | None,
+    returned_count: int,
+    fallback_used: bool,
+    reason: str,
+    materially_changed: bool,
+) -> None:
+    """Accumulate stats for one aux/grounding LLM pass (text strict mode)."""
+    if not llm_prep_stats_armed():
+        return
+    g = getattr(_tls, "grounding", None)
+    if g is None:
+        grounding_stats_reset()
+        g = _tls.grounding
+    g["calls"] = int(g["calls"]) + 1
+    g["total_ms"] = int(g["total_ms"]) + max(0, int(elapsed_ms))
+    if fallback_used:
+        g["fallback_count"] = int(g["fallback_count"]) + 1
+    if reason == "all_removed":
+        g["all_removed_count"] = int(g["all_removed_count"]) + 1
+    if materially_changed:
+        g["changed_count"] = int(g["changed_count"]) + 1
+    if (
+        not fallback_used
+        and after_verifier is not None
+        and after_verifier == before_count
+    ):
+        g["noop_count"] = int(g["noop_count"]) + 1
+
+
+def grounding_stats_snapshot() -> dict[str, Any]:
+    g = getattr(_tls, "grounding", None)
+    if not g:
+        return {
+            "calls": 0,
+            "total_ms": 0,
+            "changed_count": 0,
+            "all_removed_count": 0,
+            "fallback_count": 0,
+            "noop_count": 0,
+        }
+    return {
+        "calls": int(g.get("calls") or 0),
+        "total_ms": int(g.get("total_ms") or 0),
+        "changed_count": int(g.get("changed_count") or 0),
+        "all_removed_count": int(g.get("all_removed_count") or 0),
+        "fallback_count": int(g.get("fallback_count") or 0),
+        "noop_count": int(g.get("noop_count") or 0),
+    }
 
 
 def _cards_provider_final(counts: dict[str, int], order: list[str]) -> str | None:

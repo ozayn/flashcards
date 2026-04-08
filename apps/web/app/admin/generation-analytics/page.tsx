@@ -2,15 +2,15 @@ import { redirect } from "next/navigation";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth-options";
 import { isAdminEmailAllowlisted } from "@/lib/admin-email-allowlist";
-import { AdminSubnav } from "./admin-subnav";
-import { AdminUsersClient } from "./admin-users-client";
-import { AdminNotAuthorizedPanel } from "./not-authorized-panel";
-import { AdminNoSessionEmailPanel } from "./no-session-email-panel";
+import { AdminSubnav } from "../admin-subnav";
+import { AdminGenerationAnalyticsClient } from "../generation-analytics-client";
+import { AdminNotAuthorizedPanel } from "../not-authorized-panel";
+import { AdminNoSessionEmailPanel } from "../no-session-email-panel";
 
-export default async function AdminPage() {
+export default async function AdminGenerationAnalyticsPage() {
   const session = await getServerSession(authOptions);
   if (!session) {
-    redirect("/signin?callbackUrl=%2Fadmin");
+    redirect("/signin?callbackUrl=%2Fadmin%2Fgeneration-analytics");
   }
 
   const email = session.user?.email?.trim();
@@ -24,8 +24,8 @@ export default async function AdminPage() {
 
   return (
     <>
-      <AdminSubnav active="users" />
-      <AdminUsersClient />
+      <AdminSubnav active="generation" />
+      <AdminGenerationAnalyticsClient />
     </>
   );
 }

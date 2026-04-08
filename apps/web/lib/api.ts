@@ -391,6 +391,83 @@ export async function postAdminTransferAllLegacyDecksFromUser(
   return res.json();
 }
 
+/** Platform admin: recent flashcard generation timing rows (backend-persisted). */
+export type AdminGenerationMetricRow = {
+  id: string;
+  gen_job_id: string;
+  deck_id: string;
+  user_id: string | null;
+  source_type: string;
+  success: boolean;
+  failure_tag: string | null;
+  cards_requested: number;
+  cards_created: number;
+  cards_provider: string;
+  started_at: string;
+  completed_at: string;
+  total_ms: number;
+  prepare_phase_ms: number | null;
+  transcript_ms: number | null;
+  source_fetch_ms: number | null;
+  card_generation_ms: number | null;
+  grounding_ms: number | null;
+  summary_ms: number | null;
+  other_ms: number | null;
+};
+
+export type AdminGenerationMetricsStats = {
+  sample_size: number;
+  total_jobs: number;
+  success_count: number;
+  success_rate: number;
+  avg_total_ms: number;
+  p50_total_ms: number;
+  p90_total_ms: number;
+  by_source_type: {
+    source_type: string;
+    count: number;
+    avg_total_ms: number;
+    avg_transcript_ms: number | null;
+    avg_source_fetch_ms: number | null;
+    avg_card_generation_ms: number | null;
+    avg_grounding_ms: number | null;
+    avg_summary_ms: number | null;
+    avg_other_ms: number | null;
+    stack_pct_transcript: number;
+    stack_pct_source_fetch: number;
+    stack_pct_cards: number;
+    stack_pct_grounding: number;
+    stack_pct_summary: number;
+    stack_pct_other: number;
+  }[];
+};
+
+export async function getAdminGenerationMetricsRecent(
+  limit = 100
+): Promise<AdminGenerationMetricRow[]> {
+  const res = await fetch(
+    `${API_BASE}/admin/generation-metrics/recent?limit=${encodeURIComponent(String(limit))}`,
+    { cache: "no-store" }
+  );
+  if (!res.ok) {
+    throw new Error(await readApiErrorMessage(res, "Failed to load generation metrics"));
+  }
+  return res.json();
+}
+
+export async function getAdminGenerationMetricsStats(
+  sampleLimit = 2000
+): Promise<AdminGenerationMetricsStats> {
+  const res = await fetch(
+    `${API_BASE}/admin/generation-metrics/stats?sample_limit=${encodeURIComponent(String(sampleLimit))}`,
+    { cache: "no-store" }
+  );
+  if (!res.ok) {
+    throw new Error(await readApiErrorMessage(res, "Failed to load generation stats"));
+  }
+  return res.json();
+}
+
 export async function createUser(data: {
   email: string;
   name: string;

@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 import json
-from typing import List
+import statistics
+from collections import defaultdict
+from typing import List, Optional
 
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy import delete as sql_delete
-from sqlalchemy import func, select
+from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -18,7 +20,7 @@ from app.core.email_identity import (
     normalize_email_for_identity,
 )
 from app.core.platform_admin import require_platform_admin
-from app.models import Category, Deck, Flashcard, Review, User
+from app.models import Category, Deck, Flashcard, GenerationJobMetric, Review, User
 from app.schemas.deck import DeckResponse
 from app.schemas.user import (
     UserActivityItem,
@@ -360,3 +362,179 @@ async def admin_transfer_legacy_deck_to_me(
         raise HTTPException(status_code=400, detail="You already own this deck.")
 
     return await _transfer_legacy_deck_to_admin_user(db, deck, admin_user)
+
+
+def _percentile_ms(values: list[int], p: float) -> float:
+    if not values:
+        return 0.0
+    s = sorted(values)
+    n = len(s)
+    if n == 1:
+        return float(s[0])
+    idx = (p / 100.0) * (n - 1)
+    lo = int(idx)
+    hi = min(lo + 1, n - 1)
+    frac = idx - lo
+    return s[lo] * (1 - frac) + s[hi] * frac
+
+
+def _mean_optional(xs: list[Optional[int]]) -> Optional[float]:
+    nums = [int(x) for x in xs if x is not None]
+    if not nums:
+        return None
+    return statistics.mean(nums)
+
+
+class GenerationMetricItem(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    gen_job_id: str
+    deck_id: str
+    user_id: Optional[str] = None
+    source_type: str
+    success: bool
+    failure_tag: Optional[str] = None
+    cards_requested: int
+    cards_created: int
+    cards_provider: str
+    started_at: datetime
+    completed_at: datetime
+    total_ms: int
+    prepare_phase_ms: Optional[int] = None
+    transcript_ms: Optional[int] = None
+    source_fetch_ms: Optional[int] = None
+    card_generation_ms: Optional[int] = None
+    grounding_ms: Optional[int] = None
+    summary_ms: Optional[int] = None
+    other_ms: Optional[int] = None
+
+
+class SourceTypeTimingBreakdown(BaseModel):
+    source_type: str
+    count: int
+    avg_total_ms: float
+    avg_transcript_ms: Optional[float] = None
+    avg_source_fetch_ms: Optional[float] = None
+    avg_card_generation_ms: Optional[float] = None
+    avg_grounding_ms: Optional[float] = None
+    avg_summary_ms: Optional[float] = None
+    avg_other_ms: Optional[float] = None
+    # Average % of total job time (for stacked bar); Nones treated as 0 in numerator
+    stack_pct_transcript: float = 0.0
+    stack_pct_source_fetch: float = 0.0
+    stack_pct_cards: float = 0.0
+    stack_pct_grounding: float = 0.0
+    stack_pct_summary: float = 0.0
+    stack_pct_other: float = 0.0
+
+
+class GenerationMetricsStatsResponse(BaseModel):
+    sample_size: int
+    total_jobs: int
+    success_count: int
+    success_rate: float
+    avg_total_ms: float
+    p50_total_ms: float
+    p90_total_ms: float
+    by_source_type: list[SourceTypeTimingBreakdown]
+
+
+@router.get(
+    "/generation-metrics/recent",
+    response_model=list[GenerationMetricItem],
+)
+async def admin_generation_metrics_recent(
+    db: AsyncSession = Depends(get_db),
+    _admin: User = Depends(require_platform_admin),
+    limit: int = Query(100, ge=1, le=500),
+):
+    result = await db.execute(
+        select(GenerationJobMetric)
+        .order_by(desc(GenerationJobMetric.completed_at))
+        .limit(limit)
+    )
+    rows = result.scalars().all()
+    return [GenerationMetricItem.model_validate(r) for r in rows]
+
+
+@router.get(
+    "/generation-metrics/stats",
+    response_model=GenerationMetricsStatsResponse,
+)
+async def admin_generation_metrics_stats(
+    db: AsyncSession = Depends(get_db),
+    _admin: User = Depends(require_platform_admin),
+    sample_limit: int = Query(2000, ge=50, le=10000),
+):
+    result = await db.execute(
+        select(GenerationJobMetric)
+        .order_by(desc(GenerationJobMetric.completed_at))
+        .limit(sample_limit)
+    )
+    rows = result.scalars().all()
+    n = len(rows)
+    if n == 0:
+        return GenerationMetricsStatsResponse(
+            sample_size=0,
+            total_jobs=0,
+            success_count=0,
+            success_rate=0.0,
+            avg_total_ms=0.0,
+            p50_total_ms=0.0,
+            p90_total_ms=0.0,
+            by_source_type=[],
+        )
+
+    totals = [int(r.total_ms) for r in rows]
+    success_n = sum(1 for r in rows if r.success)
+    by_st: dict[str, list[GenerationJobMetric]] = defaultdict(list)
+    for r in rows:
+        by_st[r.source_type or "unknown"].append(r)
+
+    breakdowns: list[SourceTypeTimingBreakdown] = []
+    for st, lst in sorted(by_st.items(), key=lambda x: -len(x[1])):
+        tms = [int(x.total_ms) for x in lst]
+        avg_tot = statistics.mean(tms) if tms else 0.0
+        mt = _mean_optional([x.transcript_ms for x in lst])
+        msf = _mean_optional([x.source_fetch_ms for x in lst])
+        mcg = _mean_optional([x.card_generation_ms for x in lst])
+        mgr = _mean_optional([x.grounding_ms for x in lst])
+        msm = _mean_optional([x.summary_ms for x in lst])
+        mot = _mean_optional([x.other_ms for x in lst])
+
+        def _pct(part: Optional[float]) -> float:
+            if avg_tot <= 0 or part is None:
+                return 0.0
+            return max(0.0, min(100.0, (part / avg_tot) * 100.0))
+
+        breakdowns.append(
+            SourceTypeTimingBreakdown(
+                source_type=st,
+                count=len(lst),
+                avg_total_ms=round(avg_tot, 1),
+                avg_transcript_ms=round(mt, 1) if mt is not None else None,
+                avg_source_fetch_ms=round(msf, 1) if msf is not None else None,
+                avg_card_generation_ms=round(mcg, 1) if mcg is not None else None,
+                avg_grounding_ms=round(mgr, 1) if mgr is not None else None,
+                avg_summary_ms=round(msm, 1) if msm is not None else None,
+                avg_other_ms=round(mot, 1) if mot is not None else None,
+                stack_pct_transcript=round(_pct(mt), 1),
+                stack_pct_source_fetch=round(_pct(msf), 1),
+                stack_pct_cards=round(_pct(mcg), 1),
+                stack_pct_grounding=round(_pct(mgr), 1),
+                stack_pct_summary=round(_pct(msm), 1),
+                stack_pct_other=round(_pct(mot), 1),
+            )
+        )
+
+    return GenerationMetricsStatsResponse(
+        sample_size=n,
+        total_jobs=n,
+        success_count=success_n,
+        success_rate=round(success_n / n, 4),
+        avg_total_ms=round(statistics.mean(totals), 1),
+        p50_total_ms=round(_percentile_ms(totals, 50), 1),
+        p90_total_ms=round(_percentile_ms(totals, 90), 1),
+        by_source_type=breakdowns,
+    )

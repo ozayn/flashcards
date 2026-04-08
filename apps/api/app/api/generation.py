@@ -5,6 +5,8 @@ import logging
 import os
 import re
 import secrets
+import time
+from datetime import datetime
 from typing import Any, Callable, Literal, Optional
 from uuid import UUID
 
@@ -14,9 +16,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db, AsyncSessionLocal
+from app.core.generation_job_metrics import persist_generation_job_metric
 from app.core.gen_lifecycle_audit import generation_lifecycle_audit as _generation_audit
 from app.core.gen_job_context import (
     generation_job_id as generation_job_id_ctx,
+    grounding_stats_record_pass,
+    grounding_stats_snapshot,
     llm_prep_stats_arm,
     llm_prep_stats_reset,
     llm_prep_stats_snapshot,
@@ -536,6 +541,45 @@ def _evidence_matches_passage(evidence: str, passage: str) -> bool:
     return norm_ev in norm_pass
 
 
+def _log_grounding_pass(
+    *,
+    elapsed_ms: int,
+    stage: Literal["chunk", "full"],
+    chunk_i: Optional[int],
+    chunk_n: Optional[int],
+    before_count: int,
+    after_verifier: Optional[int],
+    returned_count: int,
+    fallback_used: bool,
+    reason: str,
+    materially_changed: bool,
+    exc_type: Optional[str] = None,
+) -> None:
+    """One MEMO line per grounding aux call + job-level accumulator (grep: gen_grounding_pass)."""
+    grounding_stats_record_pass(
+        elapsed_ms,
+        before_count=before_count,
+        after_verifier=after_verifier,
+        returned_count=returned_count,
+        fallback_used=fallback_used,
+        reason=reason,
+        materially_changed=materially_changed,
+    )
+    chunk_part = ""
+    if stage == "chunk" and chunk_i is not None and chunk_n is not None:
+        chunk_part = f" chunk_i={chunk_i} chunk_n={chunk_n}"
+    av_s = "na" if after_verifier is None else str(after_verifier)
+    et = f" exc_type={exc_type}" if exc_type else ""
+    level = "warning" if fallback_used else "info"
+    _generation_audit(
+        f"{_gen_log_prefix().strip()} gen_grounding_pass llm_purpose=aux elapsed_ms={elapsed_ms} "
+        f"stage={stage}{chunk_part} before_count={before_count} after_verifier={av_s} "
+        f"returned_count={returned_count} fallback_used={str(fallback_used).lower()} "
+        f"materially_changed={str(materially_changed).lower()} reason={reason}{et}",
+        level=level,
+    )
+
+
 def _filter_ungrounded_cards(
     cards: list,
     passage: str,
@@ -556,9 +600,6 @@ def _filter_ungrounded_cards(
         return cards, False  # No passage to verify against — use originals
 
     before_count = len(cards)
-    chunk_tag = ""
-    if stage == "chunk" and chunk_i is not None and chunk_n is not None:
-        chunk_tag = f" chunk={chunk_i}/{chunk_n}"
 
     passage_preview = passage[:4000].strip()
     if len(passage) > 4000:
@@ -597,6 +638,11 @@ Rules:
 - If none are supported, return:
 {{"kept": []}}
 """
+
+    t0 = time.perf_counter()
+
+    def _elapsed_ms() -> int:
+        return int((time.perf_counter() - t0) * 1000)
 
     try:
         response_text = generate_completion(
@@ -639,32 +685,67 @@ Rules:
                     card["source_span"] = evidence_by_index[i]
                 result.append(card)
 
+        elapsed = _elapsed_ms()
+
         if not result:
-            _generation_audit(
-                f"{_gen_log_prefix().strip()} gen_grounding before_count={before_count} "
-                f"after_count=0 returned_count={before_count} fallback_used=true "
-                f"stage={stage}{chunk_tag} reason=all_removed",
-                level="warning",
+            _log_grounding_pass(
+                elapsed_ms=elapsed,
+                stage=stage,
+                chunk_i=chunk_i,
+                chunk_n=chunk_n,
+                before_count=before_count,
+                after_verifier=0,
+                returned_count=before_count,
+                fallback_used=True,
+                reason="all_removed",
+                materially_changed=False,
             )
             return cards, True
         # Transcript fail-open: if grounding kept very few but we had many candidates, use originals
         if len(cards) >= 5 and len(result) < 3:
             kept = len(result)
-            _generation_audit(
-                f"{_gen_log_prefix().strip()} gen_grounding before_count={before_count} "
-                f"after_count={kept} returned_count={before_count} fallback_used=true "
-                f"stage={stage}{chunk_tag} reason=underfiltered threshold_kept_lt=3",
-                level="warning",
+            _log_grounding_pass(
+                elapsed_ms=elapsed,
+                stage=stage,
+                chunk_i=chunk_i,
+                chunk_n=chunk_n,
+                before_count=before_count,
+                after_verifier=kept,
+                returned_count=before_count,
+                fallback_used=True,
+                reason="underfiltered",
+                materially_changed=False,
             )
             return cards, True
+        materially_changed = len(result) < before_count
+        reason = "noop" if len(result) == before_count else "ok"
+        _log_grounding_pass(
+            elapsed_ms=elapsed,
+            stage=stage,
+            chunk_i=chunk_i,
+            chunk_n=chunk_n,
+            before_count=before_count,
+            after_verifier=len(result),
+            returned_count=len(result),
+            fallback_used=False,
+            reason=reason,
+            materially_changed=materially_changed,
+        )
         return result, False
 
     except (ValueError, json.JSONDecodeError, KeyError, TypeError) as e:
-        _generation_audit(
-            f"{_gen_log_prefix().strip()} gen_grounding before_count={before_count} "
-            f"after_count=na returned_count={before_count} fallback_used=true "
-            f"stage={stage}{chunk_tag} reason=verifier_failed exc_type={type(e).__name__}",
-            level="warning",
+        _log_grounding_pass(
+            elapsed_ms=_elapsed_ms(),
+            stage=stage,
+            chunk_i=chunk_i,
+            chunk_n=chunk_n,
+            before_count=before_count,
+            after_verifier=None,
+            returned_count=before_count,
+            fallback_used=True,
+            reason="verifier_failed",
+            materially_changed=False,
+            exc_type=type(e).__name__,
         )
         return cards, True
 
@@ -1525,13 +1606,48 @@ def _emit_generation_run_summary_audit(
     cards_pv = prep.get("cards_provider_final") or prep.get("last_provider") or "unknown"
     pfx = _gen_log_prefix().strip()
     fail_part = f" failure={failure_tag}" if failure_tag else ""
+    gs = lifecycle_meta.get("grounding_stats") or {}
+    g_calls = int(gs.get("calls") or 0)
+    ground_part = ""
+    if g_calls > 0:
+        ground_part = (
+            f" grounding_calls={g_calls} grounding_total_ms={int(gs.get('total_ms') or 0)} "
+            f"grounding_changed_count={int(gs.get('changed_count') or 0)} "
+            f"grounding_all_removed_count={int(gs.get('all_removed_count') or 0)} "
+            f"grounding_fallback_count={int(gs.get('fallback_count') or 0)} "
+            f"grounding_noop_count={int(gs.get('noop_count') or 0)}"
+        )
+    pw = lifecycle_meta.get("prep_wall_ms")
+    wall_part = ""
+    if pw is not None:
+        try:
+            pw_i = int(pw)
+        except (TypeError, ValueError):
+            pw_i = 0
+        cga = lifecycle_meta.get("card_gen_approx_ms")
+        try:
+            cga_i = int(cga) if cga is not None else max(0, pw_i - int(gs.get("total_ms") or 0))
+        except (TypeError, ValueError):
+            cga_i = max(0, pw_i - int(gs.get("total_ms") or 0))
+        wall_part = f" prep_wall_ms={pw_i} card_gen_approx_ms={cga_i}"
     msg = (
         f"{pfx} run_summary source={st} text_len={tl} chunked={str(chunked_b).lower()} "
         f"chunks={chunks_n} requested={req_int} created={created} "
         f"cards_provider={cards_pv} summary={summary_status} "
-        f"success={str(success).lower()}{fail_part}"
+        f"success={str(success).lower()}{fail_part}{ground_part}{wall_part}"
     )
     _generation_audit(msg, level=level)
+    if g_calls > 0:
+        _generation_audit(
+            f"{pfx} gen_grounding_job_summary grounding_calls={g_calls} "
+            f"grounding_total_ms={int(gs.get('total_ms') or 0)} "
+            f"grounding_changed_count={int(gs.get('changed_count') or 0)} "
+            f"grounding_all_removed_count={int(gs.get('all_removed_count') or 0)} "
+            f"grounding_fallback_count={int(gs.get('fallback_count') or 0)} "
+            f"grounding_noop_count={int(gs.get('noop_count') or 0)}"
+            f"{wall_part}",
+            level=level,
+        )
 
 
 def _should_generate_source_summary(deck: Deck, text_input: Optional[str]) -> bool:
@@ -3370,8 +3486,7 @@ def _run_chunked_text_flashcard_generation(
         parsed = _extract_json(response_text)
         batch = parsed.get("flashcards") if isinstance(parsed.get("flashcards"), list) else []
         if strict_text_only and batch:
-            before = len(batch)
-            batch, grounding_fb = _filter_ungrounded_cards(
+            batch, _ = _filter_ungrounded_cards(
                 batch,
                 chunk,
                 stage="chunk",
@@ -3379,16 +3494,6 @@ def _run_chunked_text_flashcard_generation(
                 chunk_n=n,
                 llm_routing=llm_routing,
             )
-            if not grounding_fb:
-                logger.debug(
-                    "%s[text-chunk-mode] gen_grounding stage=chunk chunk=%d/%d before_count=%d "
-                    "returned_count=%d fallback_used=false",
-                    _gen_log_prefix(),
-                    i + 1,
-                    n,
-                    before,
-                    len(batch),
-                )
         merged.extend(batch)
     deduped = _dedupe_flashcards_preserve_order(merged)
     cap = min(150, max(num_cards + 15, num_cards * 3))
@@ -3790,14 +3895,22 @@ def _sync_prepare_generated_cards(
         lang_hint_outer,
     )
     bind_card_cache_output_language(card_cache_lang)
+    prep_t0 = time.perf_counter()
     try:
-        return _sync_prepare_generated_cards_inner(
+        cards, meta = _sync_prepare_generated_cards_inner(
             payload,
             deck_id_str,
             text_input,
             routing_source_type,
             lifecycle_meta,
         )
+        prep_wall_ms = int((time.perf_counter() - prep_t0) * 1000)
+        meta["prep_wall_ms"] = prep_wall_ms
+        gs = grounding_stats_snapshot()
+        meta["grounding_stats"] = gs
+        gtot = int(gs.get("total_ms") or 0)
+        meta["card_gen_approx_ms"] = max(0, prep_wall_ms - gtot)
+        return cards, meta
     finally:
         clear_card_cache_output_language()
         llm_prep_stats_arm(False)
@@ -4472,21 +4585,12 @@ def _sync_prepare_generated_cards_inner(
         and not is_persian_mapping_mode
         and not used_chunked_text_generation
     ):
-        before_ground = len(cards)
-        cards, grounding_fb = _filter_ungrounded_cards(
+        cards, _ = _filter_ungrounded_cards(
             cards,
             text_input,
             stage="full",
             llm_routing=text_llm_routing_snapshot,
         )
-        if not grounding_fb:
-            logger.debug(
-                "%s[text-mode] gen_grounding stage=full before_count=%d returned_count=%d "
-                "fallback_used=false",
-                _gen_log_prefix(),
-                before_ground,
-                len(cards),
-            )
     
     # Low-value filter: when text mode, remove transcript housekeeping cards
     if text_input and cards and not is_persian_mapping_mode:
@@ -4626,7 +4730,17 @@ async def generate_flashcards(
     generation_run_summary_emitted = False
     lifecycle_meta: dict[str, Any] = {}
     created = 0
+    gen_metric: dict[str, Any] = {
+        "active": False,
+        "success": False,
+        "failure_tag": None,
+        "prepare_phase_ms": None,
+        "summary_ms": None,
+    }
     try:
+        gen_metric["active"] = True
+        gen_metric["started_at"] = datetime.utcnow()
+        gen_metric["t0"] = time.perf_counter()
         logger.info("%sgen_source %s", _gen_log_prefix(), _format_gen_source_kv(deck, text_input))
         _generation_audit(
             f"{_gen_log_prefix().strip()} gen_source {_format_gen_source_kv(deck, text_input)}"
@@ -4663,6 +4777,7 @@ async def generate_flashcards(
                 f"request_language_field={_raw_req_lang!r} lang_hint={_lang_hint!r} "
                 f"yt_caption_lang_meta={_cap!r} effective_output_lang_code={_eff_lang!r}"
             )
+        _t_prepare = time.perf_counter()
         cards, lifecycle_meta = await asyncio.to_thread(
             _sync_prepare_generated_cards,
             payload,
@@ -4670,6 +4785,7 @@ async def generate_flashcards(
             text_input,
             routing_source_type,
         )
+        gen_metric["prepare_phase_ms"] = int((time.perf_counter() - _t_prepare) * 1000)
         _generation_audit(
             f"{_gen_log_prefix().strip()} gen_prepare_done raw_card_count={len(cards)} deck_id={deck_id_str}"
         )
@@ -4786,6 +4902,7 @@ async def generate_flashcards(
                 level="error",
             )
             generation_run_summary_emitted = True
+            gen_metric["failure_tag"] = "no_cards_inserted"
             raise HTTPException(
                 status_code=503,
                 detail="Generated cards were invalid or duplicates"
@@ -4812,6 +4929,7 @@ async def generate_flashcards(
                     payload.youtube_route_reason or "youtube_transcript"
                 )
             try:
+                _t_sum = time.perf_counter()
                 summary, summary_provider_final = await asyncio.to_thread(
                     _sync_generate_source_summary,
                     deck,
@@ -4819,6 +4937,7 @@ async def generate_flashcards(
                     lang_for_summary,
                     summary_llm_routing,
                 )
+                gen_metric["summary_ms"] = int((time.perf_counter() - _t_sum) * 1000)
                 if summary:
                     deck.source_summary = summary
                     summary_status_str = "generated"
@@ -4880,9 +4999,11 @@ async def generate_flashcards(
                 skipped_db_dup,
             )
         logger.debug("%sinserted_cards=%d", _gen_log_prefix(), created)
+        gen_metric["success"] = True
         return GenerateFlashcardsResponse(created=created)
 
     except HTTPException as e:
+        gen_metric["failure_tag"] = f"http_{getattr(e, 'status_code', 'unknown')}"
         logger.warning(
             "%sgen_outcome success=false kind=http_exception status=%s",
             _gen_log_prefix(),
@@ -4910,6 +5031,7 @@ async def generate_flashcards(
         await db.flush()
         raise
     except RateLimitError as e:
+        gen_metric["failure_tag"] = "rate_limit"
         logger.warning("%sgen_outcome success=false kind=rate_limit err=%s", _gen_log_prefix(), e)
         if not generation_run_summary_emitted:
             _emit_generation_run_summary_audit(
@@ -4931,6 +5053,7 @@ async def generate_flashcards(
             detail="The AI provider is temporarily rate-limited. Please wait a few seconds and try again.",
         )
     except RuntimeError as e:
+        gen_metric["failure_tag"] = "runtime_err"
         logger.warning("%sgen_outcome success=false kind=runtime_err err=%s", _gen_log_prefix(), e)
         if not generation_run_summary_emitted:
             _emit_generation_run_summary_audit(
@@ -4954,6 +5077,7 @@ async def generate_flashcards(
             )
         raise
     except Exception as e:
+        gen_metric["failure_tag"] = type(e).__name__
         logger.warning("%sgen_outcome success=false kind=%s", _gen_log_prefix(), type(e).__name__)
         if not generation_run_summary_emitted:
             _emit_generation_run_summary_audit(
@@ -4972,6 +5096,33 @@ async def generate_flashcards(
         await db.flush()
         raise
     finally:
+        if gen_metric.get("active") and gen_metric.get("t0") is not None:
+            try:
+                completed_at = datetime.utcnow()
+                total_ms = int((time.perf_counter() - float(gen_metric["t0"])) * 1000)
+                prep = lifecycle_meta.get("llm_prep") or {}
+                cards_pv = prep.get("cards_provider_final") or prep.get("last_provider") or "unknown"
+                started_at = gen_metric.get("started_at") or completed_at
+                await persist_generation_job_metric(
+                    db,
+                    deck_id=deck_id_str,
+                    user_id=getattr(deck, "user_id", None),
+                    gen_job_id=job_id,
+                    source_type=_deck_source_type_str(deck) or "unknown",
+                    success=bool(gen_metric.get("success")),
+                    failure_tag=gen_metric.get("failure_tag"),
+                    cards_requested=payload.num_cards,
+                    cards_created=created,
+                    cards_provider=str(cards_pv),
+                    started_at=started_at,
+                    completed_at=completed_at,
+                    total_ms=total_ms,
+                    prepare_phase_ms=gen_metric.get("prepare_phase_ms"),
+                    lifecycle_meta=lifecycle_meta,
+                    summary_ms=gen_metric.get("summary_ms"),
+                )
+            except Exception:
+                logger.warning("%sgeneration_job_metric persist failed", _gen_log_prefix(), exc_info=True)
         generation_log_deck_id.reset(_gen_log_token)
         if job_tok is not None:
             generation_job_id_ctx.reset(job_tok)

@@ -18,6 +18,27 @@ import {
 } from "@/lib/api";
 import { userIsProductAdmin } from "@/lib/product-admin";
 import { cn } from "@/lib/utils";
+import { AccountAvatar } from "@/components/account-avatar";
+import type { Session } from "next-auth";
+
+/** OAuth profile photo only when the navbar selection is the signed-in backend user. */
+function navbarProfileImageUrl(
+  session: Session | null | undefined,
+  sessionStatus: "loading" | "authenticated" | "unauthenticated",
+  selectedUserId: string | null | undefined
+): string | undefined {
+  if (sessionStatus !== "authenticated" || !session?.user?.image?.trim()) {
+    return undefined;
+  }
+  const url = session.user.image.trim();
+  if (!selectedUserId || !session.backendUserId) {
+    return undefined;
+  }
+  if (session.backendUserId !== selectedUserId) {
+    return undefined;
+  }
+  return url;
+}
 
 function accountMenuInitials(name?: string | null, email?: string | null): string {
   const n = (name ?? "").trim();
@@ -377,20 +398,29 @@ export function UserSelector() {
       session?.user?.name,
       session?.user?.email ?? undefined
     );
+    const emptyListImageUrl =
+      sessionStatus === "authenticated" && session?.user?.image?.trim()
+        ? session.user.image.trim()
+        : undefined;
     return (
       <div ref={containerRef} className="relative">
         <button
           type="button"
           onClick={() => setOpen(!open)}
           className={cn(
-            "flex size-9 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium text-foreground ring-offset-background transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+            "relative flex size-9 shrink-0 overflow-hidden rounded-full bg-muted p-0 text-xs font-medium text-foreground ring-offset-background transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
             open && "ring-2 ring-ring ring-offset-2"
           )}
           aria-haspopup="menu"
           aria-expanded={open}
           aria-label="Account menu"
         >
-          {initialsEmpty}
+          <AccountAvatar
+            initials={initialsEmpty}
+            imageUrl={emptyListImageUrl}
+            sizePx={36}
+            className="size-full"
+          />
         </button>
         {open && (
           <div
@@ -479,6 +509,11 @@ export function UserSelector() {
     selectedUser?.name ?? session?.user?.name,
     selectedUser?.email ?? session?.user?.email ?? undefined
   );
+  const navImageUrl = navbarProfileImageUrl(
+    session,
+    sessionStatus,
+    selectedUserId
+  );
 
   return (
     <div ref={containerRef} className="relative">
@@ -486,14 +521,19 @@ export function UserSelector() {
         type="button"
         onClick={() => setOpen(!open)}
         className={cn(
-          "flex size-9 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium text-foreground ring-offset-background transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+          "relative flex size-9 shrink-0 overflow-hidden rounded-full bg-muted p-0 text-xs font-medium text-foreground ring-offset-background transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
           open && "ring-2 ring-ring ring-offset-2"
         )}
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label="Account menu"
       >
-        {initials}
+        <AccountAvatar
+          initials={initials}
+          imageUrl={navImageUrl}
+          sizePx={36}
+          className="size-full"
+        />
       </button>
       {open && (
         <div

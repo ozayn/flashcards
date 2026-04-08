@@ -5,6 +5,10 @@ import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { getStoredUserId } from "@/components/user-selector";
 import {
+  AccountAvatar,
+  isSafeProfileImageUrl,
+} from "@/components/account-avatar";
+import {
   getUser,
   getUserActivity,
   patchUserProfileName,
@@ -19,15 +23,6 @@ const RECENT_ACTIVITY_LIMIT = 10;
 
 /** Keep in sync with user-selector localStorage key for display name. */
 const FLASHCARD_USER_NAME_KEY = "flashcard_user_name";
-
-function isHttpsImageUrl(url: string): boolean {
-  try {
-    const u = new URL(url);
-    return u.protocol === "https:" || u.protocol === "http:";
-  } catch {
-    return false;
-  }
-}
 
 function profileInitials(name: string, email: string): string {
   const n = name.trim();
@@ -106,7 +101,6 @@ export default function ProfilePage() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [avatarLoadFailed, setAvatarLoadFailed] = useState(false);
   const [activity, setActivity] = useState<UserActivityEntry[]>([]);
   const [activityLoading, setActivityLoading] = useState(false);
 
@@ -178,15 +172,9 @@ export default function ProfilePage() {
       : ""
   );
   const googleAvatarUrl =
-    rawGoogleImage && isHttpsImageUrl(rawGoogleImage)
+    rawGoogleImage && isSafeProfileImageUrl(rawGoogleImage)
       ? rawGoogleImage
       : undefined;
-
-  useEffect(() => {
-    setAvatarLoadFailed(false);
-  }, [googleAvatarUrl]);
-
-  const showGooglePhoto = Boolean(googleAvatarUrl) && !avatarLoadFailed;
 
   const dirty =
     user !== null && draftName.trim() !== user.name.trim();
@@ -293,23 +281,13 @@ export default function ProfilePage() {
           className="flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-full bg-muted ring-1 ring-border/50 sm:size-[4.5rem]"
           aria-hidden
         >
-          {showGooglePhoto ? (
-            // eslint-disable-next-line @next/next/no-img-element -- Google URLs need referrerPolicy + onError; initials fallback avoids broken UI
-            <img
-              src={googleAvatarUrl}
-              alt=""
-              width={72}
-              height={72}
-              decoding="async"
-              referrerPolicy="no-referrer"
-              className="h-full w-full object-cover object-center"
-              onError={() => setAvatarLoadFailed(true)}
-            />
-          ) : (
-            <span className="text-sm font-medium text-muted-foreground sm:text-base">
-              {initials}
-            </span>
-          )}
+          <AccountAvatar
+            initials={initials}
+            imageUrl={googleAvatarUrl}
+            sizePx={72}
+            className="size-full"
+            initialsClassName="text-sm text-muted-foreground sm:text-base"
+          />
         </div>
 
         <div className="w-full space-y-1">
