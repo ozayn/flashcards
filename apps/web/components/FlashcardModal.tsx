@@ -11,6 +11,7 @@ import {
   buildAnswerDisplayText,
   shouldShowAnswerDetailed,
 } from "@/lib/format-flashcard-answer-display";
+import { inferTextDirection } from "@/lib/infer-text-direction";
 import { cn } from "@/lib/utils";
 
 export interface FlashcardModalCard {
@@ -116,6 +117,12 @@ export function FlashcardModal({
 
   if (!isOpen || !card) return null;
 
+  const cardTextDir = inferTextDirection(
+    card.question,
+    buildAnswerDisplayText(card.answer_short, card.answer_example),
+    card.answer_detailed ?? ""
+  );
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
@@ -135,16 +142,6 @@ export function FlashcardModal({
           </span>
 
           <div className="flex items-center gap-1 min-w-0 justify-end">
-            {onBookmarkToggle && card ? (
-              <FlashcardBookmarkStar
-                bookmarked={Boolean(card.bookmarked)}
-                busy={bookmarkPendingId === card.id}
-                onToggle={() =>
-                  onBookmarkToggle(card.id, !card.bookmarked)
-                }
-                className="mr-0.5"
-              />
-            ) : null}
             <div className="flex rounded-lg border border-border p-0.5 bg-muted/30">
               <button
                 type="button"
@@ -186,7 +183,7 @@ export function FlashcardModal({
               size="icon"
               onClick={onClose}
               aria-label="Close"
-              className="text-muted-foreground hover:text-foreground ml-1"
+              className="text-muted-foreground hover:text-foreground ms-1"
             >
               <X className="size-5" />
             </Button>
@@ -211,7 +208,24 @@ export function FlashcardModal({
                 ) : null}
               </div>
               <div className="flex-1 min-h-0 overflow-y-auto min-w-0 px-11 py-4 sm:px-4 sm:py-4">
-                <div className="space-y-4 max-w-2xl mx-auto w-full">
+                <div
+                  className={cn(
+                    "relative space-y-4 max-w-2xl mx-auto w-full",
+                    onBookmarkToggle && "pt-1 pe-11 sm:pe-12"
+                  )}
+                  dir={cardTextDir}
+                >
+                  {onBookmarkToggle ? (
+                    <div className="absolute end-1 top-0.5 z-10 sm:end-1.5 sm:top-1">
+                      <FlashcardBookmarkStar
+                        bookmarked={Boolean(card.bookmarked)}
+                        busy={bookmarkPendingId === card.id}
+                        onToggle={() =>
+                          onBookmarkToggle(card.id, !card.bookmarked)
+                        }
+                      />
+                    </div>
+                  ) : null}
                   <div>
                     <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1.5">
                       Question
@@ -317,9 +331,26 @@ export function FlashcardModal({
                     <span className="inline-block w-10 md:w-11 shrink-0" aria-hidden />
                   )}
                 </div>
-                <div className="relative w-full min-w-0 max-w-2xl sm:max-w-3xl flex justify-center">
+                <div
+                  className="relative w-full min-w-0 max-w-2xl sm:max-w-3xl flex justify-center"
+                  dir={cardTextDir}
+                >
+                  {onBookmarkToggle ? (
+                    <div className="pointer-events-auto absolute end-2 top-2 z-30 sm:end-3 sm:top-3">
+                      <FlashcardBookmarkStar
+                        bookmarked={Boolean(card.bookmarked)}
+                        busy={bookmarkPendingId === card.id}
+                        onToggle={() =>
+                          onBookmarkToggle(card.id, !card.bookmarked)
+                        }
+                        compact
+                        className="bg-background/80 backdrop-blur-sm"
+                      />
+                    </div>
+                  ) : null}
                   <FlashcardFlip
                     key={card.id}
+                    reserveBookmarkCorner={Boolean(onBookmarkToggle)}
                     question={
                       <div className="text-2xl sm:text-3xl lg:text-4xl font-medium leading-snug sm:leading-relaxed text-foreground">
                         <FormattedText text={card.question} className="text-inherit" />

@@ -66,6 +66,7 @@ import { FlashcardBookmarkStar } from "@/components/flashcard-bookmark-star";
 import { DeckGenerationBadge, isDeckGeneratingLike } from "@/components/DeckGenerationBadge";
 import { AdminTransferDeckConfirmModal } from "@/components/AdminTransferDeckConfirmModal";
 import { LongSourceTextarea } from "@/components/long-source-textarea";
+import { DeckSourceSummaryBody } from "@/components/deck-source-summary-body";
 
 interface DeckPageProps {
   params: { id: string };
@@ -1389,8 +1390,8 @@ export default function DeckPage({ params }: DeckPageProps) {
                     />
                     <span>Source summary</span>
                   </summary>
-                  <div className="mt-2 text-[11px] sm:text-xs text-muted-foreground/80 leading-relaxed pl-5 border-l border-border/45 whitespace-pre-wrap">
-                    {deck.source_summary.trim()}
+                  <div className="mt-2 pl-5 border-l border-border/45">
+                    <DeckSourceSummaryBody raw={deck.source_summary.trim()} />
                   </div>
                 </details>
               ) : null}
@@ -2031,18 +2032,7 @@ export default function DeckPage({ params }: DeckPageProps) {
                   key={card.id}
                   className="flashcard-item group rounded-xl border border-neutral-200 px-4 py-3 flex items-start justify-between gap-3 bg-white dark:bg-neutral-900 dark:border-neutral-700 max-mobile:p-3.5 max-mobile:rounded-[12px]"
                 >
-                  <div className="flex min-w-0 flex-1 items-start gap-1">
-                    {currentUserId ? (
-                      <FlashcardBookmarkStar
-                        bookmarked={Boolean(card.bookmarked)}
-                        busy={bookmarkPendingId === card.id}
-                        onToggle={() =>
-                          handleBookmarkToggle(card.id, !card.bookmarked)
-                        }
-                        compact
-                        className="mt-0.5"
-                      />
-                    ) : null}
+                  <div dir="auto" className="flex min-w-0 flex-1 items-start gap-1">
                     <button
                       type="button"
                       onClick={() =>
@@ -2068,6 +2058,17 @@ export default function DeckPage({ params }: DeckPageProps) {
                       </div>
                     </div>
                     </button>
+                    {currentUserId ? (
+                      <FlashcardBookmarkStar
+                        bookmarked={Boolean(card.bookmarked)}
+                        busy={bookmarkPendingId === card.id}
+                        onToggle={() =>
+                          handleBookmarkToggle(card.id, !card.bookmarked)
+                        }
+                        compact
+                        className="mt-0.5 shrink-0"
+                      />
+                    ) : null}
                   </div>
                   {!isReadOnly && (
                     <div className="relative flex-shrink-0 mt-0.5">
@@ -2135,18 +2136,10 @@ export default function DeckPage({ params }: DeckPageProps) {
                   className="group rounded-xl border border-neutral-200 bg-white dark:bg-neutral-900 dark:border-neutral-700 flex flex-col overflow-hidden"
                 >
                   <div className="flex flex-1 flex-col">
-                    <div className="flex items-start gap-1 px-4 pt-3 max-mobile:px-3.5 max-mobile:pt-3">
-                      {currentUserId ? (
-                        <FlashcardBookmarkStar
-                          bookmarked={Boolean(card.bookmarked)}
-                          busy={bookmarkPendingId === card.id}
-                          onToggle={() =>
-                            handleBookmarkToggle(card.id, !card.bookmarked)
-                          }
-                          compact
-                          className="shrink-0"
-                        />
-                      ) : null}
+                    <div
+                      dir="auto"
+                      className="flex items-start gap-1 px-4 pt-3 max-mobile:px-3.5 max-mobile:pt-3"
+                    >
                       <button
                         type="button"
                         onClick={() =>
@@ -2173,6 +2166,17 @@ export default function DeckPage({ params }: DeckPageProps) {
                       />
                     </div>
                       </button>
+                      {currentUserId ? (
+                        <FlashcardBookmarkStar
+                          bookmarked={Boolean(card.bookmarked)}
+                          busy={bookmarkPendingId === card.id}
+                          onToggle={() =>
+                            handleBookmarkToggle(card.id, !card.bookmarked)
+                          }
+                          compact
+                          className="shrink-0"
+                        />
+                      ) : null}
                     </div>
                   </div>
                   {!isReadOnly && (

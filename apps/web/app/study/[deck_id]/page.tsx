@@ -29,6 +29,7 @@ import {
   writeDeckStudyResume,
 } from "@/lib/deck-study-resume";
 import { getStoredUserId } from "@/components/user-selector";
+import { cn } from "@/lib/utils";
 
 interface StudyPageProps {
   params: { deck_id: string };
@@ -820,9 +821,16 @@ export default function StudyPage({ params }: StudyPageProps) {
           className="relative z-0 min-h-0 w-full flex-1 touch-pan-y overflow-y-auto landscape-mobile:min-h-0"
         >
           <div className="mx-auto w-full max-w-2xl px-4 py-5 sm:max-w-3xl sm:px-6 sm:py-7 md:px-8 landscape-mobile:px-3 landscape-mobile:py-3">
-            <article dir="auto" className="relative space-y-4 sm:space-y-6 landscape-mobile:space-y-3">
+            <article
+              dir="auto"
+              className={cn(
+                "relative space-y-4 sm:space-y-6 landscape-mobile:space-y-3",
+                getStoredUserId() &&
+                  "pt-1 pe-11 sm:pe-12 landscape-mobile:pt-0.5 landscape-mobile:pe-10"
+              )}
+            >
               {getStoredUserId() ? (
-                <div className="absolute right-0 top-0 z-10 landscape-mobile:-top-1">
+                <div className="absolute end-1 top-0 z-10 sm:end-1.5 sm:top-0.5 landscape-mobile:end-0.5 landscape-mobile:-top-0.5">
                   <FlashcardBookmarkStar
                     bookmarked={Boolean(card.bookmarked)}
                     busy={bookmarkBusyId === card.id}
@@ -902,7 +910,7 @@ export default function StudyPage({ params }: StudyPageProps) {
                 className="flashcard relative mx-auto flex w-full max-w-2xl touch-pan-y flex-col overflow-hidden rounded-2xl shadow-md sm:max-w-3xl aspect-[3/2] landscape-mobile:aspect-auto landscape-mobile:max-h-[min(28rem,calc(100dvh-6.75rem-env(safe-area-inset-top,0px)-env(safe-area-inset-bottom,0px)))] landscape-mobile:min-h-[11rem] landscape-mobile:w-full transition-shadow duration-200 hover:shadow-lg"
               >
                 {getStoredUserId() ? (
-                  <div className="pointer-events-auto absolute right-2 top-2 z-20 sm:right-3 sm:top-3">
+                  <div className="pointer-events-auto absolute end-2 top-2 z-20 sm:end-3 sm:top-3">
                     <FlashcardBookmarkStar
                       bookmarked={Boolean(card.bookmarked)}
                       busy={bookmarkBusyId === card.id}
@@ -916,6 +924,7 @@ export default function StudyPage({ params }: StudyPageProps) {
                 ) : null}
                 <Flashcard
                   cardStyle={userSettings.card_style}
+                  reserveBookmarkCorner={Boolean(getStoredUserId())}
                   front={
                     <div className="min-h-0 w-full flex-1 overflow-y-auto">
                       <FormattedText
