@@ -1,8 +1,28 @@
 import os
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
+
+# libpq / dashboard copy-paste params that asyncpg does not accept on the URL
+_ASYNCPG_UNSUPPORTED_QUERY_KEYS = frozenset({"sslmode", "channel_binding"})
+
+
+def _strip_asyncpg_unsupported_query_params(url: str) -> str:
+    """Remove query keys asyncpg rejects (e.g. Neon/psql-style sslmode, channel_binding)."""
+    parsed = urlparse(url)
+    if not parsed.query:
+        return url
+    pairs = parse_qsl(parsed.query, keep_blank_values=True)
+    kept = [
+        (k, v)
+        for k, v in pairs
+        if k.lower() not in _ASYNCPG_UNSUPPORTED_QUERY_KEYS
+    ]
+    new_query = urlencode(kept) if kept else ""
+    return urlunparse(parsed._replace(query=new_query))
+
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
@@ -12,6 +32,8 @@ if DATABASE_URL:
         DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+asyncpg://", 1)
     elif DATABASE_URL.startswith("postgresql://") and "+asyncpg" not in DATABASE_URL:
         DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
+    if "+asyncpg" in DATABASE_URL:
+        DATABASE_URL = _strip_asyncpg_unsupported_query_params(DATABASE_URL)
     engine = create_async_engine(
         DATABASE_URL,
         echo=os.getenv("DEBUG", "false").lower() == "true",
