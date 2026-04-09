@@ -67,6 +67,7 @@ import { DeckGenerationBadge, isDeckGeneratingLike } from "@/components/DeckGene
 import { AdminTransferDeckConfirmModal } from "@/components/AdminTransferDeckConfirmModal";
 import { LongSourceTextarea } from "@/components/long-source-textarea";
 import { DeckSourceSummaryBody } from "@/components/deck-source-summary-body";
+import { cn } from "@/lib/utils";
 
 interface DeckPageProps {
   params: { id: string };
@@ -1100,7 +1101,16 @@ export default function DeckPage({ params }: DeckPageProps) {
                       setEditingTitle(false);
                     }
                   }}
-                  className="text-2xl font-semibold border rounded px-2 py-1 w-full"
+                  className={cn(
+                    "w-full rounded-lg border border-input bg-background px-2.5 py-1.5",
+                    "text-2xl font-semibold text-foreground",
+                    "placeholder:text-muted-foreground",
+                    "ring-offset-background transition-colors",
+                    "hover:border-input focus-visible:border-input",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+                    "disabled:cursor-not-allowed disabled:opacity-50"
+                  )}
+                  placeholder="Deck name"
                   autoFocus
                 />
               ) : (
@@ -1137,7 +1147,15 @@ export default function DeckPage({ params }: DeckPageProps) {
                       setEditingDescription(false);
                     }
                   }}
-                  className="border rounded px-2 py-1 w-full min-h-[60px] text-sm text-muted-foreground mt-1"
+                  className={cn(
+                    "mt-1 w-full min-h-[60px] rounded-lg border border-input bg-background px-3 py-2",
+                    "text-sm text-foreground",
+                    "placeholder:text-muted-foreground",
+                    "ring-offset-background transition-colors",
+                    "hover:border-input focus-visible:border-input",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  )}
+                  placeholder="Short description (optional)"
                   autoFocus
                 />
               ) : description ? (
