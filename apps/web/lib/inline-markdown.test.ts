@@ -107,4 +107,16 @@ describe("parseInlineMarkdownTreeWithCode", () => {
       { type: "code", value: "train_test_split()" },
     ]);
   });
+
+  it("parses inline dollar math after block split would leave these segments", () => {
+    expect(parseInlineMarkdownTreeWithCode("The event $A$ happens")).toEqual([
+      { type: "text", value: "The event " },
+      { type: "math", value: "A" },
+      { type: "text", value: " happens" },
+    ]);
+  });
+
+  it("does not parse dollars inside inline code", () => {
+    expect(parseInlineMarkdownTreeWithCode("`$x$`")).toEqual([{ type: "code", value: "$x$" }]);
+  });
 });

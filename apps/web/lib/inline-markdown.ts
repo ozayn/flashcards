@@ -1,13 +1,16 @@
 /**
  * Lightweight **bold** and *italic* for flashcard text (display + tests).
- * Block math is split out before this runs (see FormattedText).
+ * Block math ($$...$$) is split out before this runs; inline $...$ is parsed here after code (see FormattedText).
  */
+
+import { splitInlineDollarMath } from "@/lib/inline-math-dollars";
 
 export type InlineMdNode =
   | { type: "text"; value: string }
   | { type: "italic"; value: string }
   | { type: "bold"; children: InlineMdNode[] }
-  | { type: "code"; value: string };
+  | { type: "code"; value: string }
+  | { type: "math"; value: string };
 
 /** Split on **...** pairs; unclosed ** is left as literal text. */
 export function parseBoldSegments(text: string): { type: "text" | "bold"; value: string }[] {
@@ -134,11 +137,11 @@ export function splitInlineCode(
   return out;
 }
 
-function parseItalicAndCodeInText(text: string): InlineMdNode[] {
+function parseDollarMathAndItalicInText(text: string): InlineMdNode[] {
   const nodes: InlineMdNode[] = [];
-  for (const seg of splitInlineCode(text)) {
-    if (seg.type === "inlineCode") {
-      nodes.push({ type: "code", value: seg.value });
+  for (const seg of splitInlineDollarMath(text)) {
+    if (seg.type === "math") {
+      nodes.push({ type: "math", value: seg.value });
     } else {
       nodes.push(...segmentsToItalicNodes(parseItalicSegments(seg.value)));
     }
@@ -146,8 +149,21 @@ function parseItalicAndCodeInText(text: string): InlineMdNode[] {
   return nodes;
 }
 
+function parseItalicCodeAndMathInText(text: string): InlineMdNode[] {
+  const nodes: InlineMdNode[] = [];
+  for (const seg of splitInlineCode(text)) {
+    if (seg.type === "inlineCode") {
+      nodes.push({ type: "code", value: seg.value });
+    } else {
+      nodes.push(...parseDollarMathAndItalicInText(seg.value));
+    }
+  }
+  return nodes;
+}
+
 /**
- * **bold** / *italic* plus `inline code`. Code runs before * inside each bold/text slice.
+ * **bold** / *italic* / `inline code` / $inline math$.
+ * Order per slice: fenced code is removed earlier; here backticks, then $...$, then *...*.
  */
 export function parseInlineMarkdownTreeWithCode(text: string): InlineMdNode[] {
   const nodes: InlineMdNode[] = [];
@@ -155,10 +171,10 @@ export function parseInlineMarkdownTreeWithCode(text: string): InlineMdNode[] {
     if (part.type === "bold") {
       nodes.push({
         type: "bold",
-        children: parseItalicAndCodeInText(part.value),
+        children: parseItalicCodeAndMathInText(part.value),
       });
     } else {
-      nodes.push(...parseItalicAndCodeInText(part.value));
+      nodes.push(...parseItalicCodeAndMathInText(part.value));
     }
   }
   return nodes;

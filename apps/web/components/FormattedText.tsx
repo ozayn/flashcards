@@ -60,6 +60,25 @@ function renderInlineMarkdownNodes(
         </code>
       );
     }
+    if (n.type === "math") {
+      const raw = n.value.trim();
+      const math = repairLatex(raw);
+      const fallback = `$${n.value}$`;
+      return (
+        <span key={k} className="katex-inline inline [overflow-wrap:anywhere]">
+          <InlineMath
+            math={math}
+            errorColor="#888"
+            strict={false}
+            renderError={(err) => (
+              <span className="text-destructive text-sm" title={err.message}>
+                {fallback}
+              </span>
+            )}
+          />
+        </span>
+      );
+    }
     return (
       <strong key={k} className="font-semibold">
         {renderInlineMarkdownNodes(n.children, k)}
@@ -68,7 +87,7 @@ function renderInlineMarkdownNodes(
   });
 }
 
-/** Render text with $$...$$ as block math, then **bold** / *italic* on each text segment. */
+/** Render text with $$...$$ as block math, then **bold** / *italic* / `code` / $inline math$ on each segment. */
 function renderMixed(text: string, keyPrefix: string) {
   const parts = text.split(/(\$\$[\s\S]*?\$\$)/);
   return parts.map((part, i) => {
