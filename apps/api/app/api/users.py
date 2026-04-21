@@ -43,6 +43,7 @@ from app.schemas.user import (
     UserSettingsUpdate,
     UserUsageLimits,
 )
+from app.utils.datetime_utc import ensure_utc_aware
 
 logger = logging.getLogger(__name__)
 
@@ -219,7 +220,7 @@ async def get_user_activity(
             UserActivityItem(
                 id=row.id,
                 event_type=row.event_type,
-                created_at=row.created_at,
+                created_at=ensure_utc_aware(row.created_at),
                 meta=meta,
             )
         )

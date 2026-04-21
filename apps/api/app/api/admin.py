@@ -30,6 +30,7 @@ from app.schemas.user import (
     UserDeletePreviewResponse,
     UserResponse,
 )
+from app.utils.datetime_utc import ensure_utc_aware, ensure_utc_aware_optional
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -55,9 +56,9 @@ def _user_to_admin_list_item(
         role=user.role,
         plan=user.plan,
         access_role=user_access_role_for_admin_list(user),
-        created_at=user.created_at,
+        created_at=ensure_utc_aware(user.created_at),
         picture_url=user.picture_url,
-        last_active_at=last_active_at,
+        last_active_at=ensure_utc_aware_optional(last_active_at),
     )
 
 
@@ -216,7 +217,7 @@ async def admin_user_activity(
             UserActivityItem(
                 id=row.id,
                 event_type=row.event_type,
-                created_at=row.created_at,
+                created_at=ensure_utc_aware(row.created_at),
                 meta=meta,
             )
         )
