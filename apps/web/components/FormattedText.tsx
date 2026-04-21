@@ -148,7 +148,7 @@ export default function FormattedText({
 
   if (variant === "answer") {
     try {
-      const children = segments.flatMap((seg, segIdx) => {
+      const children = segments.flatMap((seg, segIdx): ReactNode[] => {
         if (seg.kind === "fenced") {
           return [
             <FencedCodeBlock
@@ -177,7 +177,7 @@ export default function FormattedText({
   }
 
   try {
-    const children = segments.flatMap((seg, segIdx) => {
+    const children = segments.flatMap((seg, segIdx): ReactNode[] => {
       if (seg.kind === "fenced") {
         return [
           <FencedCodeBlock
