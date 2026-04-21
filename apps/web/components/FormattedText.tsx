@@ -3,8 +3,9 @@
 import type { ReactNode } from "react";
 import { BlockMath, InlineMath } from "react-katex";
 import { parseAnswerParagraphs } from "@/lib/format-flashcard-answer-display";
+import { splitFencedCodeBlocks } from "@/lib/fenced-code";
 import {
-  parseInlineMarkdownTree,
+  parseInlineMarkdownTreeWithCode,
   type InlineMdNode,
 } from "@/lib/inline-markdown";
 import { cn } from "@/lib/utils";
@@ -49,6 +50,16 @@ function renderInlineMarkdownNodes(
         </em>
       );
     }
+    if (n.type === "code") {
+      return (
+        <code
+          key={k}
+          className="rounded-md border border-border/60 bg-muted/80 px-1.5 py-0.5 font-mono text-[0.88em] text-foreground [overflow-wrap:anywhere]"
+        >
+          {n.value}
+        </code>
+      );
+    }
     return (
       <strong key={k} className="font-semibold">
         {renderInlineMarkdownNodes(n.children, k)}
@@ -86,13 +97,44 @@ function renderMixed(text: string, keyPrefix: string) {
         </span>
       );
     }
-    const tree = parseInlineMarkdownTree(part);
+    const tree = parseInlineMarkdownTreeWithCode(part);
     return (
       <span key={`${keyPrefix}-t${i}`}>
         {renderInlineMarkdownNodes(tree, `${keyPrefix}-t${i}`)}
       </span>
     );
   });
+}
+
+function FencedCodeBlock({ body, info }: { body: string; info?: string }) {
+  const lang = info?.trim().toLowerCase();
+  return (
+    <pre className="my-2 min-w-0 overflow-x-auto rounded-lg border border-border bg-muted/50 p-3 text-left text-sm leading-relaxed dark:bg-muted/30">
+      <code className={cn("font-mono text-foreground", lang && `language-${lang}`)}>{body}</code>
+    </pre>
+  );
+}
+
+function renderAnswerBlocksFromPlain(chunk: string, keyBase: string): ReactNode[] {
+  const blocks = parseAnswerParagraphs(chunk);
+  if (blocks.length === 0) return [];
+  return blocks.map((block, i) =>
+    block.type === "plain" ? (
+      <div key={`${keyBase}-${i}`} className="min-w-0 whitespace-pre-line">
+        {renderMixed(block.text, `${keyBase}-${i}`)}
+      </div>
+    ) : (
+      <div key={`${keyBase}-${i}`} className="min-w-0 whitespace-pre-line">
+        <span className="italic text-muted-foreground">{block.label}</span>
+        {block.body ? (
+          <>
+            {" "}
+            {renderMixed(block.body, `${keyBase}-${i}b`)}
+          </>
+        ) : null}
+      </div>
+    )
+  );
 }
 
 export default function FormattedText({
@@ -102,32 +144,27 @@ export default function FormattedText({
 }: Props) {
   if (!text) return null;
 
+  const segments = splitFencedCodeBlocks(text);
+
   if (variant === "answer") {
-    const blocks = parseAnswerParagraphs(text);
-    if (blocks.length === 0) return null;
     try {
+      const children = segments.flatMap((seg, segIdx) => {
+        if (seg.kind === "fenced") {
+          return [
+            <FencedCodeBlock
+              key={`f-${segIdx}`}
+              body={seg.body}
+              info={seg.info}
+            />,
+          ];
+        }
+        if (seg.value === "") return [];
+        return renderAnswerBlocksFromPlain(seg.value, `a${segIdx}`);
+      });
+      if (children.length === 0) return null;
       return (
-        <div
-          className={cn("flex flex-col gap-y-4", className)}
-          dir="auto"
-        >
-          {blocks.map((block, i) =>
-            block.type === "plain" ? (
-              <div key={i} className="min-w-0 whitespace-pre-line">
-                {renderMixed(block.text, `a${i}`)}
-              </div>
-            ) : (
-              <div key={i} className="min-w-0 whitespace-pre-line">
-                <span className="italic text-muted-foreground">{block.label}</span>
-                {block.body ? (
-                  <>
-                    {" "}
-                    {renderMixed(block.body, `a${i}b`)}
-                  </>
-                ) : null}
-              </div>
-            )
-          )}
+        <div className={cn("flex flex-col gap-y-4", className)} dir="auto">
+          {children}
         </div>
       );
     } catch {
@@ -140,12 +177,30 @@ export default function FormattedText({
   }
 
   try {
+    const children = segments.flatMap((seg, segIdx) => {
+      if (seg.kind === "fenced") {
+        return [
+          <FencedCodeBlock
+            key={`qf-${segIdx}`}
+            body={seg.body}
+            info={seg.info}
+          />,
+        ];
+      }
+      if (seg.value === "") return [];
+      return [
+        <div
+          key={`qt-${segIdx}`}
+          className="min-w-0 whitespace-pre-line"
+          dir="auto"
+        >
+          {renderMixed(seg.value, `q${segIdx}`)}
+        </div>,
+      ];
+    });
     return (
-      <div
-        className={className ? `whitespace-pre-line ${className}` : "whitespace-pre-line"}
-        dir="auto"
-      >
-        {renderMixed(text, "q")}
+      <div className={cn("flex flex-col gap-y-2", className)} dir="auto">
+        {children}
       </div>
     );
   } catch {

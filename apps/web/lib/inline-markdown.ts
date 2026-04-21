@@ -6,7 +6,8 @@
 export type InlineMdNode =
   | { type: "text"; value: string }
   | { type: "italic"; value: string }
-  | { type: "bold"; children: InlineMdNode[] };
+  | { type: "bold"; children: InlineMdNode[] }
+  | { type: "code"; value: string };
 
 /** Split on **...** pairs; unclosed ** is left as literal text. */
 export function parseBoldSegments(text: string): { type: "text" | "bold"; value: string }[] {
@@ -87,6 +88,77 @@ export function parseInlineMarkdownTree(text: string): InlineMdNode[] {
       });
     } else {
       nodes.push(...segmentsToItalicNodes(parseItalicSegments(part.value)));
+    }
+  }
+  return nodes;
+}
+
+/** Split `...` inline code (single backticks, no newlines inside span). */
+export function splitInlineCode(
+  text: string
+): { type: "text" | "inlineCode"; value: string }[] {
+  const out: { type: "text" | "inlineCode"; value: string }[] = [];
+  let i = 0;
+  const n = text.length;
+  while (i < n) {
+    const tick = text.indexOf("`", i);
+    if (tick === -1) {
+      if (i < n) out.push({ type: "text", value: text.slice(i) });
+      break;
+    }
+    if (tick + 2 < n && text[tick + 1] === "`" && text[tick + 2] === "`") {
+      out.push({ type: "text", value: text.slice(i, tick + 3) });
+      i = tick + 3;
+      continue;
+    }
+    if (tick > i) out.push({ type: "text", value: text.slice(i, tick) });
+    const end = text.indexOf("`", tick + 1);
+    if (end === -1) {
+      out.push({ type: "text", value: text.slice(tick) });
+      break;
+    }
+    if (end === tick + 1) {
+      out.push({ type: "text", value: "`" });
+      i = tick + 1;
+      continue;
+    }
+    const inner = text.slice(tick + 1, end);
+    if (inner.includes("\n") || inner.includes("\r")) {
+      out.push({ type: "text", value: text.slice(tick, end + 1) });
+      i = end + 1;
+      continue;
+    }
+    out.push({ type: "inlineCode", value: inner });
+    i = end + 1;
+  }
+  return out;
+}
+
+function parseItalicAndCodeInText(text: string): InlineMdNode[] {
+  const nodes: InlineMdNode[] = [];
+  for (const seg of splitInlineCode(text)) {
+    if (seg.type === "inlineCode") {
+      nodes.push({ type: "code", value: seg.value });
+    } else {
+      nodes.push(...segmentsToItalicNodes(parseItalicSegments(seg.value)));
+    }
+  }
+  return nodes;
+}
+
+/**
+ * **bold** / *italic* plus `inline code`. Code runs before * inside each bold/text slice.
+ */
+export function parseInlineMarkdownTreeWithCode(text: string): InlineMdNode[] {
+  const nodes: InlineMdNode[] = [];
+  for (const part of parseBoldSegments(text)) {
+    if (part.type === "bold") {
+      nodes.push({
+        type: "bold",
+        children: parseItalicAndCodeInText(part.value),
+      });
+    } else {
+      nodes.push(...parseItalicAndCodeInText(part.value));
     }
   }
   return nodes;
