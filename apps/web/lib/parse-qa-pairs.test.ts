@@ -76,12 +76,19 @@ A: Beta`;
     expect(pairs![1]!.answer_short).toBe("Beta");
   });
 
-  it("returns null when fewer than two cards", () => {
-    expect(
-      parseQAPairs(`Card 1
-Q: Only
-A: One`)
-    ).toBeNull();
+  it("parses a single Q:/A: card", () => {
+    const pairs = parseQAPairs(`Q: What is a pandas DataFrame?
+A: A pandas DataFrame is a table-like data structure with rows and columns.`);
+    expect(pairs).not.toBeNull();
+    expect(pairs).toHaveLength(1);
+    expect(pairs![0]!.question).toBe("What is a pandas DataFrame?");
+    expect(pairs![0]!.answer_short).toContain("table-like");
+  });
+
+  it("returns null when there is no complete pair", () => {
+    expect(parseQAPairs("Q: Only a question")).toBeNull();
+    expect(parseQAPairs("A: Only an answer")).toBeNull();
+    expect(parseQAPairs("")).toBeNull();
   });
 
   it("splits Example: into answer_example (regression: re-import / paste Q&A)", () => {

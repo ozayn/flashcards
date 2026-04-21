@@ -928,7 +928,7 @@ export async function importFlashcards(data: {
     answer_example?: string;
     answer_detailed?: string;
   }[];
-}): Promise<{ created: number; skipped: number }> {
+}): Promise<{ created: number; updated: number; skipped: number }> {
   const res = await fetch(`${API_BASE}/flashcards/import`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

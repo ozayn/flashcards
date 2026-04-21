@@ -233,6 +233,7 @@ class _ImportRequest(BaseModel):
 
 class _ImportResponse(BaseModel):
     created: int
+    updated: int = 0
     skipped: int = 0
 
 
@@ -242,8 +243,11 @@ async def import_flashcards(
     db: AsyncSession = Depends(get_db),
     trusted_id: Optional[str] = Depends(get_trusted_acting_user_id),
 ):
-    """Batch-create flashcards from structured Q/A import (no LLM).
-    Skips exact duplicates (same question text) already in the deck.
+    """Batch-create or update flashcards from structured Q/A import (no LLM).
+
+    Same question text as an existing card (case-insensitive, trimmed) updates
+    that card with the new answers. New rows only consume a slot on free tier;
+    updates are always allowed even at the deck card cap.
     """
     result = await db.execute(select(Deck).where(Deck.id == payload.deck_id))
     deck = result.scalar_one_or_none()
@@ -254,37 +258,53 @@ async def import_flashcards(
     owner_result = await db.execute(select(User).where(User.id == deck.user_id))
     owner = owner_result.scalar_one_or_none()
 
-    existing = await db.execute(
-        select(Flashcard.question).where(Flashcard.deck_id == payload.deck_id)
+    existing_rows = await db.execute(
+        select(Flashcard)
+        .where(Flashcard.deck_id == payload.deck_id)
+        .order_by(Flashcard.created_at.asc())
     )
-    existing_questions = {row[0].strip().lower() for row in existing.all()}
+    norm_to_card: dict[str, Flashcard] = {}
+    for fc in existing_rows.scalars().all():
+        k = fc.question.strip().lower()
+        if k not in norm_to_card:
+            norm_to_card[k] = fc
 
-    slots_remaining: int | None = None
+    slots_for_new: int | None = None
     if not user_has_elevated_tier(owner, trusted_id):
         current = await count_flashcards_in_deck(db, payload.deck_id)
-        slots_remaining = max(0, LIMITED_MAX_CARDS_PER_DECK - current)
-        if slots_remaining <= 0:
-            raise HTTPException(status_code=403, detail=FREE_TIER_MAX_CARDS_DECK_MSG)
+        slots_for_new = max(0, LIMITED_MAX_CARDS_PER_DECK - current)
 
     created = 0
+    updated = 0
+    skipped = 0
     for card in payload.cards:
-        if card.question.strip().lower() in existing_questions:
-            continue
-        if slots_remaining is not None and created >= slots_remaining:
-            break
+        norm = card.question.strip().lower()
         answer_short, answer_example = resolve_import_answer_fields(
             card.answer_short, card.answer_example
         )
-        db.add(Flashcard(
+        if norm in norm_to_card:
+            fc = norm_to_card[norm]
+            fc.question = card.question
+            fc.answer_short = answer_short
+            fc.answer_example = answer_example
+            fc.answer_detailed = card.answer_detailed
+            fc.difficulty = 1
+            updated += 1
+            continue
+        if slots_for_new is not None and created >= slots_for_new:
+            skipped += 1
+            continue
+        fc = Flashcard(
             deck_id=payload.deck_id,
             question=card.question,
             answer_short=answer_short,
             answer_example=answer_example,
             answer_detailed=card.answer_detailed,
             difficulty=1,
-        ))
-        existing_questions.add(card.question.strip().lower())
+        )
+        db.add(fc)
+        norm_to_card[norm] = fc
         created += 1
 
     await db.flush()
-    return _ImportResponse(created=created, skipped=len(payload.cards) - created)
+    return _ImportResponse(created=created, updated=updated, skipped=skipped)

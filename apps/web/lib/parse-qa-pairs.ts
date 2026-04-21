@@ -61,5 +61,5 @@ export function parseQAPairs(text: string): ParsedQAPair[] | null {
   }
   flushPair();
 
-  return pairs.length >= 2 ? pairs : null;
+  return pairs.length > 0 ? pairs : null;
 }

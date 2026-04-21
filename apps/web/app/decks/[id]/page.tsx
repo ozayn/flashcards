@@ -386,7 +386,11 @@ export default function DeckPage({ params }: DeckPageProps) {
   const [genMode, setGenMode] = useState<"topic" | "text" | "import">("topic");
   const [importText, setImportText] = useState("");
   const [importFiles, setImportFiles] = useState<{ name: string; pairCount: number; error?: string }[]>([]);
-  const [importResult, setImportResult] = useState<{ created: number; skipped: number } | null>(null);
+  const [importResult, setImportResult] = useState<{
+    created: number;
+    updated: number;
+    skipped: number;
+  } | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
   const [genActionError, setGenActionError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -1807,8 +1811,20 @@ export default function DeckPage({ params }: DeckPageProps) {
                     )}
                     {importResult && (
                       <p className="text-xs text-muted-foreground">
-                        Imported {importResult.created} card{importResult.created === 1 ? "" : "s"}
-                        {importResult.skipped > 0 ? `, ${importResult.skipped} duplicate${importResult.skipped === 1 ? "" : "s"} skipped` : ""}.
+                        {[
+                          importResult.created > 0
+                            ? `Added ${importResult.created} card${importResult.created === 1 ? "" : "s"}`
+                            : null,
+                          importResult.updated > 0
+                            ? `updated ${importResult.updated} existing (same question)`
+                            : null,
+                          importResult.skipped > 0
+                            ? `${importResult.skipped} not added (deck card limit)`
+                            : null,
+                        ]
+                          .filter(Boolean)
+                          .join("; ")}
+                        .
                       </p>
                     )}
                   </div>
