@@ -67,6 +67,10 @@ import { DeckGenerationBadge, isDeckGeneratingLike } from "@/components/DeckGene
 import { AdminTransferDeckConfirmModal } from "@/components/AdminTransferDeckConfirmModal";
 import { LongSourceTextarea } from "@/components/long-source-textarea";
 import { DeckSourceSummaryBody } from "@/components/deck-source-summary-body";
+import {
+  buildDeckEditCardQuerySuffix,
+  orderDeckFlashcardsForDisplay,
+} from "@/lib/deck-flashcards-display-order";
 import { cn } from "@/lib/utils";
 
 interface DeckPageProps {
@@ -427,28 +431,26 @@ export default function DeckPage({ params }: DeckPageProps) {
   const [duplicating, setDuplicating] = useState(false);
   const [dupError, setDupError] = useState<string | null>(null);
 
-  const processedCards = useMemo(() => {
-    let cards = [...flashcards];
-    const q = cardSearch.trim().toLowerCase();
-    if (q) {
-      cards = cards.filter(
-        (c) =>
-          c.question.toLowerCase().includes(q) ||
-          c.answer_short.toLowerCase().includes(q) ||
-          (c.answer_example || "").toLowerCase().includes(q) ||
-          (c.answer_detailed || "").toLowerCase().includes(q)
-      );
-    }
-    if (currentUserId && cardBookmarkFilter === "bookmarked") {
-      cards = cards.filter((c) => c.bookmarked);
-    }
-    if (cardSort === "oldest") {
-      cards.reverse();
-    } else if (cardSort === "az") {
-      cards.sort((a, b) => a.question.localeCompare(b.question));
-    }
-    return cards;
-  }, [flashcards, cardSearch, cardSort, cardBookmarkFilter, currentUserId]);
+  const editCardQuerySuffix = useMemo(
+    () =>
+      buildDeckEditCardQuerySuffix({
+        sort: cardSort,
+        q: cardSearch,
+        bookmarked: cardBookmarkFilter,
+      }),
+    [cardSort, cardSearch, cardBookmarkFilter]
+  );
+
+  const processedCards = useMemo(
+    () =>
+      orderDeckFlashcardsForDisplay(flashcards, {
+        cardSort,
+        cardSearch,
+        cardBookmarkFilter,
+        currentUserId,
+      }),
+    [flashcards, cardSearch, cardSort, cardBookmarkFilter, currentUserId]
+  );
 
   const handleBookmarkToggle = async (cardId: string, next: boolean) => {
     if (!currentUserId) return;
@@ -2133,7 +2135,7 @@ export default function DeckPage({ params }: DeckPageProps) {
                           >
                             <Link
                               role="menuitem"
-                              href={`/decks/${params.id}/edit-card/${card.id}`}
+                              href={`/decks/${params.id}/edit-card/${card.id}${editCardQuerySuffix}`}
                               onClick={() => setGridMenuOpenId(null)}
                               className="flex items-center gap-2 px-3 py-2 text-sm text-foreground hover:bg-muted transition-colors max-mobile:min-h-[44px]"
                             >
@@ -2242,7 +2244,7 @@ export default function DeckPage({ params }: DeckPageProps) {
                           >
                             <Link
                               role="menuitem"
-                              href={`/decks/${params.id}/edit-card/${card.id}`}
+                              href={`/decks/${params.id}/edit-card/${card.id}${editCardQuerySuffix}`}
                               onClick={() => setGridMenuOpenId(null)}
                               className="flex items-center gap-2 px-3 py-2 text-sm text-foreground hover:bg-muted transition-colors max-mobile:min-h-[44px]"
                             >
@@ -2353,6 +2355,7 @@ export default function DeckPage({ params }: DeckPageProps) {
           isOpen={modalCardIndex !== null}
           onClose={() => setModalCardIndex(null)}
           editBasePath={isReadOnly ? undefined : `/decks/${params.id}/edit-card`}
+          editQuerySuffix={isReadOnly ? undefined : editCardQuerySuffix}
           onBookmarkToggle={
             currentUserId ? handleBookmarkToggle : undefined
           }

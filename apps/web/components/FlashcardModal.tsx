@@ -30,6 +30,8 @@ export interface FlashcardModalProps {
   onClose: () => void;
   /** Optional: base path for edit link, e.g. /decks/abc/edit-card */
   editBasePath?: string;
+  /** Optional: sort/search query for edit flow, e.g. `?sort=newest&q=…` */
+  editQuerySuffix?: string;
   /** When set, show save control and call with the desired bookmark state */
   onBookmarkToggle?: (cardId: string, bookmarked: boolean) => void;
   bookmarkPendingId?: string | null;
@@ -43,6 +45,7 @@ export function FlashcardModal({
   isOpen,
   onClose,
   editBasePath,
+  editQuerySuffix = "",
   onBookmarkToggle,
   bookmarkPendingId,
 }: FlashcardModalProps) {
@@ -171,7 +174,7 @@ export function FlashcardModal({
 
             {editBasePath && card && (
               <Link
-                href={`${editBasePath}/${card.id}`}
+                href={`${editBasePath}/${card.id}${editQuerySuffix}`}
                 className="inline-flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
               >
                 <Pencil className="size-4" />
