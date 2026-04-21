@@ -8,6 +8,7 @@ import {
   parseInlineMarkdownTreeWithCode,
   type InlineMdNode,
 } from "@/lib/inline-markdown";
+import { FencedCodeBlock } from "@/components/fenced-code-block";
 import { cn } from "@/lib/utils";
 
 type Props = {
@@ -123,15 +124,6 @@ function renderMixed(text: string, keyPrefix: string) {
       </span>
     );
   });
-}
-
-function FencedCodeBlock({ body, info }: { body: string; info?: string }) {
-  const lang = info?.trim().toLowerCase();
-  return (
-    <pre className="my-2 min-w-0 overflow-x-auto rounded-lg border border-border bg-muted/50 p-3 text-left text-sm leading-relaxed dark:bg-muted/30">
-      <code className={cn("font-mono text-foreground", lang && `language-${lang}`)}>{body}</code>
-    </pre>
-  );
 }
 
 function renderAnswerBlocksFromPlain(chunk: string, keyBase: string): ReactNode[] {
