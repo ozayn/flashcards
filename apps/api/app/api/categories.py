@@ -1,13 +1,23 @@
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import case, func, select, update
+from starlette.responses import Response
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.category_deck_order import (
+    fetch_decks_in_category_ordered,
+    reorder_deck_in_category,
+)
 from app.core.database import get_db
 from app.core.user_access import assert_may_act_as_user, get_trusted_acting_user_id
 from app.models import Category, Deck, Flashcard
-from app.schemas.category import CategoryCreate, CategoryResponse, CategoryUpdate
+from app.schemas.category import (
+    CategoryCreate,
+    CategoryDeckReorderRequest,
+    CategoryResponse,
+    CategoryUpdate,
+)
 from app.schemas.deck import DeckResponse
 
 router = APIRouter(prefix="/categories", tags=["categories"])
@@ -105,28 +115,18 @@ async def get_category_decks(
     db: AsyncSession = Depends(get_db),
     trusted_id: Optional[str] = Depends(get_trusted_acting_user_id),
 ):
-    """Get non-archived decks in a category, ordered by category_assigned_at ASC.
-    Nulls (legacy decks) sort to the end, using created_at as tiebreaker."""
+    """Get non-archived decks in a category.
+
+    Order: manual ``category_position`` (non-null first, ascending), then
+    ``category_assigned_at`` / ``created_at`` for legacy rows.
+    """
     await assert_may_act_as_user(db, trusted_id, user_id)
     result = await db.execute(
         select(Category).where(Category.id == category_id, Category.user_id == user_id)
     )
     if result.scalar_one_or_none() is None:
         raise HTTPException(status_code=404, detail="Category not found")
-    sort_key = case(
-        (Deck.category_assigned_at.isnot(None), Deck.category_assigned_at),
-        else_=Deck.created_at,
-    )
-    decks_result = await db.execute(
-        select(Deck)
-        .where(
-            Deck.category_id == category_id,
-            Deck.user_id == user_id,
-            Deck.archived == False,
-        )
-        .order_by(sort_key.asc())
-    )
-    decks = decks_result.scalars().all()
+    decks = await fetch_decks_in_category_ordered(db, category_id, user_id)
     if not decks:
         return []
     deck_ids = [d.id for d in decks]
@@ -140,6 +140,49 @@ async def get_category_decks(
         DeckResponse.model_validate(d).model_copy(update={"card_count": counts.get(d.id, 0)})
         for d in decks
     ]
+
+
+@router.post("/{category_id}/decks/{deck_id}/reorder")
+async def reorder_category_deck(
+    category_id: str,
+    deck_id: str,
+    payload: CategoryDeckReorderRequest,
+    user_id: str = Query(..., description="User ID (must own the category and deck)"),
+    db: AsyncSession = Depends(get_db),
+    trusted_id: Optional[str] = Depends(get_trusted_acting_user_id),
+):
+    """Move a deck up or down within its category (manual order)."""
+    await assert_may_act_as_user(db, trusted_id, user_id)
+    cat_result = await db.execute(
+        select(Category).where(Category.id == category_id, Category.user_id == user_id)
+    )
+    if cat_result.scalar_one_or_none() is None:
+        raise HTTPException(status_code=404, detail="Category not found")
+    deck_result = await db.execute(
+        select(Deck).where(Deck.id == deck_id, Deck.user_id == user_id, Deck.archived == False)
+    )
+    deck = deck_result.scalar_one_or_none()
+    if not deck or deck.category_id != category_id:
+        raise HTTPException(status_code=404, detail="Deck not found in this category")
+    try:
+        await reorder_deck_in_category(db, category_id, user_id, deck_id, payload.direction)
+    except LookupError:
+        raise HTTPException(status_code=404, detail="Deck not found in this category")
+    except ValueError as e:
+        msg = str(e)
+        if msg == "already_first":
+            raise HTTPException(
+                status_code=400,
+                detail="Deck is already first in this category",
+            )
+        if msg == "already_last":
+            raise HTTPException(
+                status_code=400,
+                detail="Deck is already last in this category",
+            )
+        raise HTTPException(status_code=400, detail="Invalid reorder request")
+    await db.flush()
+    return Response(status_code=204)
 
 
 @router.delete("/{category_id}", status_code=204)
@@ -158,6 +201,10 @@ async def delete_category(
     if not category:
         raise HTTPException(status_code=404, detail="Category not found")
     # Explicitly nullify deck.category_id before delete (ensures SQLite works; DB ON DELETE SET NULL is backup)
-    await db.execute(update(Deck).where(Deck.category_id == category_id).values(category_id=None, category_assigned_at=None))
+    await db.execute(
+        update(Deck)
+        .where(Deck.category_id == category_id)
+        .values(category_id=None, category_assigned_at=None, category_position=None)
+    )
     await db.delete(category)
     await db.flush()

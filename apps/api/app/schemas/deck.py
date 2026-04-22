@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field, computed_field, field_validator
 
@@ -13,12 +13,16 @@ def _coerce_enum_to_str(v: Any) -> Optional[str]:
     return v.value if hasattr(v, "value") else str(v)
 
 
+DeckStudyStatusValue = Literal["not_started", "in_progress", "studied"]
+
+
 class DeckUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=255)
     description: Optional[str] = Field(None, max_length=500)
     archived: Optional[bool] = None
     is_public: Optional[bool] = None
     category_id: Optional[str] = None
+    study_status: Optional[DeckStudyStatusValue] = None
 
 
 class DeckMoveRequest(BaseModel):
@@ -59,8 +63,10 @@ class DeckResponse(BaseModel):
     generated_by_ai: bool = False
     archived: bool = False
     is_public: bool = False
+    study_status: str = "not_started"
     category_id: Optional[str] = None
     category_assigned_at: Optional[datetime] = None
+    category_position: Optional[int] = None
     created_at: datetime
     card_count: int = 0
     owner_is_legacy: bool = False

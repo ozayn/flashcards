@@ -10,6 +10,7 @@ from fastapi.responses import PlainTextResponse
 from sqlalchemy import and_, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.category_deck_order import renormalize_category_positions
 from app.core.database import get_db
 from app.core.user_activity import record_user_activity
 from app.core.platform_admin import assert_acting_user_is_platform_admin
@@ -26,6 +27,7 @@ from app.core.user_tier import (
     user_has_elevated_tier,
 )
 from app.models import Category, Deck, Flashcard, FlashcardBookmark, Review, User
+from app.models.enums import DeckStudyStatus
 from app.schemas.deck import DeckCreate, DeckMoveRequest, DeckResponse, DeckUpdate
 from app.schemas.flashcard import FlashcardResponse
 
@@ -137,6 +139,7 @@ async def duplicate_deck(
         source_topic=source.source_topic,
         source_metadata=source.source_metadata,
         is_public=False,
+        study_status=DeckStudyStatus.not_started.value,
     )
     db.add(new_deck)
     await db.flush()
@@ -344,6 +347,8 @@ async def update_deck(
         await assert_acting_user_is_platform_admin(db, trusted_id)
         deck.is_public = data.is_public
 
+    renormalize_old_cat: Optional[str] = None
+    renormalize_new_cat: Optional[str] = None
     if "category_id" in (data.model_dump(exclude_unset=True) or {}):
         new_cat_id = data.category_id if data.category_id else None
         if new_cat_id:
@@ -358,12 +363,24 @@ async def update_deck(
                     status_code=403,
                     detail="Category not found or does not belong to you",
                 )
-        old_cat_id = deck.category_id
-        deck.category_id = new_cat_id
-        if new_cat_id != old_cat_id:
+        prev_cat = deck.category_id
+        if (new_cat_id or None) != (prev_cat or None):
+            deck.category_id = new_cat_id
             deck.category_assigned_at = datetime.utcnow() if new_cat_id else None
+            deck.category_position = None
+            renormalize_old_cat = prev_cat
+            renormalize_new_cat = new_cat_id
+
+    if data.study_status is not None:
+        deck.study_status = data.study_status
 
     await db.flush()
+
+    if renormalize_old_cat:
+        await renormalize_category_positions(db, renormalize_old_cat, deck.user_id)
+    if renormalize_new_cat:
+        await renormalize_category_positions(db, renormalize_new_cat, deck.user_id)
+
     await db.refresh(deck)
 
     return DeckResponse.model_validate(deck)
@@ -403,8 +420,15 @@ async def move_deck(
         deck.category_id = category_id
     if category_id != old_cat_id:
         deck.category_assigned_at = datetime.utcnow() if category_id else None
+        deck.category_position = None
 
     await db.flush()
+
+    if old_cat_id and old_cat_id != deck.category_id:
+        await renormalize_category_positions(db, old_cat_id, deck.user_id)
+    if deck.category_id and old_cat_id != deck.category_id:
+        await renormalize_category_positions(db, deck.category_id, deck.user_id)
+
     await db.refresh(deck)
     return DeckResponse.model_validate(deck)
 
@@ -449,8 +473,12 @@ async def delete_deck(
     if not deck:
         raise HTTPException(status_code=404, detail="Deck not found")
     await assert_may_mutate_deck(db, trusted_id, deck)
+    cat_before = deck.category_id
+    owner_id = deck.user_id
     await db.delete(deck)
     await db.flush()
+    if cat_before:
+        await renormalize_category_positions(db, cat_before, owner_id)
 
 
 @router.post("", response_model=DeckResponse, status_code=201)

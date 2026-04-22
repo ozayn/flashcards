@@ -3,11 +3,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Eye, LayoutGrid, List, Search } from "lucide-react";
-import { getCategoryDecks, getCategories } from "@/lib/api";
+import { ChevronDown, ChevronUp, Eye, LayoutGrid, List, Search } from "lucide-react";
+import { getCategoryDecks, getCategories, reorderCategoryDeck } from "@/lib/api";
 import { getStoredUserId } from "@/components/user-selector";
 import PageContainer from "@/components/layout/page-container";
 import { DeckGenerationBadge } from "@/components/DeckGenerationBadge";
+import { Button } from "@/components/ui/button";
 
 interface CategoryPageProps {
   params: { categoryId: string };
@@ -20,6 +21,8 @@ interface CategoryDeck {
   card_count?: number;
   created_at?: string;
   category_assigned_at?: string | null;
+  /** Manual order within this category (0..n-1). */
+  category_position?: number | null;
   generation_status?: string;
   is_public?: boolean;
 }
@@ -34,6 +37,7 @@ export default function CategoryPage({ params }: CategoryPageProps) {
   const [deckLayout, setDeckLayout] = useState<"list" | "grid">("list");
   const [searchQuery, setSearchQuery] = useState("");
   const [sortMode, setSortMode] = useState<SortMode>("category_order");
+  const [reorderBusyId, setReorderBusyId] = useState<string | null>(null);
 
   useEffect(() => {
     try {
@@ -89,6 +93,10 @@ export default function CategoryPage({ params }: CategoryPageProps) {
     });
   }, [decks, searchQuery]);
 
+  /** Show reorder chrome whenever manual order applies (≥1 deck); arrows disable at ends / single deck. */
+  const showCategoryReorder =
+    !searchQuery.trim() && sortMode === "category_order" && decks.length > 0;
+
   const visibleDecks = useMemo(() => {
     const list = [...filteredDecks];
     if (sortMode === "category_order") return list;
@@ -108,7 +116,25 @@ export default function CategoryPage({ params }: CategoryPageProps) {
     return list;
   }, [filteredDecks, sortMode]);
 
+  async function handleReorderDeck(deckId: string, direction: "up" | "down") {
+    const userId = getStoredUserId();
+    if (!userId || reorderBusyId) return;
+    setReorderBusyId(deckId);
+    try {
+      await reorderCategoryDeck(params.categoryId, deckId, direction, userId);
+      const data = await getCategoryDecks(params.categoryId, userId);
+      setDecks(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setReorderBusyId(null);
+    }
+  }
+
   function renderDeckRow(deck: CategoryDeck) {
+    const idxInFull = decks.findIndex((d) => d.id === deck.id);
+    const canUp = showCategoryReorder && idxInFull > 0;
+    const canDown = showCategoryReorder && idxInFull >= 0 && idxInFull < decks.length - 1;
     return (
       <div
         key={deck.id}
@@ -140,11 +166,57 @@ export default function CategoryPage({ params }: CategoryPageProps) {
             </span>
           </div>
         </div>
+        {showCategoryReorder && (
+          <div
+            className="flex shrink-0 items-center gap-0 rounded-md border border-border/80 bg-muted/50 p-0.5 shadow-sm"
+            onClick={(e) => e.stopPropagation()}
+            onPointerDown={(e) => e.stopPropagation()}
+            onKeyDown={(e) => e.stopPropagation()}
+            role="group"
+            aria-label="Reorder in category"
+          >
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              disabled={!canUp || reorderBusyId === deck.id}
+              aria-label={`Move ${deck.name} up in category`}
+              title="Move up in category"
+              className="text-foreground/80 hover:bg-background/80 hover:text-foreground"
+              onClick={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                void handleReorderDeck(deck.id, "up");
+              }}
+            >
+              <ChevronUp className="size-4" aria-hidden />
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              disabled={!canDown || reorderBusyId === deck.id}
+              aria-label={`Move ${deck.name} down in category`}
+              title="Move down in category"
+              className="text-foreground/80 hover:bg-background/80 hover:text-foreground"
+              onClick={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                void handleReorderDeck(deck.id, "down");
+              }}
+            >
+              <ChevronDown className="size-4" aria-hidden />
+            </Button>
+          </div>
+        )}
       </div>
     );
   }
 
   function renderDeckTile(deck: CategoryDeck) {
+    const idxInFull = decks.findIndex((d) => d.id === deck.id);
+    const canUp = showCategoryReorder && idxInFull > 0;
+    const canDown = showCategoryReorder && idxInFull >= 0 && idxInFull < decks.length - 1;
     return (
       <div
         key={deck.id}
@@ -159,7 +231,50 @@ export default function CategoryPage({ params }: CategoryPageProps) {
         }}
         className="group relative rounded-xl border border-border bg-background p-4 flex flex-col gap-2 hover:bg-muted/30 transition-colors cursor-pointer max-mobile:p-3.5"
       >
-        <div className="flex flex-wrap items-center gap-2 min-w-0">
+        {showCategoryReorder && (
+          <div
+            className="absolute right-2 top-2 z-20 flex items-center gap-0 rounded-md border border-border/80 bg-muted/50 p-0.5 shadow-sm backdrop-blur-sm"
+            onClick={(e) => e.stopPropagation()}
+            onPointerDown={(e) => e.stopPropagation()}
+            onKeyDown={(e) => e.stopPropagation()}
+            role="group"
+            aria-label="Reorder in category"
+          >
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              disabled={!canUp || reorderBusyId === deck.id}
+              aria-label={`Move ${deck.name} up in category`}
+              title="Move up"
+              className="size-8 text-foreground/80 hover:bg-background/80 hover:text-foreground max-mobile:size-9"
+              onClick={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                void handleReorderDeck(deck.id, "up");
+              }}
+            >
+              <ChevronUp className="size-3.5" aria-hidden />
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              disabled={!canDown || reorderBusyId === deck.id}
+              aria-label={`Move ${deck.name} down in category`}
+              title="Move down"
+              className="size-8 text-foreground/80 hover:bg-background/80 hover:text-foreground max-mobile:size-9"
+              onClick={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                void handleReorderDeck(deck.id, "down");
+              }}
+            >
+              <ChevronDown className="size-3.5" aria-hidden />
+            </Button>
+          </div>
+        )}
+        <div className={`flex flex-wrap items-center gap-2 min-w-0 ${showCategoryReorder ? "pr-14" : ""}`}>
           <h3 className="font-semibold text-sm leading-snug line-clamp-2 min-w-0 flex-1">{deck.name}</h3>
           <DeckGenerationBadge status={deck.generation_status} />
         </div>

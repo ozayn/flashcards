@@ -758,9 +758,18 @@ export async function moveDeckToCategory(deckId: string, categoryId: string | nu
   return res.json();
 }
 
+export type DeckStudyStatusPayload = "not_started" | "in_progress" | "studied";
+
 export async function updateDeck(
   deckId: string,
-  data: { name?: string; description?: string; archived?: boolean; is_public?: boolean; category_id?: string | null }
+  data: {
+    name?: string;
+    description?: string;
+    archived?: boolean;
+    is_public?: boolean;
+    category_id?: string | null;
+    study_status?: DeckStudyStatusPayload;
+  }
 ) {
   const res = await fetch(`${API_BASE}/decks/${deckId}`, {
     method: "PATCH",
@@ -832,6 +841,27 @@ export async function getCategoryDecks(categoryId: string, userId: string) {
   );
   if (!res.ok) throw new Error("Failed to fetch category decks");
   return res.json();
+}
+
+export async function reorderCategoryDeck(
+  categoryId: string,
+  deckId: string,
+  direction: "up" | "down",
+  userId: string
+): Promise<void> {
+  const res = await fetch(
+    `${API_BASE}/categories/${encodeURIComponent(categoryId)}/decks/${encodeURIComponent(deckId)}/reorder?user_id=${encodeURIComponent(userId)}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ direction }),
+    }
+  );
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    const detail = (err as { detail?: unknown }).detail;
+    throw new Error(typeof detail === "string" ? detail : "Failed to reorder deck");
+  }
 }
 
 export async function deleteCategory(id: string, userId: string) {

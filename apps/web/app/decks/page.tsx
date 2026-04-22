@@ -59,9 +59,16 @@ import { getStoredUserId } from "@/components/user-selector";
 import PageContainer from "@/components/layout/page-container";
 import { DeckGenerationBadge } from "@/components/DeckGenerationBadge";
 import { DeckActionsMenu } from "@/components/DeckActionsMenu";
+import { DeckStudyStatusPillMenu } from "@/components/DeckStudyStatusPillMenu";
 import { AdminTransferDeckConfirmModal } from "@/components/AdminTransferDeckConfirmModal";
 import { AdminBulkLegacyTransferConfirmModal } from "@/components/AdminBulkLegacyTransferConfirmModal";
 import { formatDeckCreatedCalendarDate } from "@/lib/format-deck-date";
+import {
+  coerceDeckStudyStatus,
+  DECK_STUDY_STATUSES,
+  DECK_STUDY_STATUS_LABELS,
+  type DeckStudyStatus,
+} from "@/lib/deck-study-status";
 
 const SHOW_DECK_DATES_STORAGE_KEY = "flashcards_deck_show_dates";
 
@@ -81,9 +88,14 @@ export type Deck = {
   created_at: string;
   card_count?: number;
   category_id?: string | null;
+  /** Manual order within category (0..n-1); null = legacy / fallback sort. */
+  category_position?: number | null;
+  category_assigned_at?: string | null;
   owner_is_legacy?: boolean;
   owner_name?: string | null;
   owner_email?: string | null;
+  /** User-set workflow marker (not review progress). */
+  study_status?: string | null;
 };
 
 function showMoveToMyAccountForDeck(
@@ -141,6 +153,24 @@ function resolveDropTargetCategoryId(
   return null;
 }
 
+function _deckCategoryLegacySortKey(d: Deck): number {
+  const s = d.category_assigned_at ?? d.created_at ?? "";
+  const t = Date.parse(s);
+  return Number.isFinite(t) ? t : 0;
+}
+
+/** Match API category deck order: explicit positions first, then assigned/created time. */
+function compareDeckWithinCategoryOrder(a: Deck, b: Deck): number {
+  const aNull = a.category_position == null;
+  const bNull = b.category_position == null;
+  if (!aNull && !bNull && a.category_position !== b.category_position) {
+    return (a.category_position as number) - (b.category_position as number);
+  }
+  if (!aNull && bNull) return -1;
+  if (aNull && !bNull) return 1;
+  return _deckCategoryLegacySortKey(a) - _deckCategoryLegacySortKey(b);
+}
+
 function groupDecksByCategory(
   decks: Deck[],
   categories: Category[]
@@ -156,18 +186,22 @@ function groupDecksByCategory(
   const result: { categoryId: string; categoryName: string; decks: Deck[] }[] = [];
 
   if (groups.has(UNCATEGORIZED)) {
+    const unc = groups.get(UNCATEGORIZED)!;
     result.push({
       categoryId: UNCATEGORIZED,
       categoryName: "Uncategorized",
-      decks: groups.get(UNCATEGORIZED)!,
+      decks: [...unc].sort(
+        (a, b) => _deckCategoryLegacySortKey(b) - _deckCategoryLegacySortKey(a)
+      ),
     });
   }
 
   for (const cat of categories) {
+    const raw = groups.get(cat.id) ?? [];
     result.push({
       categoryId: cat.id,
       categoryName: cat.name,
-      decks: groups.get(cat.id) ?? [],
+      decks: [...raw].sort(compareDeckWithinCategoryOrder),
     });
   }
 
@@ -261,6 +295,7 @@ export default function DecksPage() {
   const [deleteDeckError, setDeleteDeckError] = useState<string | null>(null);
   const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState("");
+  const [studyStatusFilter, setStudyStatusFilter] = useState<"all" | DeckStudyStatus>("all");
   const [viewMode, setViewMode] = useState<"grouped" | "all">("grouped");
   const [sortMode, setSortMode] = useState<"newest" | "oldest" | "az">("newest");
   const [deckLayout, setDeckLayout] = useState<"list" | "grid">("list");
@@ -705,14 +740,22 @@ export default function DecksPage() {
 
   const filteredDecks = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    if (!q) return decks;
-    return decks.filter((d) => {
-      if (d.name.toLowerCase().includes(q)) return true;
-      const catName = d.category_id ? categoryNameMap.get(d.category_id) : null;
-      if (catName && catName.toLowerCase().includes(q)) return true;
-      return false;
-    });
-  }, [decks, searchQuery, categoryNameMap]);
+    let list = decks;
+    if (q) {
+      list = list.filter((d) => {
+        if (d.name.toLowerCase().includes(q)) return true;
+        const catName = d.category_id ? categoryNameMap.get(d.category_id) : null;
+        if (catName && catName.toLowerCase().includes(q)) return true;
+        return false;
+      });
+    }
+    if (studyStatusFilter !== "all") {
+      list = list.filter(
+        (d) => coerceDeckStudyStatus(d.study_status) === studyStatusFilter
+      );
+    }
+    return list;
+  }, [decks, searchQuery, categoryNameMap, studyStatusFilter]);
 
   const sortedFlatDecks = useMemo(() => {
     const sorted = [...filteredDecks];
@@ -858,6 +901,19 @@ export default function DecksPage() {
                 {deck.card_count ?? 0} {deck.card_count === 1 ? "card" : "cards"}
               </span>
               <DeckGenerationBadge status={deck.generation_status} />
+              <span className="text-muted-foreground/40" aria-hidden>
+                ·
+              </span>
+              <DeckStudyStatusPillMenu
+                studyStatus={coerceDeckStudyStatus(deck.study_status)}
+                density="list"
+                onSelect={async (study_status) => {
+                  await updateDeck(deck.id, { study_status });
+                  setDecks((prev) =>
+                    prev.map((d) => (d.id === deck.id ? { ...d, study_status } : d))
+                  );
+                }}
+              />
               {categoryLabel && (
                 <>
                   <span className="text-muted-foreground/40" aria-hidden>
@@ -899,6 +955,19 @@ export default function DecksPage() {
           {deck.card_count ?? 0} {(deck.card_count ?? 0) === 1 ? "card" : "cards"}
         </span>
         <DeckGenerationBadge status={deck.generation_status} />
+        <span className="shrink-0 text-muted-foreground/40" aria-hidden>
+          ·
+        </span>
+        <DeckStudyStatusPillMenu
+          studyStatus={coerceDeckStudyStatus(deck.study_status)}
+          density="grid"
+          onSelect={async (study_status) => {
+            await updateDeck(deck.id, { study_status });
+            setDecks((prev) =>
+              prev.map((d) => (d.id === deck.id ? { ...d, study_status } : d))
+            );
+          }}
+        />
         {categoryLabel && (
           <>
             <span className="shrink-0 text-muted-foreground/40" aria-hidden>
@@ -1465,6 +1534,27 @@ export default function DecksPage() {
                       </select>
                     </div>
                   )}
+                  <div className="space-y-1">
+                    <label htmlFor="deck-study-filter" className="text-xs font-medium text-muted-foreground">
+                      Study status
+                    </label>
+                    <select
+                      id="deck-study-filter"
+                      value={studyStatusFilter}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        setStudyStatusFilter(v === "all" ? "all" : (v as DeckStudyStatus));
+                      }}
+                      className="w-full h-9 rounded-md border border-border bg-background px-2 text-sm"
+                    >
+                      <option value="all">All</option>
+                      {DECK_STUDY_STATUSES.map((s) => (
+                        <option key={s} value={s}>
+                          {DECK_STUDY_STATUS_LABELS[s]}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                   <label className="flex items-center gap-2 text-sm text-foreground cursor-pointer">
                     <input
                       type="checkbox"
@@ -1525,7 +1615,13 @@ export default function DecksPage() {
             </div>
           ) : filteredDecks.length === 0 ? (
             <div className="text-center py-8 sm:py-12">
-              <p className="text-muted-foreground">No decks match &ldquo;{searchQuery.trim()}&rdquo;</p>
+              <p className="text-muted-foreground">
+                {searchQuery.trim()
+                  ? `No decks match "${searchQuery.trim()}".`
+                  : studyStatusFilter !== "all"
+                    ? `No decks with status "${DECK_STUDY_STATUS_LABELS[studyStatusFilter]}".`
+                    : "No decks match your filters."}
+              </p>
             </div>
           ) : viewMode === "all" ? (
             renderDecks(sortedFlatDecks)

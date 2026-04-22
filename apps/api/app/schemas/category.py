@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -11,6 +11,10 @@ class CategoryCreate(BaseModel):
 
 class CategoryUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=100)
+
+
+class CategoryDeckReorderRequest(BaseModel):
+    direction: Literal["up", "down"]
 
 
 class CategoryResponse(BaseModel):

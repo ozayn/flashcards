@@ -3,12 +3,12 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 from uuid import uuid4
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, String, Text
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
-from app.models.enums import GenerationStatus, SourceType
+from app.models.enums import DeckStudyStatus, GenerationStatus, SourceType
 
 
 class Deck(Base):
@@ -46,6 +46,13 @@ class Deck(Base):
     )
     category_assigned_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime, nullable=True
+    )
+    # Contiguous 0..n-1 within category_id for this user; None = legacy / use sort key until renormalized.
+    category_position: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    study_status: Mapped[str] = mapped_column(
+        String(32),
+        default=DeckStudyStatus.not_started.value,
+        nullable=False,
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, nullable=False

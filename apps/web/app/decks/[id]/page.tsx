@@ -72,6 +72,12 @@ import {
   orderDeckFlashcardsForDisplay,
 } from "@/lib/deck-flashcards-display-order";
 import { cn } from "@/lib/utils";
+import {
+  coerceDeckStudyStatus,
+  DECK_STUDY_STATUSES,
+  DECK_STUDY_STATUS_LABELS,
+  type DeckStudyStatus,
+} from "@/lib/deck-study-status";
 
 interface DeckPageProps {
   params: { id: string };
@@ -98,6 +104,8 @@ interface Deck {
   owner_is_legacy?: boolean;
   owner_name?: string | null;
   owner_email?: string | null;
+  /** User-set workflow marker (not spaced repetition progress). */
+  study_status?: string | null;
 }
 
 interface Category {
@@ -1301,6 +1309,39 @@ export default function DeckPage({ params }: DeckPageProps) {
                       </>
                     )}
                   </>
+                )}
+              </div>
+              <div className="flex flex-wrap items-center gap-2 pt-1.5 text-xs text-muted-foreground">
+                <span className="shrink-0">Study status</span>
+                {isReadOnly ? (
+                  <span className="text-foreground/90">
+                    {DECK_STUDY_STATUS_LABELS[coerceDeckStudyStatus(deck.study_status)]}
+                  </span>
+                ) : (
+                  <select
+                    aria-label="Study status"
+                    value={coerceDeckStudyStatus(deck.study_status)}
+                    onChange={async (e) => {
+                      const study_status = e.target.value as DeckStudyStatus;
+                      if (!deck || study_status === coerceDeckStudyStatus(deck.study_status)) {
+                        return;
+                      }
+                      try {
+                        await updateDeck(deck.id, { study_status });
+                        const data = await getDeck(params.id);
+                        setDeck(data as Deck);
+                      } catch {
+                        /* ignore */
+                      }
+                    }}
+                    className="h-8 max-w-[12rem] rounded-md border border-border/70 bg-background px-2 text-xs text-foreground"
+                  >
+                    {DECK_STUDY_STATUSES.map((s) => (
+                      <option key={s} value={s}>
+                        {DECK_STUDY_STATUS_LABELS[s]}
+                      </option>
+                    ))}
+                  </select>
                 )}
               </div>
 

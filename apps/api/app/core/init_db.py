@@ -165,6 +165,21 @@ async def init_db() -> None:
                 "ALTER TABLE decks ADD COLUMN source_summary TEXT",
                 pg_if_not_exists="ALTER TABLE decks ADD COLUMN IF NOT EXISTS source_summary TEXT"
             )
+            _add_column_if_missing(
+                sync_conn, "decks", "study_status",
+                "ALTER TABLE decks ADD COLUMN study_status VARCHAR(32) DEFAULT 'not_started'",
+                pg_if_not_exists=(
+                    "ALTER TABLE decks ADD COLUMN IF NOT EXISTS study_status "
+                    "VARCHAR(32) DEFAULT 'not_started'"
+                ),
+            )
+            _add_column_if_missing(
+                sync_conn, "decks", "category_position",
+                "ALTER TABLE decks ADD COLUMN category_position INTEGER",
+                pg_if_not_exists=(
+                    "ALTER TABLE decks ADD COLUMN IF NOT EXISTS category_position INTEGER"
+                ),
+            )
         await conn.run_sync(_migrate_decks)
     logger.info("Applied decks column migrations")
 

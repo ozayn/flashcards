@@ -22,6 +22,14 @@ class SourceType(str, enum.Enum):
     webpage = "webpage"  # legacy alias for url
 
 
+class DeckStudyStatus(str, enum.Enum):
+    """User-set workflow marker for a deck (not spaced-repetition progress)."""
+
+    not_started = "not_started"
+    in_progress = "in_progress"
+    studied = "studied"
+
+
 class GenerationStatus(str, enum.Enum):
     """Persisted on Deck.generation_status. UI treats completed as ready."""
 
