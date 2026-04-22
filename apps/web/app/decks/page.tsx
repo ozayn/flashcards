@@ -27,6 +27,7 @@ import {
   ArrowRightLeft,
   BookOpen,
   ChevronDown,
+  ChevronUp,
   Eye,
   EyeOff,
   FolderInput,
@@ -52,6 +53,7 @@ import {
   deleteCategory,
   deleteDeck,
   moveDeckToCategory,
+  reorderCategoryDeck,
   getAdminLegacyBulkTransferPreview,
   type LegacyBulkTransferPreview,
 } from "@/lib/api";
@@ -777,8 +779,30 @@ export default function DecksPage() {
     }
   }
 
-  function renderDeckMenu(deck: Deck) {
+  function renderDeckMenu(deck: Deck, menuCategoryId?: string | null) {
     const menuOpen = openDeckMenuId === deck.id;
+    const showCategoryReorderInMenu =
+      Boolean(menuCategoryId) &&
+      menuCategoryId !== UNCATEGORIZED &&
+      viewMode === "grouped";
+
+    const decksOrderedInMenuCategory =
+      showCategoryReorderInMenu && menuCategoryId
+        ? decks
+            .filter((d) => d.category_id === menuCategoryId)
+            .sort(compareDeckWithinCategoryOrder)
+        : [];
+
+    const idxInCategory = showCategoryReorderInMenu
+      ? decksOrderedInMenuCategory.findIndex((d) => d.id === deck.id)
+      : -1;
+    const nInCategory = decksOrderedInMenuCategory.length;
+    const canReorderInCategory =
+      showCategoryReorderInMenu && idxInCategory >= 0 && nInCategory > 0;
+    const canMoveUpInCategory = canReorderInCategory && idxInCategory > 0;
+    const canMoveDownInCategory =
+      canReorderInCategory && idxInCategory >= 0 && idxInCategory < nInCategory - 1;
+
     return (
       <DeckActionsMenu
         open={menuOpen}
@@ -794,6 +818,52 @@ export default function DecksPage() {
               <FolderInput className="size-4 shrink-0" aria-hidden />
               <span>Move to category</span>
             </button>
+            {showCategoryReorderInMenu && (
+              <>
+                <button
+                  type="button"
+                  role="menuitem"
+                  disabled={!canMoveUpInCategory}
+                  className="flex w-full items-center justify-start gap-2.5 whitespace-nowrap px-3 py-2.5 text-left text-sm hover:bg-muted focus-visible:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background max-mobile:min-h-[44px] max-mobile:py-3 disabled:pointer-events-none disabled:opacity-45"
+                  onClick={() => {
+                    if (!userId || !menuCategoryId || !canMoveUpInCategory) return;
+                    setOpenDeckMenuId(null);
+                    void (async () => {
+                      try {
+                        await reorderCategoryDeck(menuCategoryId, deck.id, "up", userId);
+                        setRefreshKey((k) => k + 1);
+                      } catch (err) {
+                        console.error(err);
+                      }
+                    })();
+                  }}
+                >
+                  <ChevronUp className="size-4 shrink-0" aria-hidden />
+                  <span>Move up</span>
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  disabled={!canMoveDownInCategory}
+                  className="flex w-full items-center justify-start gap-2.5 whitespace-nowrap px-3 py-2.5 text-left text-sm hover:bg-muted focus-visible:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background max-mobile:min-h-[44px] max-mobile:py-3 disabled:pointer-events-none disabled:opacity-45"
+                  onClick={() => {
+                    if (!userId || !menuCategoryId || !canMoveDownInCategory) return;
+                    setOpenDeckMenuId(null);
+                    void (async () => {
+                      try {
+                        await reorderCategoryDeck(menuCategoryId, deck.id, "down", userId);
+                        setRefreshKey((k) => k + 1);
+                      } catch (err) {
+                        console.error(err);
+                      }
+                    })();
+                  }}
+                >
+                  <ChevronDown className="size-4 shrink-0" aria-hidden />
+                  <span>Move down</span>
+                </button>
+              </>
+            )}
             <button
               type="button"
               role="menuitem"
@@ -871,7 +941,7 @@ export default function DecksPage() {
     );
   }
 
-  function renderDeckRow(deck: Deck) {
+  function renderDeckRow(deck: Deck, menuCategoryId?: string | null) {
     const dateShort =
       showDeckDates ? formatDeckCreatedCalendarDate(deck.created_at) : null;
     const categoryLabel =
@@ -934,13 +1004,13 @@ export default function DecksPage() {
           </div>
         </div>
         <div className="shrink-0 flex items-center gap-0.5 max-mobile:opacity-100">
-          {renderDeckMenu(deck)}
+          {renderDeckMenu(deck, menuCategoryId)}
         </div>
       </div>
     );
   }
 
-  function renderDeckTile(deck: Deck) {
+  function renderDeckTile(deck: Deck, menuCategoryId?: string | null) {
     const dateShort =
       showDeckDates ? formatDeckCreatedCalendarDate(deck.created_at) : null;
     const narrowGrid = viewMode === "grouped";
@@ -1013,7 +1083,7 @@ export default function DecksPage() {
             onClick={(e: MouseEvent) => e.stopPropagation()}
             onKeyDown={(e: KeyboardEvent) => e.stopPropagation()}
           >
-            {renderDeckMenu(deck)}
+            {renderDeckMenu(deck, menuCategoryId)}
           </div>
         </div>
 
@@ -1035,7 +1105,11 @@ export default function DecksPage() {
     );
   }
 
-  function renderDecks(deckList: Deck[], wrapper?: (deck: Deck, content: React.ReactNode) => React.ReactNode) {
+  function renderDecks(
+    deckList: Deck[],
+    wrapper?: (deck: Deck, content: React.ReactNode) => React.ReactNode,
+    menuCategoryId?: string | null
+  ) {
     const groupedDeckLayout = viewMode === "grouped";
     if (deckLayout === "grid") {
       const gridClassName = groupedDeckLayout
@@ -1045,7 +1119,9 @@ export default function DecksPage() {
         <div className={gridClassName}>
           {deckList.map((deck) => (
             <div key={deck.id} className="h-full min-h-0 min-w-0 w-full">
-              {wrapper ? wrapper(deck, renderDeckTile(deck)) : renderDeckTile(deck)}
+              {wrapper
+                ? wrapper(deck, renderDeckTile(deck, menuCategoryId))
+                : renderDeckTile(deck, menuCategoryId)}
             </div>
           ))}
         </div>
@@ -1055,10 +1131,10 @@ export default function DecksPage() {
       <div className={groupedDeckLayout ? "flex flex-col gap-3" : "flex flex-col gap-4 max-mobile:gap-3"}>
         {deckList.map((deck) =>
           wrapper ? (
-            <div key={deck.id}>{wrapper(deck, renderDeckRow(deck))}</div>
+            <div key={deck.id}>{wrapper(deck, renderDeckRow(deck, menuCategoryId))}</div>
           ) : (
             <div key={deck.id} className="min-w-0 w-full">
-              {renderDeckRow(deck)}
+              {renderDeckRow(deck, menuCategoryId)}
             </div>
           ),
         )}
@@ -1762,7 +1838,9 @@ export default function DecksPage() {
                   </div>
                   {!collapsedCategories.has(group.categoryId) && (
                     <div className="pl-5 sm:pl-6 max-mobile:pl-2">
-                      {renderDecks(group.decks, (deck, content) => (
+                      {renderDecks(
+                        group.decks,
+                        (deck, content) => (
                         <DraggableDeckRow
                           key={deck.id}
                           deck={deck}
@@ -1771,7 +1849,9 @@ export default function DecksPage() {
                         >
                           {content}
                         </DraggableDeckRow>
-                      ))}
+                        ),
+                        group.categoryId === UNCATEGORIZED ? null : group.categoryId
+                      )}
                     </div>
                   )}
                 </DroppableCategory>
