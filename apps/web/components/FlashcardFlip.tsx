@@ -20,12 +20,19 @@ export interface FlashcardFlipProps {
  * Uses same proportions as study mode (aspect-[3/2], max-w-2xl) and shared flashcard CSS.
  * Supports controlled mode (flipped + onFlip) for external triggers (e.g. Space key).
  */
-const _flipPadFrontDefault = "p-6 md:p-10 lg:p-12";
+/** Match study Flashcard: reserve space for h-8 speak (start) + optional bookmark (end) at top-2. */
+const _flipPadFrontDefault =
+  "ps-6 pe-6 pt-10 pb-6 md:ps-10 md:pe-10 md:pt-10 md:pb-10 lg:ps-12 lg:pe-12 lg:pt-12 lg:pb-12 " +
+  "landscape-mobile:pt-11 landscape-mobile:ps-10 landscape-mobile:pe-3 landscape-mobile:pb-2";
 const _flipPadFrontReserve =
-  "ps-6 pe-12 pt-8 pb-6 md:ps-10 md:pe-14 md:pt-10 md:pb-10 lg:ps-12 lg:pe-16 lg:pt-12 lg:pb-12";
-const _flipPadBackDefault = "px-6 md:px-10 lg:px-12 pt-6 pb-4";
+  "ps-6 pe-12 pt-10 pb-6 md:ps-10 md:pe-14 md:pt-10 md:pb-10 lg:ps-12 lg:pe-16 lg:pt-12 lg:pb-12 " +
+  "landscape-mobile:pt-11 landscape-mobile:ps-10 landscape-mobile:pe-10 landscape-mobile:pb-2";
+const _flipPadBackDefault =
+  "ps-6 pe-6 pt-10 pb-4 md:ps-10 md:pe-10 md:pt-10 md:pb-4 lg:ps-12 lg:pe-12 lg:pt-10 lg:pb-4 " +
+  "landscape-mobile:pt-11 landscape-mobile:ps-10 landscape-mobile:pe-3 landscape-mobile:pb-1.5";
 const _flipPadBackReserve =
-  "ps-6 pe-12 pt-8 pb-4 md:ps-10 md:pe-14 md:pt-10 md:pb-4 lg:ps-12 lg:pe-16 lg:pt-12 lg:pb-4";
+  "ps-6 pe-12 pt-10 pb-4 md:ps-10 md:pe-14 md:pt-10 md:pb-4 lg:ps-12 lg:pe-16 lg:pt-10 lg:pb-4 " +
+  "landscape-mobile:pt-11 landscape-mobile:ps-10 landscape-mobile:pe-10 landscape-mobile:pb-1.5";
 
 export function FlashcardFlip({
   question,

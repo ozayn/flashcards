@@ -18,18 +18,27 @@ export interface FlashcardProps {
   onFlip: () => void;
   canFlip: boolean;
   cardStyle?: "paper" | "minimal" | "modern" | "anki";
-  /** Extra inline-end + block-start inset so a corner bookmark does not cover text (use with dir=auto). */
+  /**
+   * Extra inline-end + block-start inset for a top-inline-end bookmark.
+   * Parent also renders a top-inline-start speak control; all pads reserve space for both
+   * (BCP-47 `ps` / `pe` / `pt` so RTL stays correct with dir=auto).
+   */
   reserveBookmarkCorner?: boolean;
 }
 
+/* Speak (h-8) at start-2 / top-2: needs ~2.5rem+ inset. Bookmark h-8 at end-2: pe-10+ in reserve. */
 const _padDefaultFront =
-  "p-6 md:p-10 lg:p-12 landscape-mobile:p-2 landscape-mobile:pt-1.5";
+  "ps-6 pe-6 pt-10 pb-6 md:ps-10 md:pe-10 md:pt-10 md:pb-10 lg:ps-12 lg:pe-12 lg:pt-12 lg:pb-12 " +
+  "landscape-mobile:pt-11 landscape-mobile:ps-10 landscape-mobile:pe-3 landscape-mobile:pb-2";
 const _padReserveFront =
-  "ps-6 pe-12 pt-8 pb-6 md:ps-10 md:pe-14 md:pt-10 md:pb-10 lg:ps-12 lg:pe-16 lg:pt-12 lg:pb-12 landscape-mobile:ps-2 landscape-mobile:pe-10 landscape-mobile:pt-4 landscape-mobile:pb-2";
+  "ps-6 pe-12 pt-10 pb-6 md:ps-10 md:pe-14 md:pt-10 md:pb-10 lg:ps-12 lg:pe-16 lg:pt-12 lg:pb-12 " +
+  "landscape-mobile:pt-11 landscape-mobile:ps-10 landscape-mobile:pe-10 landscape-mobile:pb-2";
 const _padDefaultBack =
-  "px-6 md:px-10 lg:px-12 pt-6 pb-4 landscape-mobile:px-2 landscape-mobile:pt-1.5 landscape-mobile:pb-1.5";
+  "ps-6 pe-6 pt-10 pb-4 md:ps-10 md:pe-10 md:pt-10 md:pb-4 lg:ps-12 lg:pe-12 lg:pt-10 lg:pb-4 " +
+  "landscape-mobile:pt-11 landscape-mobile:ps-10 landscape-mobile:pe-3 landscape-mobile:pb-1.5";
 const _padReserveBack =
-  "ps-6 pe-12 pt-8 pb-4 md:ps-10 md:pe-14 md:pt-10 md:pb-4 lg:ps-12 lg:pe-16 lg:pt-12 lg:pb-4 landscape-mobile:ps-2 landscape-mobile:pe-10 landscape-mobile:pt-4 landscape-mobile:pb-1.5";
+  "ps-6 pe-12 pt-10 pb-4 md:ps-10 md:pe-14 md:pt-10 md:pb-4 lg:ps-12 lg:pe-16 lg:pt-10 lg:pb-4 " +
+  "landscape-mobile:pt-11 landscape-mobile:ps-10 landscape-mobile:pe-10 landscape-mobile:pb-1.5";
 
 export function Flashcard({
   front,
