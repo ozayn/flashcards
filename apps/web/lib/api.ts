@@ -2,10 +2,10 @@
  * Client-side: call same-origin Next.js API proxy. Server-side proxy uses
  * API_INTERNAL_URL (Railway private networking) when available.
  */
-import type { EnglishTtsPreference } from "./flashcard-speech";
-import { normalizeEnglishTtsPreference } from "./flashcard-speech";
+import type { EnglishTtsPreference, VoiceStylePreference } from "./flashcard-speech";
+import { normalizeEnglishTtsPreference, normalizeVoiceStylePreference } from "./flashcard-speech";
 
-export type { EnglishTtsPreference } from "./flashcard-speech";
+export type { EnglishTtsPreference, VoiceStylePreference } from "./flashcard-speech";
 
 const API_BASE = "/api/proxy";
 
@@ -1108,12 +1108,17 @@ export interface UserSettings {
   think_delay_ms: number;
   card_style: "paper" | "minimal" | "modern" | "anki";
   english_tts: EnglishTtsPreference;
+  voice_style: VoiceStylePreference;
 }
 
 const _userSettingsTtl = new Map<string, _TtlEntry<UserSettings>>();
 
 function _cloneUserSettings(s: UserSettings): UserSettings {
-  return { ...s, english_tts: normalizeEnglishTtsPreference(s.english_tts) };
+  return {
+    ...s,
+    english_tts: normalizeEnglishTtsPreference(s.english_tts),
+    voice_style: normalizeVoiceStylePreference(s.voice_style),
+  };
 }
 
 const _getUserSettingsInFlight = new Map<string, Promise<UserSettings>>();
@@ -1135,6 +1140,9 @@ export async function getUserSettings(userId: string): Promise<UserSettings> {
       const data: UserSettings = {
         ...raw,
         english_tts: normalizeEnglishTtsPreference(raw.english_tts),
+        voice_style: normalizeVoiceStylePreference(
+          (raw as UserSettings & { voice_style?: string }).voice_style
+        ),
       };
       _userSettingsTtl.set(userId, {
         value: data,
@@ -1165,6 +1173,9 @@ export async function updateUserSettings(
   const updated: UserSettings = {
     ...raw,
     english_tts: normalizeEnglishTtsPreference(raw.english_tts),
+    voice_style: normalizeVoiceStylePreference(
+      (raw as UserSettings & { voice_style?: string }).voice_style
+    ),
   };
   _userSettingsTtl.set(userId, {
     value: updated,

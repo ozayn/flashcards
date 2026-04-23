@@ -12,7 +12,7 @@ import {
   buildAnswerSpeechText,
   shouldShowAnswerDetailed,
 } from "@/lib/format-flashcard-answer-display";
-import { cancelAllFlashcardSpeech, type EnglishTtsPreference } from "@/lib/flashcard-speech";
+import { cancelAllFlashcardSpeech, type EnglishTtsPreference, type VoiceStylePreference } from "@/lib/flashcard-speech";
 import { FlashcardSpeakButton } from "@/components/flashcard-speak-button";
 import { inferTextDirection } from "@/lib/infer-text-direction";
 import { cn } from "@/lib/utils";
@@ -40,6 +40,8 @@ export interface FlashcardModalProps {
   bookmarkPendingId?: string | null;
   /** English read-aloud accent; other languages are unchanged. */
   englishTts?: EnglishTtsPreference;
+  /** Best-effort read-aloud voice style (name heuristics). */
+  voiceStyle?: VoiceStylePreference;
 }
 
 type ViewMode = "details" | "flashcard";
@@ -54,6 +56,7 @@ export function FlashcardModal({
   onBookmarkToggle,
   bookmarkPendingId,
   englishTts = "default",
+  voiceStyle = "default",
 }: FlashcardModalProps) {
   const [currentIndex, setCurrentIndex] = useState(initialIndex);
   const [viewMode, setViewMode] = useState<ViewMode>("details");
@@ -262,6 +265,7 @@ export function FlashcardModal({
                         text={card.question}
                         aria-label="Speak question"
                         englishTts={englishTts}
+                        voiceStyle={voiceStyle}
                       />
                     </div>
                     <div dir="auto" className="text-base font-medium leading-relaxed text-foreground">
@@ -282,6 +286,7 @@ export function FlashcardModal({
                         )}
                         aria-label="Speak answer"
                         englishTts={englishTts}
+                        voiceStyle={voiceStyle}
                       />
                     </div>
                     <div dir="auto" className="text-base leading-relaxed text-foreground">
@@ -310,6 +315,7 @@ export function FlashcardModal({
                           text={card.answer_detailed ?? ""}
                           aria-label="Speak notes"
                           englishTts={englishTts}
+                          voiceStyle={voiceStyle}
                         />
                       </div>
                       <div dir="auto" className="text-base leading-relaxed text-muted-foreground">
@@ -418,6 +424,7 @@ export function FlashcardModal({
                         }
                         aria-label={flipState ? "Speak answer" : "Speak question"}
                         englishTts={englishTts}
+                        voiceStyle={voiceStyle}
                       />
                     </div>
                   </div>

@@ -8,6 +8,7 @@ import {
   flashcardSpeechStore,
   isSpeechSynthesisAvailable,
   type EnglishTtsPreference,
+  type VoiceStylePreference,
   speakOrToggle,
 } from "@/lib/flashcard-speech";
 
@@ -17,6 +18,7 @@ export function FlashcardSpeakButton({
   className,
   "aria-label": ariaLabel,
   englishTts = "default",
+  voiceStyle = "default",
 }: {
   utteranceKey: string;
   text: string;
@@ -24,6 +26,8 @@ export function FlashcardSpeakButton({
   className?: string;
   /** User setting: English read-aloud accent. Other languages ignore this. */
   englishTts?: EnglishTtsPreference;
+  /** Best-effort voice gender hint from voice names; other languages use when possible. */
+  voiceStyle?: VoiceStylePreference;
 }) {
   const [apiOk, setApiOk] = useState(false);
   const playingKey = useSyncExternalStore(
@@ -41,9 +45,9 @@ export function FlashcardSpeakButton({
     (e: React.MouseEvent) => {
       e.preventDefault();
       e.stopPropagation();
-      speakOrToggle(utteranceKey, text, { englishTts });
+      speakOrToggle(utteranceKey, text, { englishTts, voiceStyle });
     },
-    [englishTts, utteranceKey, text]
+    [englishTts, voiceStyle, utteranceKey, text]
   );
 
   if (!apiOk) return null;

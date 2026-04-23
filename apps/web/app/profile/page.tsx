@@ -17,6 +17,7 @@ import {
   type EnglishTtsPreference,
   type UserActivityEntry,
   type UserSettings,
+  type VoiceStylePreference,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -266,6 +267,21 @@ export default function ProfilePage() {
     }
   }
 
+  async function handleVoiceStyleChange(pref: VoiceStylePreference) {
+    if (!userId || !userSettings) return;
+    try {
+      const updated = await updateUserSettings(userId, { voice_style: pref });
+      setUserSettings(updated);
+      window.dispatchEvent(
+        new CustomEvent("flashcard_settings_changed", {
+          detail: { settings: updated },
+        })
+      );
+    } catch {
+      /* ignore */
+    }
+  }
+
   if (status === "loading" || (loading && userId)) {
     return (
       <PageContainer className="mx-auto max-w-sm px-4 py-12 text-center text-sm text-muted-foreground">
@@ -426,6 +442,41 @@ export default function ProfilePage() {
                     className="rounded-full"
                     checked={userSettings.english_tts === value}
                     onChange={() => void handleEnglishTtsChange(value)}
+                  />
+                  {label}
+                </label>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
+        {userSettings ? (
+          <div className="w-full border-t border-border/40 pt-4 text-left">
+            <h2 className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+              Preferred voice style
+            </h2>
+            <div className="flex flex-col gap-1.5 text-sm">
+              {(
+                [
+                  { value: "default" as const, label: "Default" },
+                  { value: "female" as const, label: "Female" },
+                  { value: "male" as const, label: "Male" },
+                ] as const
+              ).map(({ value, label }) => (
+                <label
+                  key={value}
+                  className={`flex cursor-pointer items-center gap-2 rounded-md py-0.5 ${
+                    userSettings.voice_style === value
+                      ? "text-foreground"
+                      : "text-muted-foreground"
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="profile-voice-style"
+                    className="rounded-full"
+                    checked={userSettings.voice_style === value}
+                    onChange={() => void handleVoiceStyleChange(value)}
                   />
                   {label}
                 </label>

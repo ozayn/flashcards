@@ -87,6 +87,7 @@ export default function StudyPage({ params }: StudyPageProps) {
     think_delay_ms: 1500,
     card_style: "paper",
     english_tts: "default",
+    voice_style: "default",
   });
   const [canFlip, setCanFlip] = useState(false);
   const [studyMenuOpen, setStudyMenuOpen] = useState(false);
@@ -848,6 +849,7 @@ export default function StudyPage({ params }: StudyPageProps) {
                   text={card.question}
                   aria-label="Speak question"
                   englishTts={userSettings.english_tts}
+                  voiceStyle={userSettings.voice_style}
                 />
                 <FlashcardSpeakButton
                   utteranceKey={`study-deck-${params.deck_id}-read-${card.id}-a`}
@@ -858,6 +860,7 @@ export default function StudyPage({ params }: StudyPageProps) {
                   )}
                   aria-label="Speak answer"
                   englishTts={userSettings.english_tts}
+                  voiceStyle={userSettings.voice_style}
                 />
               </div>
               {getStoredUserId() ? (
@@ -969,6 +972,7 @@ export default function StudyPage({ params }: StudyPageProps) {
                       }
                       aria-label={showAnswer ? "Speak answer" : "Speak question"}
                       englishTts={userSettings.english_tts}
+                      voiceStyle={userSettings.voice_style}
                     />
                   </div>
                 </div>

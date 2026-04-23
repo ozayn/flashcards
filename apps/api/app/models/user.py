@@ -42,6 +42,10 @@ class User(Base):
     english_tts: Mapped[str] = mapped_column(
         String(16), default="default", nullable=False
     )
+    # Browser TTS: preferred voice gender/style hint (default, female, male); applied when metadata allows
+    voice_style: Mapped[str] = mapped_column(
+        String(16), default="default", nullable=False
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, nullable=False
     )

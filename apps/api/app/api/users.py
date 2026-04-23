@@ -274,6 +274,7 @@ async def get_user_settings(
         think_delay_ms=user.think_delay_ms,
         card_style=getattr(user, "card_style", "paper"),
         english_tts=getattr(user, "english_tts", "default"),
+        voice_style=getattr(user, "voice_style", "default"),
     )
 
 
@@ -294,6 +295,8 @@ async def update_user_settings(
         user.card_style = payload.card_style
     if payload.english_tts is not None:
         user.english_tts = payload.english_tts
+    if payload.voice_style is not None:
+        user.voice_style = payload.voice_style
     await db.flush()
     await db.refresh(user)
     return UserSettingsResponse(
@@ -301,4 +304,5 @@ async def update_user_settings(
         think_delay_ms=user.think_delay_ms,
         card_style=getattr(user, "card_style", "paper"),
         english_tts=getattr(user, "english_tts", "default"),
+        voice_style=getattr(user, "voice_style", "default"),
     )

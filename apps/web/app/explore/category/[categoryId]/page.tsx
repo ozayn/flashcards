@@ -65,6 +65,7 @@ export default function CategoryExplorePage({ params }: CategoryExplorePageProps
     think_delay_ms: 1500,
     card_style: "paper",
     english_tts: "default",
+    voice_style: "default",
   });
   const touchStartX = useRef(0);
   const [bookmarkBusyId, setBookmarkBusyId] = useState<string | null>(null);
@@ -538,6 +539,7 @@ export default function CategoryExplorePage({ params }: CategoryExplorePageProps
                   text={card.question}
                   aria-label="Speak question"
                   englishTts={userSettings.english_tts}
+                  voiceStyle={userSettings.voice_style}
                 />
                 <FlashcardSpeakButton
                   utteranceKey={`explore-cat-${params.categoryId}-read-${card.id}-a`}
@@ -548,6 +550,7 @@ export default function CategoryExplorePage({ params }: CategoryExplorePageProps
                   )}
                   aria-label="Speak answer"
                   englishTts={userSettings.english_tts}
+                  voiceStyle={userSettings.voice_style}
                 />
               </div>
               <FormattedText
@@ -648,6 +651,7 @@ export default function CategoryExplorePage({ params }: CategoryExplorePageProps
                       }
                       aria-label={showAnswer ? "Speak answer" : "Speak question"}
                       englishTts={userSettings.english_tts}
+                      voiceStyle={userSettings.voice_style}
                     />
                   </div>
                 </div>

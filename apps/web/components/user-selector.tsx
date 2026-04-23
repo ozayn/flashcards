@@ -16,6 +16,7 @@ import {
   type EnglishTtsPreference,
   type UserSettings,
   type UserUsageLimits,
+  type VoiceStylePreference,
 } from "@/lib/api";
 import { userIsProductAdmin } from "@/lib/product-admin";
 import { cn } from "@/lib/utils";
@@ -309,6 +310,22 @@ export function UserSelector() {
     }
   };
 
+  const handleVoiceStyleChange = async (pref: VoiceStylePreference) => {
+    const userId = getStoredUserId();
+    if (!userId || !cardSettings) return;
+    try {
+      const updated = await updateUserSettings(userId, { voice_style: pref });
+      setCardSettings(updated);
+      window.dispatchEvent(
+        new CustomEvent("flashcard_settings_changed", {
+          detail: { settings: updated },
+        })
+      );
+    } catch {
+      /* ignore */
+    }
+  };
+
   const handleAddUser = async (e: React.FormEvent) => {
     e.preventDefault();
     setAddError(null);
@@ -413,6 +430,39 @@ export function UserSelector() {
       </div>
     ) : null;
 
+  const menuVoiceStyleSection =
+    cardSettings ? (
+      <div className="border-t border-border px-3 py-1.5">
+        <p className="mb-1.5 text-xs font-medium text-muted-foreground">Preferred voice style</p>
+        <div className="flex flex-col gap-0.5">
+          {(
+            [
+              { value: "default" as const, label: "Default" },
+              { value: "female" as const, label: "Female" },
+              { value: "male" as const, label: "Male" },
+            ] as const
+          ).map(({ value, label }) => (
+            <label
+              key={value}
+              className={cn(
+                "flex cursor-pointer items-center gap-2 rounded-md px-2 py-0.5 text-sm",
+                cardSettings.voice_style === value && "bg-accent"
+              )}
+            >
+              <input
+                type="radio"
+                name="voice-style-nav"
+                checked={cardSettings.voice_style === value}
+                onChange={() => void handleVoiceStyleChange(value)}
+                className="rounded-full"
+              />
+              {label}
+            </label>
+          ))}
+        </div>
+      </div>
+    ) : null;
+
   const menuAccountLinks = (
     <div className="py-1">
       <Link
@@ -496,6 +546,7 @@ export function UserSelector() {
             {menuAccountLinks}
             {menuCardStyleSection}
             {menuEnglishTtsSection}
+            {menuVoiceStyleSection}
             <div className="border-t border-border mt-1 pt-1 px-1">
               {showAddForm ? (
                 <form onSubmit={handleAddUser} className="space-y-2 p-2">
@@ -618,6 +669,7 @@ export function UserSelector() {
             {menuAccountLinks}
             {menuCardStyleSection}
             {menuEnglishTtsSection}
+            {menuVoiceStyleSection}
           </div>
 
           <div className="mt-1 flex min-h-0 flex-1 flex-col border-t border-border">

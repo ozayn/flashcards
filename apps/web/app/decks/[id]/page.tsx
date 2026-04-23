@@ -427,6 +427,7 @@ export default function DeckPage({ params }: DeckPageProps) {
     think_delay_ms: 1500,
     card_style: "paper",
     english_tts: "default",
+    voice_style: "default",
   });
 
   type SortOption = typeof cardSort;
@@ -2444,6 +2445,7 @@ export default function DeckPage({ params }: DeckPageProps) {
           }
           bookmarkPendingId={bookmarkPendingId}
           englishTts={userSettings.english_tts}
+          voiceStyle={userSettings.voice_style}
         />
 
         {!isReadOnly && deleteConfirmId && (
