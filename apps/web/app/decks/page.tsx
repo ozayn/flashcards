@@ -3,6 +3,7 @@
 import {
   useEffect,
   useState,
+  useRef,
   useCallback,
   useMemo,
   type KeyboardEvent,
@@ -26,6 +27,7 @@ import {
   ArchiveRestore,
   ArrowRightLeft,
   BookOpen,
+  Check,
   ChevronDown,
   ChevronUp,
   Eye,
@@ -307,6 +309,9 @@ export default function DecksPage() {
   const [sortMode, setSortMode] = useState<"newest" | "oldest" | "az">("newest");
   const [deckLayout, setDeckLayout] = useState<"list" | "grid">("list");
   const [showDeckDates, setShowDeckDates] = useState(false);
+  const moveFeedbackClearRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [moveFeedbackDeckId, setMoveFeedbackDeckId] = useState<string | null>(null);
+  const [moveFeedbackText, setMoveFeedbackText] = useState<string | null>(null);
   const [adminTransferTarget, setAdminTransferTarget] = useState<Deck | null>(null);
   const [bulkLegacyTransferModalOpen, setBulkLegacyTransferModalOpen] = useState(false);
   const [bulkPreview, setBulkPreview] = useState<LegacyBulkTransferPreview | null>(null);
@@ -357,6 +362,17 @@ export default function DecksPage() {
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
   );
+
+  /** Refetch deck list without toggling decksLoading (avoids jarring full-page style reload on category move). */
+  const refetchDecksSilently = useCallback(async () => {
+    if (!userId) return;
+    try {
+      const data = await getDecks(userId, showArchived);
+      if (Array.isArray(data)) setDecks(data);
+    } catch (e) {
+      console.error("Failed to refresh decks", e);
+    }
+  }, [userId, showArchived]);
 
   useEffect(() => {
     async function resolveUserId() {
@@ -515,10 +531,17 @@ export default function DecksPage() {
     const deck = decks.find((d) => d.id === deckId);
     if (!deck || (deck.category_id ?? UNCATEGORIZED) === newCategoryId) return;
     try {
-      await updateDeck(deckId, {
+      const updated = (await updateDeck(deckId, {
         category_id: newCategoryId === UNCATEGORIZED ? null : newCategoryId,
-      });
-      setRefreshKey((k) => k + 1);
+      })) as Deck;
+      setDecks((prev) =>
+        prev.map((d) => (d.id === deckId ? { ...d, ...updated } : d))
+      );
+      showDeckMoveFeedback(
+        deckId,
+        newCategoryId === UNCATEGORIZED ? null : newCategoryId
+      );
+      void refetchDecksSilently();
     } catch (err) {
       console.error("Failed to move deck", err);
     }
@@ -664,11 +687,24 @@ export default function DecksPage() {
   async function handleMoveDeck(e: React.FormEvent) {
     e.preventDefault();
     if (!moveModalDeckId || moveModalSaving) return;
+    const deckId = moveModalDeckId;
+    const before = decks.find((d) => d.id === deckId);
     try {
       setMoveModalSaving(true);
-      await moveDeckToCategory(moveModalDeckId, moveModalCategoryId);
+      const updated = (await moveDeckToCategory(
+        deckId,
+        moveModalCategoryId
+      )) as Deck;
+      setDecks((prev) =>
+        prev.map((d) => (d.id === deckId ? { ...d, ...updated } : d))
+      );
+      const changed =
+        (before?.category_id ?? null) !== (updated.category_id ?? null);
       closeMoveModal();
-      setRefreshKey((k) => k + 1);
+      if (changed) {
+        showDeckMoveFeedback(deckId, updated.category_id ?? null);
+      }
+      void refetchDecksSilently();
     } catch (err) {
       console.error("Failed to move deck", err);
     } finally {
@@ -739,11 +775,40 @@ export default function DecksPage() {
     }
   }, [openDeckMenuId, openCategoryActionsId, filtersMenuOpen]);
 
+  useEffect(() => {
+    return () => {
+      if (moveFeedbackClearRef.current) {
+        clearTimeout(moveFeedbackClearRef.current);
+        moveFeedbackClearRef.current = null;
+      }
+    };
+  }, []);
+
   const categoryNameMap = useMemo(() => {
     const map = new Map<string, string>();
     for (const cat of categories) map.set(cat.id, cat.name);
     return map;
   }, [categories]);
+
+  const showDeckMoveFeedback = useCallback(
+    (deckId: string, targetCategoryId: string | null) => {
+      if (moveFeedbackClearRef.current) {
+        clearTimeout(moveFeedbackClearRef.current);
+        moveFeedbackClearRef.current = null;
+      }
+      const label = !targetCategoryId
+        ? "Uncategorized"
+        : categoryNameMap.get(targetCategoryId) ?? "category";
+      setMoveFeedbackText(`Moved to ${label}`);
+      setMoveFeedbackDeckId(deckId);
+      moveFeedbackClearRef.current = setTimeout(() => {
+        setMoveFeedbackText(null);
+        setMoveFeedbackDeckId(null);
+        moveFeedbackClearRef.current = null;
+      }, 2200);
+    },
+    [categoryNameMap]
+  );
 
   const filteredDecks = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -964,7 +1029,10 @@ export default function DecksPage() {
             router.push(`/decks/${deck.id}`);
           }
         }}
-        className="deck-card group rounded-lg border border-border px-4 py-3 flex items-center justify-between gap-3 hover:bg-muted/40 transition-colors cursor-pointer max-mobile:px-3 max-mobile:py-2.5 max-mobile:gap-2"
+        className={cn(
+          "deck-card group rounded-lg border border-border px-4 py-3 flex items-center justify-between gap-3 hover:bg-muted/40 transition-colors cursor-pointer max-mobile:px-3 max-mobile:py-2.5 max-mobile:gap-2",
+          moveFeedbackDeckId === deck.id && "deck-moved-highlight ring-1 ring-emerald-500/25"
+        )}
       >
         <div className="flex items-center gap-3 flex-1 min-w-0 max-mobile:gap-2">
           <div className="flex flex-col gap-1 min-w-0">
@@ -1080,7 +1148,10 @@ export default function DecksPage() {
             router.push(`/decks/${deck.id}`);
           }
         }}
-        className="group relative flex h-full min-h-[7.5rem] w-full min-w-0 cursor-pointer flex-col rounded-md border border-border bg-background p-2 transition-colors hover:bg-muted/30 sm:min-h-[8rem] sm:rounded-lg sm:p-2.5"
+        className={cn(
+          "group relative flex h-full min-h-[7.5rem] w-full min-w-0 cursor-pointer flex-col rounded-md border border-border bg-background p-2 transition-colors hover:bg-muted/30 sm:min-h-[8rem] sm:rounded-lg sm:p-2.5",
+          moveFeedbackDeckId === deck.id && "deck-moved-highlight ring-1 ring-emerald-500/20"
+        )}
       >
         <div className="pointer-events-none absolute right-1 top-1 z-10">
           <div
@@ -1928,6 +1999,23 @@ export default function DecksPage() {
             router.refresh();
           }}
         />
+
+        {moveFeedbackText ? (
+          <div
+            role="status"
+            aria-live="polite"
+            className="pointer-events-none fixed bottom-6 left-1/2 z-50 max-w-[min(90vw,22rem)] -translate-x-1/2 rounded-lg border border-border/70 bg-background/95 px-3.5 py-2 text-sm text-foreground shadow-lg backdrop-blur-sm supports-[backdrop-filter]:bg-background/80"
+          >
+            <div className="flex items-center gap-2.5">
+              <Check
+                className="size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400"
+                strokeWidth={2.5}
+                aria-hidden
+              />
+              <span className="leading-tight">{moveFeedbackText}</span>
+            </div>
+          </div>
+        ) : null}
     </PageContainer>
   );
 }
