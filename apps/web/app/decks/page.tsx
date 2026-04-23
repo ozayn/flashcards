@@ -1722,6 +1722,14 @@ export default function DecksPage() {
                   <LayoutGrid className="size-4 shrink-0" />
                 </button>
               </div>
+              <button
+                type="button"
+                onClick={() => setShowArchived((a) => !a)}
+                aria-pressed={showArchived}
+                className="shrink-0 rounded-md border border-transparent px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:border-border/60 hover:bg-muted/40 hover:text-foreground sm:text-sm"
+              >
+                {showArchived ? "Hide archived" : "Show archived"}
+              </button>
             </div>
             <div className="relative shrink-0 sm:ml-auto">
               <Button
@@ -1809,15 +1817,6 @@ export default function DecksPage() {
                       })}
                     </div>
                   </div>
-                  <label className="flex items-center gap-2 text-sm text-foreground cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={showArchived}
-                      onChange={(e) => setShowArchived(e.target.checked)}
-                      className="rounded border-input size-4 shrink-0"
-                    />
-                    Show archived decks
-                  </label>
                   <label className="flex items-center gap-2 text-sm text-foreground cursor-pointer">
                     <input
                       type="checkbox"
