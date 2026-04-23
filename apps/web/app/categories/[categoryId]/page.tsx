@@ -32,6 +32,24 @@ interface CategoryDeck {
 
 type SortMode = "category_order" | "newest" | "oldest" | "az";
 
+/** Reorder a deck with its neighbor in server order; avoids a full list refetch for smooth UI. */
+function swapDeckWithNeighbor<T extends { id: string }>(
+  list: T[],
+  deckId: string,
+  direction: "up" | "down"
+): T[] | null {
+  const i = list.findIndex((d) => d.id === deckId);
+  if (i < 0) return null;
+  const j = direction === "up" ? i - 1 : i + 1;
+  if (j < 0 || j >= list.length) return null;
+  const next = list.slice();
+  const a = next[i]!;
+  const b = next[j]!;
+  next[i] = b;
+  next[j] = a;
+  return next;
+}
+
 export default function CategoryPage({ params }: CategoryPageProps) {
   const router = useRouter();
   const [categoryName, setCategoryName] = useState<string | null>(null);
@@ -119,19 +137,24 @@ export default function CategoryPage({ params }: CategoryPageProps) {
     return list;
   }, [filteredDecks, sortMode]);
 
-  async function handleReorderDeck(deckId: string, direction: "up" | "down") {
+  function handleReorderDeck(deckId: string, direction: "up" | "down") {
     const userId = getStoredUserId();
     if (!userId || reorderBusyId) return;
+    const previous = decks;
+    const optimistic = swapDeckWithNeighbor(previous, deckId, direction);
+    if (!optimistic) return;
+    setDecks(optimistic);
     setReorderBusyId(deckId);
-    try {
-      await reorderCategoryDeck(params.categoryId, deckId, direction, userId);
-      const data = await getCategoryDecks(params.categoryId, userId);
-      setDecks(Array.isArray(data) ? data : []);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setReorderBusyId(null);
-    }
+    void (async () => {
+      try {
+        await reorderCategoryDeck(params.categoryId, deckId, direction, userId);
+      } catch (err) {
+        console.error(err);
+        setDecks(previous);
+      } finally {
+        setReorderBusyId(null);
+      }
+    })();
   }
 
   function renderDeckRow(deck: CategoryDeck) {
