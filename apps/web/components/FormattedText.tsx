@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
 import { BlockMath, InlineMath } from "react-katex";
 import { parseAnswerParagraphs } from "@/lib/format-flashcard-answer-display";
 import { splitFencedCodeBlocks } from "@/lib/fenced-code";
@@ -8,7 +8,9 @@ import {
   parseInlineMarkdownTreeWithCode,
   type InlineMdNode,
 } from "@/lib/inline-markdown";
+import { splitTextAndGfmTables } from "@/lib/markdown-tables";
 import { FencedCodeBlock } from "@/components/fenced-code-block";
+import { GfmTableBlock } from "@/components/gfm-table-block";
 import { cn } from "@/lib/utils";
 
 type Props = {
@@ -88,15 +90,18 @@ function renderInlineMarkdownNodes(
   });
 }
 
-/** Render text with $$...$$ as block math, then **bold** / *italic* / `code` / $inline math$ on each segment. */
-function renderMixed(text: string, keyPrefix: string) {
+/**
+ * Block math ($$...$$) and inline ** / * / ` / $  only — no GFM table split
+ * (tables are split one level up).
+ */
+function renderBlockMathAndInline(text: string, keyPrefix: string) {
   const parts = text.split(/(\$\$[\s\S]*?\$\$)/);
   return parts.map((part, i) => {
     if (part.startsWith("$$")) {
       const raw = part.replace(/\$\$/g, "").trim();
       const math = repairLatex(raw);
       return (
-        <span key={`${keyPrefix}-m${i}`} className="katex-block overflow-visible my-2">
+        <span key={`${keyPrefix}-m${i}`} className="katex-block my-2 overflow-visible">
           <BlockMath
             math={math}
             errorColor="#888"
@@ -122,6 +127,32 @@ function renderMixed(text: string, keyPrefix: string) {
       <span key={`${keyPrefix}-t${i}`}>
         {renderInlineMarkdownNodes(tree, `${keyPrefix}-t${i}`)}
       </span>
+    );
+  });
+}
+
+/** GFM tables + `renderBlockMathAndInline` in text and table cells. */
+function renderMixed(text: string, keyPrefix: string) {
+  const segments = splitTextAndGfmTables(text);
+  if (segments.length === 0) {
+    return renderBlockMathAndInline(text, keyPrefix);
+  }
+  if (segments.length === 1 && segments[0]?.kind === "text") {
+    return renderBlockMathAndInline(segments[0].value, keyPrefix);
+  }
+  return segments.map((seg, i) => {
+    const k = `${keyPrefix}-gfm${i}`;
+    if (seg.kind === "text") {
+      return <Fragment key={k}>{renderBlockMathAndInline(seg.value, k)}</Fragment>;
+    }
+    return (
+      <GfmTableBlock
+        key={k}
+        keyBase={k}
+        header={seg.header}
+        body={seg.body}
+        renderCell={(cell, cellKey) => renderBlockMathAndInline(cell, cellKey)}
+      />
     );
   });
 }
