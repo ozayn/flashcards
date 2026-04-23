@@ -63,6 +63,16 @@ async def reorder_deck_in_category(
         if idx == len(decks) - 1:
             raise ValueError("already_last")
         decks[idx + 1], decks[idx] = decks[idx], decks[idx + 1]
+    elif direction == "top":
+        if idx == 0:
+            raise ValueError("already_first")
+        moved = decks.pop(idx)
+        decks.insert(0, moved)
+    elif direction == "bottom":
+        if idx == len(decks) - 1:
+            raise ValueError("already_last")
+        moved = decks.pop(idx)
+        decks.append(moved)
     else:
         raise ValueError("bad_direction")
     for i, d in enumerate(decks):

@@ -14,7 +14,7 @@ class CategoryUpdate(BaseModel):
 
 
 class CategoryDeckReorderRequest(BaseModel):
-    direction: Literal["up", "down"]
+    direction: Literal["up", "down", "top", "bottom"]
 
 
 class CategoryResponse(BaseModel):

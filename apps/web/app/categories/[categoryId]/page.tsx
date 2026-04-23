@@ -2,7 +2,16 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ChevronDown, ChevronUp, Eye, LayoutGrid, List, Search } from "lucide-react";
+import {
+  ArrowDownToLine,
+  ArrowUpToLine,
+  ChevronDown,
+  ChevronUp,
+  Eye,
+  LayoutGrid,
+  List,
+  Search,
+} from "lucide-react";
 import { getCategoryDecks, getCategories, reorderCategoryDeck, updateDeck } from "@/lib/api";
 import { getStoredUserId } from "@/components/user-selector";
 import PageContainer from "@/components/layout/page-container";
@@ -46,6 +55,24 @@ function swapDeckWithNeighbor<T extends { id: string }>(
   const b = next[j]!;
   next[i] = b;
   next[j] = a;
+  return next;
+}
+
+/** Move a deck to first or last position in the ordered list. */
+function moveDeckToListEdge<T extends { id: string }>(
+  list: T[],
+  deckId: string,
+  edge: "top" | "bottom"
+): T[] | null {
+  const i = list.findIndex((d) => d.id === deckId);
+  if (i < 0) return null;
+  if (edge === "top" && i === 0) return null;
+  if (edge === "bottom" && i === list.length - 1) return null;
+  const next = list.slice();
+  const [moved] = next.splice(i, 1);
+  if (!moved) return null;
+  if (edge === "top") next.unshift(moved);
+  else next.push(moved);
   return next;
 }
 
@@ -112,9 +139,9 @@ export default function CategoryPage({ params }: CategoryPageProps) {
     });
   }, [decks, searchQuery]);
 
-  /** Show reorder chrome whenever manual order applies (≥1 deck); arrows disable at ends / single deck. */
+  /** Reorder only with category order + 2+ decks; hide controls for a single deck. */
   const showCategoryReorder =
-    !searchQuery.trim() && sortMode === "category_order" && decks.length > 0;
+    !searchQuery.trim() && sortMode === "category_order" && decks.length > 1;
 
   const visibleDecks = useMemo(() => {
     const list = [...filteredDecks];
@@ -135,17 +162,28 @@ export default function CategoryPage({ params }: CategoryPageProps) {
     return list;
   }, [filteredDecks, sortMode]);
 
-  function handleReorderDeck(deckId: string, direction: "up" | "down") {
+  function handleReorderDeck(
+    deckId: string,
+    direction: "up" | "down" | "top" | "bottom"
+  ) {
     const userId = getStoredUserId();
     if (!userId || reorderBusyId) return;
     const previous = decks;
-    const optimistic = swapDeckWithNeighbor(previous, deckId, direction);
+    const optimistic =
+      direction === "up" || direction === "down"
+        ? swapDeckWithNeighbor(previous, deckId, direction)
+        : moveDeckToListEdge(previous, deckId, direction);
     if (!optimistic) return;
     setDecks(optimistic);
     setReorderBusyId(deckId);
     void (async () => {
       try {
-        await reorderCategoryDeck(params.categoryId, deckId, direction, userId);
+        await reorderCategoryDeck(
+          params.categoryId,
+          deckId,
+          direction,
+          userId
+        );
       } catch (err) {
         console.error(err);
         setDecks(previous);
@@ -157,8 +195,11 @@ export default function CategoryPage({ params }: CategoryPageProps) {
 
   function renderDeckRow(deck: CategoryDeck) {
     const idxInFull = decks.findIndex((d) => d.id === deck.id);
+    const n = decks.length;
+    const canToTop = showCategoryReorder && idxInFull > 0;
     const canUp = showCategoryReorder && idxInFull > 0;
-    const canDown = showCategoryReorder && idxInFull >= 0 && idxInFull < decks.length - 1;
+    const canDown = showCategoryReorder && idxInFull >= 0 && idxInFull < n - 1;
+    const canToBottom = showCategoryReorder && idxInFull >= 0 && idxInFull < n - 1;
     return (
       <div
         key={deck.id}
@@ -208,13 +249,29 @@ export default function CategoryPage({ params }: CategoryPageProps) {
         </div>
         {showCategoryReorder && (
           <div
-            className="relative z-20 flex shrink-0 items-center gap-0 self-center pr-2 max-mobile:pr-1.5"
+            className="relative z-20 flex shrink-0 flex-wrap items-center justify-end gap-0 self-center pr-2 max-mobile:pr-1.5"
             onClick={(e) => e.stopPropagation()}
             onPointerDown={(e) => e.stopPropagation()}
             onKeyDown={(e) => e.stopPropagation()}
             role="group"
             aria-label="Reorder in category"
           >
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              disabled={!canToTop || reorderBusyId === deck.id}
+              aria-label={`Move ${deck.name} to top of category`}
+              title="Move to top in category"
+              className="text-foreground/80 hover:bg-background/80 hover:text-foreground"
+              onClick={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                void handleReorderDeck(deck.id, "top");
+              }}
+            >
+              <ArrowUpToLine className="size-4" aria-hidden />
+            </Button>
             <Button
               type="button"
               variant="ghost"
@@ -247,6 +304,22 @@ export default function CategoryPage({ params }: CategoryPageProps) {
             >
               <ChevronDown className="size-4" aria-hidden />
             </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              disabled={!canToBottom || reorderBusyId === deck.id}
+              aria-label={`Move ${deck.name} to bottom of category`}
+              title="Move to bottom in category"
+              className="text-foreground/80 hover:bg-background/80 hover:text-foreground"
+              onClick={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                void handleReorderDeck(deck.id, "bottom");
+              }}
+            >
+              <ArrowDownToLine className="size-4" aria-hidden />
+            </Button>
           </div>
         )}
       </div>
@@ -255,8 +328,11 @@ export default function CategoryPage({ params }: CategoryPageProps) {
 
   function renderDeckTile(deck: CategoryDeck) {
     const idxInFull = decks.findIndex((d) => d.id === deck.id);
+    const n = decks.length;
+    const canToTop = showCategoryReorder && idxInFull > 0;
     const canUp = showCategoryReorder && idxInFull > 0;
-    const canDown = showCategoryReorder && idxInFull >= 0 && idxInFull < decks.length - 1;
+    const canDown = showCategoryReorder && idxInFull >= 0 && idxInFull < n - 1;
+    const canToBottom = showCategoryReorder && idxInFull >= 0 && idxInFull < n - 1;
     return (
       <div
         key={deck.id}
@@ -270,7 +346,7 @@ export default function CategoryPage({ params }: CategoryPageProps) {
         />
         {showCategoryReorder && (
           <div
-            className="absolute right-2 top-2 z-20 flex items-center gap-0 rounded-md border border-border/80 bg-muted/50 p-0.5 shadow-sm backdrop-blur-sm"
+            className="absolute right-1.5 top-1.5 z-20 grid w-[4.5rem] grid-cols-2 gap-0 rounded-md border border-border/80 bg-muted/50 p-0.5 shadow-sm backdrop-blur-sm sm:w-[4.75rem] max-mobile:right-1 max-mobile:top-1"
             onClick={(e) => e.stopPropagation()}
             onPointerDown={(e) => e.stopPropagation()}
             onKeyDown={(e) => e.stopPropagation()}
@@ -281,10 +357,26 @@ export default function CategoryPage({ params }: CategoryPageProps) {
               type="button"
               variant="ghost"
               size="icon-sm"
+              disabled={!canToTop || reorderBusyId === deck.id}
+              aria-label={`Move ${deck.name} to top of category`}
+              title="Move to top"
+              className="size-8 text-foreground/80 hover:bg-background/80 hover:text-foreground max-mobile:size-8"
+              onClick={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                void handleReorderDeck(deck.id, "top");
+              }}
+            >
+              <ArrowUpToLine className="size-3.5" aria-hidden />
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
               disabled={!canUp || reorderBusyId === deck.id}
               aria-label={`Move ${deck.name} up in category`}
               title="Move up"
-              className="size-8 text-foreground/80 hover:bg-background/80 hover:text-foreground max-mobile:size-9"
+              className="size-8 text-foreground/80 hover:bg-background/80 hover:text-foreground max-mobile:size-8"
               onClick={(e) => {
                 e.stopPropagation();
                 e.preventDefault();
@@ -300,7 +392,7 @@ export default function CategoryPage({ params }: CategoryPageProps) {
               disabled={!canDown || reorderBusyId === deck.id}
               aria-label={`Move ${deck.name} down in category`}
               title="Move down"
-              className="size-8 text-foreground/80 hover:bg-background/80 hover:text-foreground max-mobile:size-9"
+              className="size-8 text-foreground/80 hover:bg-background/80 hover:text-foreground max-mobile:size-8"
               onClick={(e) => {
                 e.stopPropagation();
                 e.preventDefault();
@@ -309,11 +401,27 @@ export default function CategoryPage({ params }: CategoryPageProps) {
             >
               <ChevronDown className="size-3.5" aria-hidden />
             </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              disabled={!canToBottom || reorderBusyId === deck.id}
+              aria-label={`Move ${deck.name} to bottom of category`}
+              title="Move to bottom"
+              className="size-8 text-foreground/80 hover:bg-background/80 hover:text-foreground max-mobile:size-8"
+              onClick={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                void handleReorderDeck(deck.id, "bottom");
+              }}
+            >
+              <ArrowDownToLine className="size-3.5" aria-hidden />
+            </Button>
           </div>
         )}
         <div
           className={`relative z-10 flex min-w-0 flex-col gap-0 pointer-events-none ${
-            showCategoryReorder ? "pr-14" : ""
+            showCategoryReorder ? "pr-[4.75rem] sm:pr-20" : ""
           }`}
         >
           <h3 className="font-semibold text-sm leading-snug line-clamp-2 min-w-0 text-foreground">

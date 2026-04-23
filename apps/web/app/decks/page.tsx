@@ -28,6 +28,8 @@ import {
   ArrowRightLeft,
   BookOpen,
   Check,
+  ArrowDownToLine,
+  ArrowUpToLine,
   ChevronDown,
   ChevronUp,
   Eye,
@@ -178,6 +180,51 @@ function compareDeckWithinCategoryOrder(a: Deck, b: Deck): number {
   if (!aNull && bNull) return -1;
   if (aNull && !bNull) return 1;
   return _deckCategoryLegacySortKey(a) - _deckCategoryLegacySortKey(b);
+}
+
+/** Apply a reorder in local deck state; returns null if nothing changes. */
+function reorderDecksInCategoryState(
+  prev: Deck[],
+  categoryId: string,
+  deckId: string,
+  direction: "up" | "down" | "top" | "bottom"
+): Deck[] | null {
+  const inCat = prev
+    .filter((d) => d.category_id === categoryId)
+    .sort(compareDeckWithinCategoryOrder);
+  if (inCat.length < 2) return null;
+  const orderIds = inCat.map((d) => d.id);
+  const i = orderIds.indexOf(deckId);
+  if (i < 0) return null;
+  const next = [...orderIds];
+  if (direction === "up") {
+    if (i === 0) return null;
+    const a = next[i - 1]!;
+    const b = next[i]!;
+    next[i - 1] = b;
+    next[i] = a;
+  } else if (direction === "down") {
+    if (i === next.length - 1) return null;
+    const a = next[i]!;
+    const b = next[i + 1]!;
+    next[i] = b;
+    next[i + 1] = a;
+  } else if (direction === "top") {
+    if (i === 0) return null;
+    next.splice(i, 1);
+    next.unshift(deckId);
+  } else {
+    if (i === next.length - 1) return null;
+    next.splice(i, 1);
+    next.push(deckId);
+  }
+  const posById = new Map(next.map((id, idx) => [id, idx] as const));
+  return prev.map((d) => {
+    if (d.category_id !== categoryId) return d;
+    const p = posById.get(d.id);
+    if (p === undefined) return d;
+    return { ...d, category_position: p };
+  });
 }
 
 function groupDecksByCategory(
@@ -867,11 +914,40 @@ export default function DecksPage() {
       ? decksOrderedInMenuCategory.findIndex((d) => d.id === deck.id)
       : -1;
     const nInCategory = decksOrderedInMenuCategory.length;
+    const showCategoryReorderBlock = showCategoryReorderInMenu && nInCategory >= 2;
     const canReorderInCategory =
-      showCategoryReorderInMenu && idxInCategory >= 0 && nInCategory > 0;
+      showCategoryReorderBlock && idxInCategory >= 0 && nInCategory > 0;
+    const canMoveToTopInCategory = canReorderInCategory && idxInCategory > 0;
     const canMoveUpInCategory = canReorderInCategory && idxInCategory > 0;
     const canMoveDownInCategory =
       canReorderInCategory && idxInCategory >= 0 && idxInCategory < nInCategory - 1;
+    const canMoveToBottomInCategory =
+      canReorderInCategory && idxInCategory >= 0 && idxInCategory < nInCategory - 1;
+
+    const runCategoryReorder = (
+      direction: "up" | "down" | "top" | "bottom",
+      allowed: boolean
+    ) => {
+      if (!userId || !menuCategoryId || !allowed) return;
+      setOpenDeckMenuId(null);
+      const snapshot = decks;
+      const next = reorderDecksInCategoryState(
+        snapshot,
+        menuCategoryId,
+        deck.id,
+        direction
+      );
+      if (next) setDecks(next);
+      void (async () => {
+        try {
+          await reorderCategoryDeck(menuCategoryId, deck.id, direction, userId);
+          void refetchDecksSilently();
+        } catch (err) {
+          console.error(err);
+          setDecks(snapshot);
+        }
+      })();
+    };
 
     return (
       <DeckActionsMenu
@@ -888,25 +964,24 @@ export default function DecksPage() {
               <FolderInput className="size-4 shrink-0" aria-hidden />
               <span>Move to category</span>
             </button>
-            {showCategoryReorderInMenu && (
+            {showCategoryReorderBlock && (
               <>
+                <button
+                  type="button"
+                  role="menuitem"
+                  disabled={!canMoveToTopInCategory}
+                  className="flex w-full items-center justify-start gap-2.5 whitespace-nowrap px-3 py-2.5 text-left text-sm hover:bg-muted focus-visible:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background max-mobile:min-h-[44px] max-mobile:py-3 disabled:pointer-events-none disabled:opacity-45"
+                  onClick={() => runCategoryReorder("top", canMoveToTopInCategory)}
+                >
+                  <ArrowUpToLine className="size-4 shrink-0" aria-hidden />
+                  <span>Move to top</span>
+                </button>
                 <button
                   type="button"
                   role="menuitem"
                   disabled={!canMoveUpInCategory}
                   className="flex w-full items-center justify-start gap-2.5 whitespace-nowrap px-3 py-2.5 text-left text-sm hover:bg-muted focus-visible:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background max-mobile:min-h-[44px] max-mobile:py-3 disabled:pointer-events-none disabled:opacity-45"
-                  onClick={() => {
-                    if (!userId || !menuCategoryId || !canMoveUpInCategory) return;
-                    setOpenDeckMenuId(null);
-                    void (async () => {
-                      try {
-                        await reorderCategoryDeck(menuCategoryId, deck.id, "up", userId);
-                        setRefreshKey((k) => k + 1);
-                      } catch (err) {
-                        console.error(err);
-                      }
-                    })();
-                  }}
+                  onClick={() => runCategoryReorder("up", canMoveUpInCategory)}
                 >
                   <ChevronUp className="size-4 shrink-0" aria-hidden />
                   <span>Move up</span>
@@ -916,21 +991,22 @@ export default function DecksPage() {
                   role="menuitem"
                   disabled={!canMoveDownInCategory}
                   className="flex w-full items-center justify-start gap-2.5 whitespace-nowrap px-3 py-2.5 text-left text-sm hover:bg-muted focus-visible:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background max-mobile:min-h-[44px] max-mobile:py-3 disabled:pointer-events-none disabled:opacity-45"
-                  onClick={() => {
-                    if (!userId || !menuCategoryId || !canMoveDownInCategory) return;
-                    setOpenDeckMenuId(null);
-                    void (async () => {
-                      try {
-                        await reorderCategoryDeck(menuCategoryId, deck.id, "down", userId);
-                        setRefreshKey((k) => k + 1);
-                      } catch (err) {
-                        console.error(err);
-                      }
-                    })();
-                  }}
+                  onClick={() => runCategoryReorder("down", canMoveDownInCategory)}
                 >
                   <ChevronDown className="size-4 shrink-0" aria-hidden />
                   <span>Move down</span>
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  disabled={!canMoveToBottomInCategory}
+                  className="flex w-full items-center justify-start gap-2.5 whitespace-nowrap px-3 py-2.5 text-left text-sm hover:bg-muted focus-visible:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background max-mobile:min-h-[44px] max-mobile:py-3 disabled:pointer-events-none disabled:opacity-45"
+                  onClick={() =>
+                    runCategoryReorder("bottom", canMoveToBottomInCategory)
+                  }
+                >
+                  <ArrowDownToLine className="size-4 shrink-0" aria-hidden />
+                  <span>Move to bottom</span>
                 </button>
               </>
             )}

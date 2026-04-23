@@ -904,7 +904,7 @@ export async function getCategoryDecks(categoryId: string, userId: string) {
 export async function reorderCategoryDeck(
   categoryId: string,
   deckId: string,
-  direction: "up" | "down",
+  direction: "up" | "down" | "top" | "bottom",
   userId: string
 ): Promise<void> {
   const res = await fetch(
