@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { isLikelyFarsiCardText, pickVoiceForText } from "./flashcard-speech";
+import {
+  isLikelyFarsiCardText,
+  pickVoiceForText,
+  plainTextForSpeech,
+  buildReadCardAnswerPlainSegments,
+  READ_CARD_PAUSE_MS,
+  READ_ANSWER_EXAMPLE_PAUSE_MS,
+} from "./flashcard-speech";
 
 function v(name: string, lang: string): SpeechSynthesisVoice {
   return { name, lang, default: false, localService: false, voiceURI: name } as SpeechSynthesisVoice;
@@ -95,6 +102,40 @@ describe("pickVoiceForText (Farsi / RTL script)", () => {
     const picked = pickVoiceForText("\u06A9", voices, {});
     expect(picked).not.toBeNull();
     expect(picked?.lang.toLowerCase().startsWith("ar")).toBe(true);
+  });
+});
+
+describe("plainTextForSpeech / block math", () => {
+  it("strips block $$...$$ and keeps surrounding prose", () => {
+    expect(plainTextForSpeech("A is x. $$\\frac{1}{2}$$ B is y.")).toBe("A is x. B is y.");
+  });
+  it("strips multiline block math", () => {
+    expect(plainTextForSpeech("Def.\n\n$$\nE = mc^2\n$$")).toBe("Def.");
+  });
+  it("returns empty when the card is only block math", () => {
+    expect(plainTextForSpeech("$$x+1$$")).toBe("");
+  });
+});
+
+describe("buildReadCardAnswerPlainSegments (Example + math)", () => {
+  it("splits on Example: into two parts for separate pauses in read path", () => {
+    const parts = buildReadCardAnswerPlainSegments("Main idea.\n\nExample:\nA short case.");
+    expect(parts).toEqual(["Main idea.", "A short case."]);
+  });
+  it("removes block math before splitting; keeps spoken parts", () => {
+    const parts = buildReadCardAnswerPlainSegments("Sum is 2. $$x$$ More.\n\nExample:\nPi.");
+    expect(parts).toEqual(["Sum is 2. More.", "Pi."]);
+  });
+  it("example-only body after line-leading Example", () => {
+    const parts = buildReadCardAnswerPlainSegments("Short def.\n\nExample:\nOnly this.");
+    expect(parts[0]).toBe("Short def.");
+    expect(parts[1]).toBe("Only this.");
+  });
+});
+
+describe("TTS pauses: example < question→answer", () => {
+  it("READ_ANSWER_EXAMPLE_PAUSE_MS is below READ_CARD_PAUSE_MS", () => {
+    expect(READ_ANSWER_EXAMPLE_PAUSE_MS).toBeLessThan(READ_CARD_PAUSE_MS);
   });
 });
 

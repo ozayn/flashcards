@@ -3,6 +3,8 @@
  * New utterances cancel prior playback; `speakOrToggle` stops if the same key is playing.
  */
 
+import { splitImportAnswerOnExampleMarker } from "@/lib/import-answer-split";
+
 const RTL_SCRIPT_RE = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/;
 const CJK_RE = /[\u3040-\u30ff\u31f0-\u31ff\u4e00-\u9fff\uac00-\ud7af]/;
 
@@ -242,9 +244,15 @@ export function subscribeFlashcardSpeechState(cb: () => void) {
   return () => listeners.delete(cb);
 }
 
-/** Strips light markdown/whitespace; extend later for heavier markup if needed. */
+/** Block display math: do not read LaTeX source aloud (replaced with space, then normalized). */
+function removeBlockDollarDisplayMath(s: string): string {
+  return s.replace(/\$\$[\s\S]*?\$\$/g, " ");
+}
+
+/** Strips light markdown/whitespace; `$$...$$` block math is removed (not spoken). */
 export function plainTextForSpeech(s: string): string {
-  return s
+  const noBlockMath = removeBlockDollarDisplayMath(s);
+  return noBlockMath
     .replace(/\r\n/g, "\n")
     .replace(/\n{2,}/g, "\n")
     .replace(/\*+/g, "")
@@ -252,6 +260,23 @@ export function plainTextForSpeech(s: string): string {
     .replace(/\n+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+/**
+ * Plain segments for the answer in read mode: main text, then optional example body
+ * (same `Example:` / `Examples:` heuristics as import). Block `$$` math stripped per segment.
+ */
+export function buildReadCardAnswerPlainSegments(rawAnswer: string): string[] {
+  const a1 = removeBlockDollarDisplayMath(rawAnswer);
+  const { main, example } = splitImportAnswerOnExampleMarker(a1);
+  const pMain = plainTextForSpeech(main);
+  const pEx = example != null ? plainTextForSpeech(example) : null;
+  if (pEx) {
+    if (pMain) return [pMain, pEx];
+    return [pEx];
+  }
+  if (pMain) return [pMain];
+  return [];
 }
 
 /**
@@ -582,6 +607,12 @@ export function speakOrToggle(
 export const READ_CARD_PAUSE_MS = 450;
 
 /**
+ * Pause (ms) between the main answer text and a following Example section — shorter than
+ * {@link READ_CARD_PAUSE_MS} but enough to mark the transition when both parts are read.
+ */
+export const READ_ANSWER_EXAMPLE_PAUSE_MS = 240;
+
+/**
  * Read tab: speak the question, pause, then the answer, using one `utteranceKey`
  * (toggle the same key to stop; same as `speakOrToggle` for that key).
  * Each segment gets its own voice pick for mixed-language cards.
@@ -597,8 +628,8 @@ export function speakOrToggleReadCard(
   const speechVoiceKey = options?.speechVoiceKey;
   if (!isSpeechSynthesisAvailable()) return "skipped";
   const plainQ = plainTextForSpeech(question);
-  const plainA = plainTextForSpeech(answer);
-  if (!plainQ && !plainA) return "skipped";
+  const answerParts = buildReadCardAnswerPlainSegments(answer);
+  if (!plainQ && answerParts.length === 0) return "skipped";
 
   if (playingKey === utteranceKey) {
     nextOp();
@@ -631,15 +662,10 @@ export function speakOrToggleReadCard(
       }
     };
 
-    const beginAnswer = () => {
-      if (myOp !== opSeq) return;
-      if (!plainA) {
-        endSession();
-        return;
-      }
-      const ut2 = new SpeechSynthesisUtterance(plainA);
-      applyPickedVoiceToUtterance(ut2, plainA, voiceList, { englishTts, voiceStyle, speechVoiceKey });
-      ut2.onend = endSession;
+    const speakOneAnswerPart = (part: string, onEnd: () => void) => {
+      const ut2 = new SpeechSynthesisUtterance(part);
+      applyPickedVoiceToUtterance(ut2, part, voiceList, { englishTts, voiceStyle, speechVoiceKey });
+      ut2.onend = onEnd;
       ut2.onerror = endSession;
       try {
         synth.speak(ut2);
@@ -648,11 +674,45 @@ export function speakOrToggleReadCard(
       }
     };
 
+    const runAnswerParts = (startIndex: number) => {
+      if (myOp !== opSeq) return;
+      if (startIndex >= answerParts.length) {
+        endSession();
+        return;
+      }
+      const gapMs = startIndex > 0 ? READ_ANSWER_EXAMPLE_PAUSE_MS : 0;
+      const doSpeak = () => {
+        if (myOp !== opSeq) return;
+        const part = answerParts[startIndex]!;
+        speakOneAnswerPart(part, () => {
+          if (myOp !== opSeq) return;
+          runAnswerParts(startIndex + 1);
+        });
+      };
+      if (gapMs > 0) {
+        window.setTimeout(() => {
+          if (myOp !== opSeq) return;
+          doSpeak();
+        }, gapMs);
+      } else {
+        doSpeak();
+      }
+    };
+
+    const beginAnswer = () => {
+      if (myOp !== opSeq) return;
+      if (answerParts.length === 0) {
+        endSession();
+        return;
+      }
+      runAnswerParts(0);
+    };
+
     if (!plainQ) {
       beginAnswer();
       return;
     }
-    if (!plainA) {
+    if (answerParts.length === 0) {
       const ut = new SpeechSynthesisUtterance(plainQ);
       applyPickedVoiceToUtterance(ut, plainQ, voiceList, { englishTts, voiceStyle, speechVoiceKey });
       ut.onend = endSession;
@@ -710,8 +770,8 @@ export function playReadCardOnceForAutoplay(
   const voiceStyle = options?.voiceStyle ?? "default";
   const speechVoiceKey = options?.speechVoiceKey;
   const plainQ = plainTextForSpeech(question);
-  const plainA = plainTextForSpeech(answer);
-  if (!plainQ && !plainA) {
+  const answerParts = buildReadCardAnswerPlainSegments(answer);
+  if (!plainQ && answerParts.length === 0) {
     return Promise.resolve("ok");
   }
 
@@ -743,35 +803,66 @@ export function playReadCardOnceForAutoplay(
       }
       const synth = window.speechSynthesis!;
 
+      const speakAnswerPart = (text: string, onDone: () => void) => {
+        const ut2 = new SpeechSynthesisUtterance(text);
+        applyPickedVoiceToUtterance(ut2, text, voiceList, { englishTts, voiceStyle, speechVoiceKey });
+        ut2.onend = onDone;
+        ut2.onerror = onDone;
+        try {
+          synth.speak(ut2);
+        } catch {
+          onDone();
+        }
+      };
+
+      const runAnswerParts = (index: number) => {
+        if (myOp !== opSeq) {
+          settle("aborted");
+          return;
+        }
+        if (index >= answerParts.length) {
+          if (myOp === opSeq) settle("ok");
+          else settle("aborted");
+          return;
+        }
+        const gapMs = index > 0 ? READ_ANSWER_EXAMPLE_PAUSE_MS : 0;
+        const doneThis = () => {
+          if (myOp !== opSeq) {
+            settle("aborted");
+            return;
+          }
+          runAnswerParts(index + 1);
+        };
+        if (gapMs > 0) {
+          window.setTimeout(() => {
+            if (myOp !== opSeq) {
+              settle("aborted");
+              return;
+            }
+            speakAnswerPart(answerParts[index]!, doneThis);
+          }, gapMs);
+        } else {
+          speakAnswerPart(answerParts[index]!, doneThis);
+        }
+      };
+
       const beginAnswer = () => {
         if (myOp !== opSeq) {
           settle("aborted");
           return;
         }
-        if (!plainA) {
+        if (answerParts.length === 0) {
           settle("ok");
           return;
         }
-        const ut2 = new SpeechSynthesisUtterance(plainA);
-        applyPickedVoiceToUtterance(ut2, plainA, voiceList, { englishTts, voiceStyle, speechVoiceKey });
-        const onUt2Done = () => {
-          if (myOp === opSeq) settle("ok");
-          else settle("aborted");
-        };
-        ut2.onend = onUt2Done;
-        ut2.onerror = onUt2Done;
-        try {
-          synth.speak(ut2);
-        } catch {
-          settle("aborted");
-        }
+        runAnswerParts(0);
       };
 
       if (!plainQ) {
         beginAnswer();
         return;
       }
-      if (!plainA) {
+      if (answerParts.length === 0) {
         const ut = new SpeechSynthesisUtterance(plainQ);
         applyPickedVoiceToUtterance(ut, plainQ, voiceList, { englishTts, voiceStyle, speechVoiceKey });
         const onUtDone = () => {
