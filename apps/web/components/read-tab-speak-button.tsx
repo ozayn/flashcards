@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { Volume2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { TtsDevDebugLine } from "@/components/tts-dev-debug-line";
 import { cn } from "@/lib/utils";
 import {
   flashcardSpeechStore,
@@ -21,6 +22,7 @@ type ReadTabSpeakButtonProps = {
   className?: string;
   englishTts?: EnglishTtsPreference;
   voiceStyle?: VoiceStylePreference;
+  speechVoiceKey?: string;
 };
 
 /**
@@ -33,6 +35,7 @@ export function ReadTabSpeakButton({
   className,
   englishTts = "default",
   voiceStyle = "default",
+  speechVoiceKey,
 }: ReadTabSpeakButtonProps) {
   const [apiOk, setApiOk] = useState(false);
   const playingKey = useSyncExternalStore(
@@ -50,31 +53,38 @@ export function ReadTabSpeakButton({
     (e: React.MouseEvent) => {
       e.preventDefault();
       e.stopPropagation();
-      speakOrToggleReadCard(utteranceKey, question, answer, { englishTts, voiceStyle });
+      speakOrToggleReadCard(utteranceKey, question, answer, {
+        englishTts,
+        voiceStyle,
+        speechVoiceKey: speechVoiceKey?.trim() || undefined,
+      });
     },
-    [answer, englishTts, question, utteranceKey, voiceStyle]
+    [answer, englishTts, question, speechVoiceKey, utteranceKey, voiceStyle]
   );
 
   if (!apiOk) return null;
 
   return (
-    <Button
-      type="button"
-      variant="ghost"
-      size="icon"
-      className={cn(
-        "h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground hover:bg-muted/70",
-        isPlaying && "text-foreground ring-1 ring-foreground/15 bg-muted/50",
-        className
-      )}
-      aria-label="Read card aloud"
-      aria-pressed={isPlaying}
-      onClick={onClick}
-    >
-      <Volume2
-        className={cn("size-3.5", isPlaying ? "text-foreground" : "opacity-80")}
-        aria-hidden
-      />
-    </Button>
+    <span className="inline-flex flex-col items-start gap-0">
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        className={cn(
+          "h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground hover:bg-muted/70",
+          isPlaying && "text-foreground ring-1 ring-foreground/15 bg-muted/50",
+          className
+        )}
+        aria-label="Read card aloud"
+        aria-pressed={isPlaying}
+        onClick={onClick}
+      >
+        <Volume2
+          className={cn("size-3.5", isPlaying ? "text-foreground" : "opacity-80")}
+          aria-hidden
+        />
+      </Button>
+      <TtsDevDebugLine className="max-w-[8rem] sm:max-w-[10rem] mt-0.5" />
+    </span>
   );
 }

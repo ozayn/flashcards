@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { Volume2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { TtsDevDebugLine } from "@/components/tts-dev-debug-line";
 import {
   flashcardSpeechStore,
   isSpeechSynthesisAvailable,
@@ -19,6 +20,7 @@ export function FlashcardSpeakButton({
   "aria-label": ariaLabel,
   englishTts = "default",
   voiceStyle = "default",
+  speechVoiceKey,
 }: {
   utteranceKey: string;
   text: string;
@@ -28,6 +30,8 @@ export function FlashcardSpeakButton({
   englishTts?: EnglishTtsPreference;
   /** Best-effort voice gender hint from voice names; other languages use when possible. */
   voiceStyle?: VoiceStylePreference;
+  /** If set, overrides heuristics when the voice is available on this device. */
+  speechVoiceKey?: string;
 }) {
   const [apiOk, setApiOk] = useState(false);
   const playingKey = useSyncExternalStore(
@@ -45,28 +49,35 @@ export function FlashcardSpeakButton({
     (e: React.MouseEvent) => {
       e.preventDefault();
       e.stopPropagation();
-      speakOrToggle(utteranceKey, text, { englishTts, voiceStyle });
+      speakOrToggle(utteranceKey, text, {
+        englishTts,
+        voiceStyle,
+        speechVoiceKey: speechVoiceKey?.trim() || undefined,
+      });
     },
-    [englishTts, voiceStyle, utteranceKey, text]
+    [englishTts, voiceStyle, speechVoiceKey, utteranceKey, text]
   );
 
   if (!apiOk) return null;
 
   return (
-    <Button
-      type="button"
-      variant="ghost"
-      size="icon"
-      className={cn(
-        "h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground hover:bg-muted/70",
-        isPlaying && "text-foreground",
-        className
-      )}
-      aria-label={ariaLabel}
-      aria-pressed={isPlaying}
-      onClick={onClick}
-    >
-      <Volume2 className={cn("size-3.5", isPlaying && "opacity-100", !isPlaying && "opacity-80")} />
-    </Button>
+    <span className="inline-flex flex-col items-start gap-0">
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        className={cn(
+          "h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground hover:bg-muted/70",
+          isPlaying && "text-foreground",
+          className
+        )}
+        aria-label={ariaLabel}
+        aria-pressed={isPlaying}
+        onClick={onClick}
+      >
+        <Volume2 className={cn("size-3.5", isPlaying && "opacity-100", !isPlaying && "opacity-80")} />
+      </Button>
+      <TtsDevDebugLine className="max-w-[8rem] sm:max-w-[10rem] mt-0.5" />
+    </span>
   );
 }

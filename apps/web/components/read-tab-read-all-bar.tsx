@@ -3,6 +3,7 @@
 import { Headphones, Pause, Play, SkipForward, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { TtsDevDebugLine } from "@/components/tts-dev-debug-line";
 import { isSpeechSynthesisAvailable } from "@/lib/flashcard-speech";
 import { type ReadAutoplayState } from "@/hooks/use-read-tab-autoplay";
 import { useEffect, useState } from "react";
@@ -46,6 +47,7 @@ export function ReadTabReadAllBar({
   const anyActive = running || paused;
 
   return (
+    <div className="inline-flex max-w-full flex-col items-stretch gap-0.5">
     <div
       className={cn(
         "inline-flex max-w-full items-center gap-0.5 rounded-md border border-border/40 bg-muted/20 px-0.5 sm:px-1 py-0.5",
@@ -118,6 +120,8 @@ export function ReadTabReadAllBar({
       <span className="max-w-[4.5rem] truncate pr-0.5 text-[10px] sm:text-xs text-muted-foreground landscape-mobile:max-w-[3.25rem]">
         Read all
       </span>
+    </div>
+    <TtsDevDebugLine className="px-0.5" />
     </div>
   );
 }

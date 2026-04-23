@@ -42,6 +42,8 @@ export interface FlashcardModalProps {
   englishTts?: EnglishTtsPreference;
   /** Best-effort read-aloud voice style (name heuristics). */
   voiceStyle?: VoiceStylePreference;
+  /** Optional specific Web Speech voice; overrides heuristics when available. */
+  speechVoiceKey?: string;
 }
 
 type ViewMode = "details" | "flashcard";
@@ -57,6 +59,7 @@ export function FlashcardModal({
   bookmarkPendingId,
   englishTts = "default",
   voiceStyle = "default",
+  speechVoiceKey,
 }: FlashcardModalProps) {
   const [currentIndex, setCurrentIndex] = useState(initialIndex);
   const [viewMode, setViewMode] = useState<ViewMode>("details");
@@ -266,6 +269,7 @@ export function FlashcardModal({
                         aria-label="Speak question"
                         englishTts={englishTts}
                         voiceStyle={voiceStyle}
+                        speechVoiceKey={speechVoiceKey}
                       />
                     </div>
                     <div dir="auto" className="text-base font-medium leading-relaxed text-foreground">
@@ -287,6 +291,7 @@ export function FlashcardModal({
                         aria-label="Speak answer"
                         englishTts={englishTts}
                         voiceStyle={voiceStyle}
+                        speechVoiceKey={speechVoiceKey}
                       />
                     </div>
                     <div dir="auto" className="text-base leading-relaxed text-foreground">
@@ -316,6 +321,7 @@ export function FlashcardModal({
                           aria-label="Speak notes"
                           englishTts={englishTts}
                           voiceStyle={voiceStyle}
+                          speechVoiceKey={speechVoiceKey}
                         />
                       </div>
                       <div dir="auto" className="text-base leading-relaxed text-muted-foreground">
@@ -425,6 +431,7 @@ export function FlashcardModal({
                         aria-label={flipState ? "Speak answer" : "Speak question"}
                         englishTts={englishTts}
                         voiceStyle={voiceStyle}
+                        speechVoiceKey={speechVoiceKey}
                       />
                     </div>
                   </div>

@@ -16,6 +16,11 @@ function voiceKey(v: SpeechSynthesisVoice): string {
   return `${v.voiceURI}|${v.name}|${v.lang || ""}`;
 }
 
+/** Stable id for a browser voice; store in user settings and match with `getVoices()`. */
+export function getSpeechVoiceKey(v: SpeechSynthesisVoice): string {
+  return voiceKey(v);
+}
+
 function normalizeLang(lang: string | undefined): string {
   return (lang || "").trim().toLowerCase().replace(/_/g, "-");
 }
@@ -204,6 +209,41 @@ export function normalizeVoiceStylePreference(
   return "default";
 }
 
+export function normalizeSpeechVoiceKey(raw: string | null | undefined): string {
+  if (raw == null || String(raw).trim() === "") return "";
+  return String(raw).trim().slice(0, 512);
+}
+
+export type TtsDebugSnapshot = {
+  /** Human-readable text classification (for logs / dev line). */
+  detectedTextLanguage: string;
+  voiceName: string;
+  voiceLang: string;
+  /** How the voice was chosen. */
+  resolution: "user_picker" | "preference" | "user_picker_unavailable" | "browser_default";
+  updatedAt: number;
+};
+
+const ttsDebugListeners = new Set<() => void>();
+let lastTtsDebug: TtsDebugSnapshot | null = null;
+
+function emitTtsDebug(snapshot: TtsDebugSnapshot) {
+  lastTtsDebug = snapshot;
+  ttsDebugListeners.forEach((cb) => cb());
+}
+
+/**
+ * Development / dev tools: last resolved voice for an utterance (read-only).
+ */
+export function getTtsDebugSnapshot(): TtsDebugSnapshot | null {
+  return lastTtsDebug;
+}
+
+export function subscribeTtsDebug(cb: () => void) {
+  ttsDebugListeners.add(cb);
+  return () => ttsDebugListeners.delete(cb);
+}
+
 let playingKey: string | null = null;
 const listeners = new Set<() => void>();
 let opSeq = 0;
@@ -332,7 +372,31 @@ function pickEnglishByPreference(
 export type PickVoiceForTextOptions = {
   englishTts?: EnglishTtsPreference;
   voiceStyle?: VoiceStylePreference;
+  /** If set, this browser voice (see `getSpeechVoiceKey`) wins over accent/style heuristics. */
+  speechVoiceKey?: string;
 };
+
+/**
+ * Heuristic text language label for TTS debug logs (not a strict CLD).
+ */
+export function detectTextLanguageForTts(plain: string): string {
+  const t = (plain || "").trim();
+  if (CJK_RE.test(t) || /[\u0400-\u04FF]/.test(t) || /[\u0590-\u05FF]/.test(t)) {
+    if (CJK_RE.test(t)) return "CJK (no local voice pick)";
+    if (/[\u0400-\u04FF]/.test(t)) return "Cyrillic (no local voice pick)";
+    return "Hebrew (no local voice pick)";
+  }
+  if (isLikelyFarsiCardText(t) && RTL_SCRIPT_RE.test(t)) {
+    return "Farsi (likely)";
+  }
+  if (RTL_SCRIPT_RE.test(t)) {
+    return "RTL Arabic script (shared block)";
+  }
+  if (/[a-zA-Z]{2,}/.test(t)) {
+    return "Latin/English (heuristics apply)";
+  }
+  return "Other / short";
+}
 
 /**
  * Picks a voice for en / fa (and rough RTL/CJK heuristics). For English, uses
@@ -359,19 +423,85 @@ export function pickVoiceForText(
   return null;
 }
 
+type VoiceResolution = "user_picker" | "preference" | "user_picker_unavailable" | "browser_default";
+
+function resolveFlashcardVoice(
+  plain: string,
+  voiceList: ReadonlyArray<SpeechSynthesisVoice>,
+  options: PickVoiceForTextOptions
+): { voice: SpeechSynthesisVoice | null; resolution: VoiceResolution; hadUserKey: boolean } {
+  const userKey = normalizeSpeechVoiceKey(options.speechVoiceKey);
+  if (userKey) {
+    const v = voiceList.find((x) => voiceKey(x) === userKey) ?? null;
+    if (v) {
+      return { voice: v, resolution: "user_picker", hadUserKey: true };
+    }
+  }
+  const vAlgo = pickVoiceForText(plain, voiceList, { ...options, speechVoiceKey: undefined });
+  if (userKey && !vAlgo) {
+    return { voice: null, resolution: "user_picker_unavailable", hadUserKey: true };
+  }
+  if (userKey) {
+    return { voice: vAlgo, resolution: "user_picker_unavailable", hadUserKey: true };
+  }
+  if (!vAlgo) {
+    return { voice: null, resolution: "browser_default", hadUserKey: false };
+  }
+  return { voice: vAlgo, resolution: "preference", hadUserKey: false };
+}
+
+function logAndEmitTtsDebug(plain: string, voice: SpeechSynthesisVoice | null, resolution: VoiceResolution) {
+  const detectedTextLanguage = detectTextLanguageForTts(plain);
+  const voiceName = voice?.name?.trim() || "";
+  const voiceLang = (voice?.lang && voice.lang.trim()) || "";
+  const resLabel =
+    resolution === "user_picker"
+      ? "user_picker (specific voice in settings)"
+      : resolution === "user_picker_unavailable"
+        ? "fallback (saved voice not on this device; preference-based)"
+        : resolution === "preference"
+          ? "preference (accent / language heuristics)"
+          : "browser_default (no matching engine voice; utterance may use system default)";
+
+  if (_DEV && typeof console !== "undefined" && console.info) {
+    console.info("[flashcard TTS] selection", {
+      detectedTextLanguage,
+      voiceName: voiceName || "(default)",
+      voiceLang: voiceLang || "(default)",
+      resolution: resLabel,
+    });
+  }
+
+  emitTtsDebug({
+    detectedTextLanguage,
+    voiceName: voiceName || "Browser default",
+    voiceLang: voiceLang || "—",
+    resolution:
+      resolution === "user_picker"
+        ? "user_picker"
+        : resolution === "user_picker_unavailable"
+          ? "user_picker_unavailable"
+          : resolution === "preference"
+            ? "preference"
+            : "browser_default",
+    updatedAt: Date.now(),
+  });
+}
+
 function applyPickedVoiceToUtterance(
   ut: SpeechSynthesisUtterance,
   plain: string,
   voiceList: ReadonlyArray<SpeechSynthesisVoice>,
   options: PickVoiceForTextOptions
 ): SpeechSynthesisVoice | null {
-  const voice = pickVoiceForText(plain, voiceList, options);
+  const { voice, resolution } = resolveFlashcardVoice(plain, voiceList, options);
   if (voice) {
     ut.voice = voice;
     ut.lang = voice.lang;
   } else if (RTL_SCRIPT_RE.test(plain) && !CJK_RE.test(plain) && !/[\u0400-\u04FF]/.test(plain) && !/[\u0590-\u05FF]/.test(plain)) {
     ut.lang = isLikelyFarsiCardText(plain) ? "fa-IR" : "ar";
   }
+  logAndEmitTtsDebug(plain, voice, resolution);
   return voice;
 }
 
@@ -414,6 +544,11 @@ export type SpeakOrToggleOptions = {
   englishTts?: EnglishTtsPreference;
   /** Best-effort voice style from user settings (name heuristics). */
   voiceStyle?: VoiceStylePreference;
+  /**
+   * Optional voice from user settings (`getSpeechVoiceKey`). When set and the voice exists
+   * on the device, it overrides accent/style heuristics for that utterance.
+   */
+  speechVoiceKey?: string;
 };
 
 /**
@@ -427,6 +562,7 @@ export function speakOrToggle(
 ): SpeakOrToggleResult {
   const englishTts = options?.englishTts ?? "default";
   const voiceStyle = options?.voiceStyle ?? "default";
+  const speechVoiceKey = options?.speechVoiceKey;
   if (!isSpeechSynthesisAvailable()) return "skipped";
   const plain = plainTextForSpeech(text);
   if (!plain) return "skipped";
@@ -463,36 +599,8 @@ export function speakOrToggle(
       return;
     }
     const ut = new SpeechSynthesisUtterance(plain);
-    const voice = applyPickedVoiceToUtterance(ut, plain, voiceList, { englishTts, voiceStyle });
-    if (_DEV && typeof console !== "undefined" && console.info) {
-      const textLangHint = (() => {
-        if (CJK_RE.test(plain) || /[\u0400-\u04FF]/.test(plain) || /[\u0590-\u05FF]/.test(plain)) {
-          return CJK_RE.test(plain) ? "cjk (no voice pick)" : "cyrillic/hebrew (no voice pick)";
-        }
-        if (isLikelyFarsiCardText(plain) && RTL_SCRIPT_RE.test(plain)) return "farsi (persian letters)";
-        if (RTL_SCRIPT_RE.test(plain)) return "rtl_arabic_script (shared block)";
-        if (/[a-zA-Z]{2,}/.test(plain)) return "latin/english heuristics";
-        return "other";
-      })();
-      if (voice) {
-        const accent =
-          englishTts === "british"
-            ? "accent=british"
-            : englishTts === "american"
-              ? "accent=american"
-              : "accent=default";
-        const style = voiceStyle === "female" || voiceStyle === "male" ? `, style=${voiceStyle}` : ", style=default";
-        console.info(`[flashcard TTS] text=${textLangHint} | ${accent}${style}`, {
-          name: voice.name,
-          lang: voice.lang || "(empty)",
-        });
-      } else {
-        console.info(`[flashcard TTS] text=${textLangHint} — no matching voice; using browser default`, {
-          textPreview: plain.length > 80 ? `${plain.slice(0, 80)}…` : plain,
-        });
-      }
-    }
-    /* else: browser default voice, including CJK and other languages */
+    applyPickedVoiceToUtterance(ut, plain, voiceList, { englishTts, voiceStyle, speechVoiceKey });
+    /* else: browser default voice, including CJK and other languages (logging in apply) */
     const done = () => {
       if (myOp === opSeq) {
         playingKey = null;
@@ -530,6 +638,7 @@ export function speakOrToggleReadCard(
 ): SpeakOrToggleResult {
   const englishTts = options?.englishTts ?? "default";
   const voiceStyle = options?.voiceStyle ?? "default";
+  const speechVoiceKey = options?.speechVoiceKey;
   if (!isSpeechSynthesisAvailable()) return "skipped";
   const plainQ = plainTextForSpeech(question);
   const plainA = plainTextForSpeech(answer);
@@ -573,7 +682,7 @@ export function speakOrToggleReadCard(
         return;
       }
       const ut2 = new SpeechSynthesisUtterance(plainA);
-      applyPickedVoiceToUtterance(ut2, plainA, voiceList, { englishTts, voiceStyle });
+      applyPickedVoiceToUtterance(ut2, plainA, voiceList, { englishTts, voiceStyle, speechVoiceKey });
       ut2.onend = endSession;
       ut2.onerror = endSession;
       try {
@@ -589,7 +698,7 @@ export function speakOrToggleReadCard(
     }
     if (!plainA) {
       const ut = new SpeechSynthesisUtterance(plainQ);
-      applyPickedVoiceToUtterance(ut, plainQ, voiceList, { englishTts, voiceStyle });
+      applyPickedVoiceToUtterance(ut, plainQ, voiceList, { englishTts, voiceStyle, speechVoiceKey });
       ut.onend = endSession;
       ut.onerror = endSession;
       try {
@@ -600,7 +709,7 @@ export function speakOrToggleReadCard(
       return;
     }
     const ut1 = new SpeechSynthesisUtterance(plainQ);
-    applyPickedVoiceToUtterance(ut1, plainQ, voiceList, { englishTts, voiceStyle });
+    applyPickedVoiceToUtterance(ut1, plainQ, voiceList, { englishTts, voiceStyle, speechVoiceKey });
     ut1.onend = () => {
       if (myOp !== opSeq) return;
       window.setTimeout(() => {
@@ -643,6 +752,7 @@ export function playReadCardOnceForAutoplay(
   }
   const englishTts = options?.englishTts ?? "default";
   const voiceStyle = options?.voiceStyle ?? "default";
+  const speechVoiceKey = options?.speechVoiceKey;
   const plainQ = plainTextForSpeech(question);
   const plainA = plainTextForSpeech(answer);
   if (!plainQ && !plainA) {
@@ -687,7 +797,7 @@ export function playReadCardOnceForAutoplay(
           return;
         }
         const ut2 = new SpeechSynthesisUtterance(plainA);
-        applyPickedVoiceToUtterance(ut2, plainA, voiceList, { englishTts, voiceStyle });
+        applyPickedVoiceToUtterance(ut2, plainA, voiceList, { englishTts, voiceStyle, speechVoiceKey });
         const onUt2Done = () => {
           if (myOp === opSeq) settle("ok");
           else settle("aborted");
@@ -707,7 +817,7 @@ export function playReadCardOnceForAutoplay(
       }
       if (!plainA) {
         const ut = new SpeechSynthesisUtterance(plainQ);
-        applyPickedVoiceToUtterance(ut, plainQ, voiceList, { englishTts, voiceStyle });
+        applyPickedVoiceToUtterance(ut, plainQ, voiceList, { englishTts, voiceStyle, speechVoiceKey });
         const onUtDone = () => {
           if (myOp === opSeq) settle("ok");
           else settle("aborted");
@@ -722,7 +832,7 @@ export function playReadCardOnceForAutoplay(
         return;
       }
       const ut1 = new SpeechSynthesisUtterance(plainQ);
-      applyPickedVoiceToUtterance(ut1, plainQ, voiceList, { englishTts, voiceStyle });
+      applyPickedVoiceToUtterance(ut1, plainQ, voiceList, { englishTts, voiceStyle, speechVoiceKey });
       ut1.onend = () => {
         if (myOp !== opSeq) {
           settle("aborted");
@@ -760,4 +870,10 @@ export const flashcardSpeechStore = {
   getSnapshot,
   getServerSnapshot,
   subscribe: subscribeFlashcardSpeechState,
+};
+
+export const ttsDebugStore = {
+  getSnapshot: getTtsDebugSnapshot,
+  getServerSnapshot: () => null as TtsDebugSnapshot | null,
+  subscribe: subscribeTtsDebug,
 };

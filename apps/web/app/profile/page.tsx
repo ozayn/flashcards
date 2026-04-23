@@ -22,6 +22,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import PageContainer from "@/components/layout/page-container";
+import { SpeechVoiceSelect } from "@/components/speech-voice-select";
 
 /** Short list for profile; keep in sync with getUserActivity default. */
 const RECENT_ACTIVITY_LIMIT = 10;
@@ -282,6 +283,21 @@ export default function ProfilePage() {
     }
   }
 
+  async function handleSpeechVoiceChange(key: string) {
+    if (!userId || !userSettings) return;
+    try {
+      const updated = await updateUserSettings(userId, { speech_voice: key });
+      setUserSettings(updated);
+      window.dispatchEvent(
+        new CustomEvent("flashcard_settings_changed", {
+          detail: { settings: updated },
+        })
+      );
+    } catch {
+      /* ignore */
+    }
+  }
+
   if (status === "loading" || (loading && userId)) {
     return (
       <PageContainer className="mx-auto max-w-sm px-4 py-12 text-center text-sm text-muted-foreground">
@@ -482,6 +498,22 @@ export default function ProfilePage() {
                 </label>
               ))}
             </div>
+          </div>
+        ) : null}
+
+        {userSettings ? (
+          <div className="w-full border-t border-border/40 pt-4 text-left">
+            <h2 className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+              Speaking voice
+            </h2>
+            <p className="mb-2 text-xs text-muted-foreground">
+              Voices depend on your browser and device. Choose a specific engine or leave Auto to use
+              English / Farsi preferences above.
+            </p>
+            <SpeechVoiceSelect
+              value={userSettings.speech_voice ?? ""}
+              onChange={(k) => void handleSpeechVoiceChange(k)}
+            />
           </div>
         ) : null}
 

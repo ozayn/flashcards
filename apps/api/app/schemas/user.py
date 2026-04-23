@@ -64,6 +64,7 @@ class UserSettingsResponse(BaseModel):
     card_style: str = "paper"
     english_tts: str = "default"
     voice_style: str = "default"
+    speech_voice: str = ""
 
     model_config = {"from_attributes": True}
 
@@ -77,6 +78,9 @@ class UserSettingsUpdate(BaseModel):
     )
     voice_style: Optional[str] = Field(
         default=None, pattern="^(default|female|male)$"
+    )
+    speech_voice: Optional[str] = Field(
+        default=None, max_length=512
     )
 
 

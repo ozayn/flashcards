@@ -26,6 +26,8 @@ type UseReadTabAutoplayArgs = {
   setCurrentIndex: React.Dispatch<React.SetStateAction<number>>;
   englishTts: EnglishTtsPreference;
   voiceStyle: VoiceStylePreference;
+  /** Stored `getSpeechVoiceKey`; empty = auto. */
+  speechVoiceKey: string;
 };
 
 /**
@@ -40,6 +42,7 @@ export function useReadTabAutoplay({
   setCurrentIndex,
   englishTts,
   voiceStyle,
+  speechVoiceKey,
 }: UseReadTabAutoplayArgs) {
   const [state, setState] = useState<ReadAutoplayState>("off");
   const runIdRef = useRef(0);
@@ -106,7 +109,11 @@ export function useReadTabAutoplay({
         const r = await playReadCardOnceForAutoplay(
           card.question,
           card.answerSpeech,
-          { englishTts, voiceStyle }
+          {
+            englishTts,
+            voiceStyle,
+            speechVoiceKey: speechVoiceKey.trim() || undefined,
+          }
         );
         if (runIdRef.current !== myRun) return;
 
@@ -152,7 +159,7 @@ export function useReadTabAutoplay({
         setState("off");
       }
     },
-    [englishTts, setCurrentIndex, sleepWithGap, voiceStyle, waitResume]
+    [englishTts, setCurrentIndex, sleepWithGap, speechVoiceKey, voiceStyle, waitResume]
   );
 
   const stop = useCallback(() => {

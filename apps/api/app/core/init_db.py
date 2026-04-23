@@ -275,6 +275,16 @@ async def init_db() -> None:
     logger.info("Applied voice_style column migration")
 
     async with engine.begin() as conn:
+        def _migrate_speech_voice(sync_conn):
+            _add_column_if_missing(
+                sync_conn, "users", "speech_voice",
+                "ALTER TABLE users ADD COLUMN speech_voice TEXT DEFAULT ''",
+                pg_if_not_exists="ALTER TABLE users ADD COLUMN IF NOT EXISTS speech_voice VARCHAR(512) DEFAULT ''",
+            )
+        await conn.run_sync(_migrate_speech_voice)
+    logger.info("Applied speech_voice column migration")
+
+    async with engine.begin() as conn:
         def _migrate_google_sub(sync_conn):
             # SQLite rejects "ADD COLUMN ... UNIQUE" (OperationalError: Cannot add a UNIQUE column).
             # Add the column plain, then enforce uniqueness with a unique index (multiple NULLs allowed).

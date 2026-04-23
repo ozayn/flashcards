@@ -21,6 +21,7 @@ import {
 import { userIsProductAdmin } from "@/lib/product-admin";
 import { cn } from "@/lib/utils";
 import { AccountAvatar } from "@/components/account-avatar";
+import { SpeechVoiceSelect } from "@/components/speech-voice-select";
 import type { Session } from "next-auth";
 
 /** Caps menu height vs viewport so the panel stays on-screen (mobile-friendly with dvh). */
@@ -326,6 +327,22 @@ export function UserSelector() {
     }
   };
 
+  const handleSpeechVoiceChange = async (key: string) => {
+    const userId = getStoredUserId();
+    if (!userId || !cardSettings) return;
+    try {
+      const updated = await updateUserSettings(userId, { speech_voice: key });
+      setCardSettings(updated);
+      window.dispatchEvent(
+        new CustomEvent("flashcard_settings_changed", {
+          detail: { settings: updated },
+        })
+      );
+    } catch {
+      /* ignore */
+    }
+  };
+
   const handleAddUser = async (e: React.FormEvent) => {
     e.preventDefault();
     setAddError(null);
@@ -463,6 +480,16 @@ export function UserSelector() {
       </div>
     ) : null;
 
+  const menuSpeechVoiceSection = cardSettings ? (
+    <div className="border-t border-border px-3 py-1.5">
+      <p className="mb-1.5 text-xs font-medium text-muted-foreground">Speaking voice (this device)</p>
+      <SpeechVoiceSelect
+        value={cardSettings.speech_voice ?? ""}
+        onChange={(k) => void handleSpeechVoiceChange(k)}
+      />
+    </div>
+  ) : null;
+
   const menuAccountLinks = (
     <div className="py-1">
       <Link
@@ -547,6 +574,7 @@ export function UserSelector() {
             {menuCardStyleSection}
             {menuEnglishTtsSection}
             {menuVoiceStyleSection}
+            {menuSpeechVoiceSection}
             <div className="border-t border-border mt-1 pt-1 px-1">
               {showAddForm ? (
                 <form onSubmit={handleAddUser} className="space-y-2 p-2">
@@ -670,6 +698,7 @@ export function UserSelector() {
             {menuCardStyleSection}
             {menuEnglishTtsSection}
             {menuVoiceStyleSection}
+            {menuSpeechVoiceSection}
           </div>
 
           <div className="mt-1 flex min-h-0 flex-1 flex-col border-t border-border">

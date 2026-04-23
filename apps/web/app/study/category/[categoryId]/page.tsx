@@ -68,6 +68,7 @@ export default function CategoryStudyPage({ params }: CategoryStudyPageProps) {
     card_style: "paper",
     english_tts: "default",
     voice_style: "default",
+    speech_voice: "",
   });
   const touchStartX = useRef(0);
 
@@ -496,6 +497,7 @@ export default function CategoryStudyPage({ params }: CategoryStudyPageProps) {
                     aria-label={showAnswer ? "Speak answer" : "Speak question"}
                     englishTts={userSettings.english_tts}
                     voiceStyle={userSettings.voice_style}
+                    speechVoiceKey={userSettings.speech_voice}
                   />
                 </div>
               </div>

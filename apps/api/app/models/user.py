@@ -46,6 +46,10 @@ class User(Base):
     voice_style: Mapped[str] = mapped_column(
         String(16), default="default", nullable=False
     )
+    # Optional Web Speech API voice id (getSpeechSynthesis voiceKey); empty = auto/preference-based
+    speech_voice: Mapped[str] = mapped_column(
+        String(512), default="", nullable=False
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, nullable=False
     )

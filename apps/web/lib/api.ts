@@ -1109,6 +1109,8 @@ export interface UserSettings {
   card_style: "paper" | "minimal" | "modern" | "anki";
   english_tts: EnglishTtsPreference;
   voice_style: VoiceStylePreference;
+  /** Empty = automatic voice selection; otherwise `getSpeechVoiceKey` from the browser. */
+  speech_voice: string;
 }
 
 const _userSettingsTtl = new Map<string, _TtlEntry<UserSettings>>();
@@ -1118,6 +1120,7 @@ function _cloneUserSettings(s: UserSettings): UserSettings {
     ...s,
     english_tts: normalizeEnglishTtsPreference(s.english_tts),
     voice_style: normalizeVoiceStylePreference(s.voice_style),
+    speech_voice: typeof s.speech_voice === "string" ? s.speech_voice.trim().slice(0, 512) : "",
   };
 }
 
@@ -1143,6 +1146,12 @@ export async function getUserSettings(userId: string): Promise<UserSettings> {
         voice_style: normalizeVoiceStylePreference(
           (raw as UserSettings & { voice_style?: string }).voice_style
         ),
+        speech_voice:
+          typeof (raw as UserSettings & { speech_voice?: string }).speech_voice === "string"
+            ? String((raw as UserSettings & { speech_voice?: string }).speech_voice)
+                .trim()
+                .slice(0, 512)
+            : "",
       };
       _userSettingsTtl.set(userId, {
         value: data,
@@ -1176,6 +1185,12 @@ export async function updateUserSettings(
     voice_style: normalizeVoiceStylePreference(
       (raw as UserSettings & { voice_style?: string }).voice_style
     ),
+    speech_voice:
+      typeof (raw as UserSettings & { speech_voice?: string }).speech_voice === "string"
+        ? String((raw as UserSettings & { speech_voice?: string }).speech_voice)
+            .trim()
+            .slice(0, 512)
+        : "",
   };
   _userSettingsTtl.set(userId, {
     value: updated,

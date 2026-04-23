@@ -91,6 +91,7 @@ export default function StudyPage({ params }: StudyPageProps) {
     card_style: "paper",
     english_tts: "default",
     voice_style: "default",
+    speech_voice: "",
   });
   const [canFlip, setCanFlip] = useState(false);
   const [studyMenuOpen, setStudyMenuOpen] = useState(false);
@@ -130,6 +131,7 @@ export default function StudyPage({ params }: StudyPageProps) {
     setCurrentIndex: setCurrentCardIndex,
     englishTts: userSettings.english_tts,
     voiceStyle: userSettings.voice_style,
+    speechVoiceKey: userSettings.speech_voice,
   });
   const {
     state: readAllState,
@@ -895,6 +897,7 @@ export default function StudyPage({ params }: StudyPageProps) {
                   )}
                   englishTts={userSettings.english_tts}
                   voiceStyle={userSettings.voice_style}
+                  speechVoiceKey={userSettings.speech_voice}
                 />
                 <ReadTabReadAllBar
                   className="ms-0.5"
@@ -1021,6 +1024,7 @@ export default function StudyPage({ params }: StudyPageProps) {
                       aria-label={showAnswer ? "Speak answer" : "Speak question"}
                       englishTts={userSettings.english_tts}
                       voiceStyle={userSettings.voice_style}
+                      speechVoiceKey={userSettings.speech_voice}
                     />
                   </div>
                 </div>
