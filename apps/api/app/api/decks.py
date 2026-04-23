@@ -10,7 +10,10 @@ from fastapi.responses import PlainTextResponse
 from sqlalchemy import and_, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.category_deck_order import renormalize_category_positions
+from app.core.category_deck_order import (
+    move_deck_to_bottom_of_category,
+    renormalize_category_positions,
+)
 from app.core.database import get_db
 from app.core.user_activity import record_user_activity
 from app.core.platform_admin import assert_acting_user_is_platform_admin
@@ -334,6 +337,7 @@ async def update_deck(
     if deck is None:
         raise HTTPException(status_code=404, detail="Deck not found")
     await assert_may_mutate_deck(db, trusted_id, deck)
+    prev_study = deck.study_status
 
     if data.name is not None:
         deck.name = data.name
@@ -372,7 +376,10 @@ async def update_deck(
             renormalize_old_cat = prev_cat
             renormalize_new_cat = new_cat_id
 
+    study_transition_to_studied = False
     if data.study_status is not None:
+        if data.study_status == "studied" and (not prev_study or prev_study != "studied"):
+            study_transition_to_studied = True
         deck.study_status = data.study_status
 
     await db.flush()
@@ -381,6 +388,11 @@ async def update_deck(
         await renormalize_category_positions(db, renormalize_old_cat, deck.user_id)
     if renormalize_new_cat:
         await renormalize_category_positions(db, renormalize_new_cat, deck.user_id)
+
+    if study_transition_to_studied and deck.category_id:
+        await move_deck_to_bottom_of_category(
+            db, deck.category_id, deck.user_id, deck.id
+        )
 
     await db.refresh(deck)
 

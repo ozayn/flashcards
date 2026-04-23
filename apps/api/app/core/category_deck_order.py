@@ -44,6 +44,22 @@ async def renormalize_category_positions(
     await db.flush()
 
 
+async def move_deck_to_bottom_of_category(
+    db: AsyncSession, category_id: str, user_id: str, deck_id: str
+) -> bool:
+    """Move one deck to the end of manual order. Returns False if already last or not in category."""
+    decks = await fetch_decks_in_category_ordered(db, category_id, user_id)
+    idx = next((i for i, d in enumerate(decks) if d.id == deck_id), None)
+    if idx is None or idx == len(decks) - 1:
+        return False
+    moved = decks.pop(idx)
+    decks.append(moved)
+    for i, d in enumerate(decks):
+        d.category_position = i
+    await db.flush()
+    return True
+
+
 async def reorder_deck_in_category(
     db: AsyncSession,
     category_id: str,

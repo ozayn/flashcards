@@ -79,7 +79,7 @@ import {
   DECK_STUDY_STATUS_LABELS,
   type DeckStudyStatus,
 } from "@/lib/deck-study-status";
-import { cn } from "@/lib/utils";
+import { blurActiveElementToAvoidScrollOnReorder, cn } from "@/lib/utils";
 
 const SHOW_DECK_DATES_STORAGE_KEY = "flashcards_deck_show_dates";
 
@@ -929,6 +929,7 @@ export default function DecksPage() {
       allowed: boolean
     ) => {
       if (!userId || !menuCategoryId || !allowed) return;
+      blurActiveElementToAvoidScrollOnReorder();
       setOpenDeckMenuId(null);
       const snapshot = decks;
       const next = reorderDecksInCategoryState(
@@ -1127,9 +1128,9 @@ export default function DecksPage() {
                 studyStatus={coerceDeckStudyStatus(deck.study_status)}
                 density="list"
                 onSelect={async (study_status) => {
-                  await updateDeck(deck.id, { study_status });
+                  const updated = (await updateDeck(deck.id, { study_status })) as Deck;
                   setDecks((prev) =>
-                    prev.map((d) => (d.id === deck.id ? { ...d, study_status } : d))
+                    prev.map((d) => (d.id === deck.id ? { ...d, ...updated } : d))
                   );
                 }}
               />
@@ -1181,9 +1182,9 @@ export default function DecksPage() {
           studyStatus={coerceDeckStudyStatus(deck.study_status)}
           density="grid"
           onSelect={async (study_status) => {
-            await updateDeck(deck.id, { study_status });
+            const updated = (await updateDeck(deck.id, { study_status })) as Deck;
             setDecks((prev) =>
-              prev.map((d) => (d.id === deck.id ? { ...d, study_status } : d))
+              prev.map((d) => (d.id === deck.id ? { ...d, ...updated } : d))
             );
           }}
         />

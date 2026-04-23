@@ -19,6 +19,7 @@ import { DeckGenerationBadge } from "@/components/DeckGenerationBadge";
 import { DeckStudyStatusPillMenu } from "@/components/DeckStudyStatusPillMenu";
 import { Button } from "@/components/ui/button";
 import { coerceDeckStudyStatus } from "@/lib/deck-study-status";
+import { blurActiveElementToAvoidScrollOnReorder } from "@/lib/utils";
 
 interface CategoryPageProps {
   params: { categoryId: string };
@@ -39,6 +40,24 @@ interface CategoryDeck {
 }
 
 type SortMode = "category_order" | "newest" | "oldest" | "az";
+
+/** Match API: explicit category_position, then assigned/created legacy sort. */
+function _categoryDeckLegacySortKey(d: CategoryDeck): number {
+  const s = d.category_assigned_at ?? d.created_at ?? "";
+  const t = Date.parse(s);
+  return Number.isFinite(t) ? t : 0;
+}
+
+function compareCategoryDecksInOrder(a: CategoryDeck, b: CategoryDeck): number {
+  const aNull = a.category_position == null;
+  const bNull = b.category_position == null;
+  if (!aNull && !bNull && a.category_position !== b.category_position) {
+    return (a.category_position as number) - (b.category_position as number);
+  }
+  if (!aNull && bNull) return -1;
+  if (aNull && !bNull) return 1;
+  return _categoryDeckLegacySortKey(a) - _categoryDeckLegacySortKey(b);
+}
 
 /** Reorder a deck with its neighbor in server order; avoids a full list refetch for smooth UI. */
 function swapDeckWithNeighbor<T extends { id: string }>(
@@ -174,6 +193,7 @@ export default function CategoryPage({ params }: CategoryPageProps) {
         ? swapDeckWithNeighbor(previous, deckId, direction)
         : moveDeckToListEdge(previous, deckId, direction);
     if (!optimistic) return;
+    blurActiveElementToAvoidScrollOnReorder();
     setDecks(optimistic);
     setReorderBusyId(deckId);
     void (async () => {
@@ -229,10 +249,15 @@ export default function CategoryPage({ params }: CategoryPageProps) {
                   studyStatus={coerceDeckStudyStatus(deck.study_status)}
                   density="list"
                   onSelect={async (study_status) => {
-                    await updateDeck(deck.id, { study_status });
-                    setDecks((prev) =>
-                      prev.map((d) => (d.id === deck.id ? { ...d, study_status } : d))
-                    );
+                    const updated = (await updateDeck(deck.id, {
+                      study_status,
+                    })) as CategoryDeck;
+                    setDecks((prev) => {
+                      const next = prev.map((d) =>
+                        d.id === deck.id ? { ...d, ...updated } : d
+                      );
+                      return [...next].sort(compareCategoryDecksInOrder);
+                    });
                   }}
                 />
               </span>
@@ -440,10 +465,15 @@ export default function CategoryPage({ params }: CategoryPageProps) {
                 studyStatus={coerceDeckStudyStatus(deck.study_status)}
                 density="grid"
                 onSelect={async (study_status) => {
-                  await updateDeck(deck.id, { study_status });
-                  setDecks((prev) =>
-                    prev.map((d) => (d.id === deck.id ? { ...d, study_status } : d))
-                  );
+                  const updated = (await updateDeck(deck.id, {
+                    study_status,
+                  })) as CategoryDeck;
+                  setDecks((prev) => {
+                    const next = prev.map((d) =>
+                      d.id === deck.id ? { ...d, ...updated } : d
+                    );
+                    return [...next].sort(compareCategoryDecksInOrder);
+                  });
                 }}
               />
             </span>

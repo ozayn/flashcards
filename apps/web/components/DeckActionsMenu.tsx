@@ -100,7 +100,8 @@ export function DeckActionsMenu({
   useEffect(() => {
     if (!open) {
       if (prevOpenRef.current) {
-        triggerRef.current?.focus();
+        // Avoid scrolling the list when the open deck row repositions (e.g. category reorder).
+        triggerRef.current?.focus({ preventScroll: true });
       }
       prevOpenRef.current = false;
       return;
