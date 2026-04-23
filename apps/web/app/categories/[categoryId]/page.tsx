@@ -4,11 +4,13 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ChevronDown, ChevronUp, Eye, LayoutGrid, List, Search } from "lucide-react";
-import { getCategoryDecks, getCategories, reorderCategoryDeck } from "@/lib/api";
+import { getCategoryDecks, getCategories, reorderCategoryDeck, updateDeck } from "@/lib/api";
 import { getStoredUserId } from "@/components/user-selector";
 import PageContainer from "@/components/layout/page-container";
 import { DeckGenerationBadge } from "@/components/DeckGenerationBadge";
+import { DeckStudyStatusPillMenu } from "@/components/DeckStudyStatusPillMenu";
 import { Button } from "@/components/ui/button";
+import { coerceDeckStudyStatus } from "@/lib/deck-study-status";
 
 interface CategoryPageProps {
   params: { categoryId: string };
@@ -25,6 +27,7 @@ interface CategoryDeck {
   category_position?: number | null;
   generation_status?: string;
   is_public?: boolean;
+  study_status?: string | null;
 }
 
 type SortMode = "category_order" | "newest" | "oldest" | "az";
@@ -150,20 +153,37 @@ export default function CategoryPage({ params }: CategoryPageProps) {
         className="deck-card group rounded-lg border border-border px-4 py-3.5 flex items-center justify-between gap-3 hover:bg-muted/40 transition-colors cursor-pointer max-mobile:px-3.5 max-mobile:py-3"
       >
         <div className="flex items-center gap-3 flex-1 min-w-0">
-          <div className="flex flex-col gap-0.5 min-w-0">
-            <div className="flex flex-wrap items-center gap-2 min-w-0">
-              <span className="font-medium text-sm leading-snug truncate">{deck.name}</span>
+          <div className="flex flex-col gap-1 min-w-0">
+            <span className="font-medium text-sm leading-snug truncate">
+              {deck.name}
+            </span>
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
+              <span className="tabular-nums shrink-0">
+                {deck.card_count ?? 0} {(deck.card_count ?? 0) === 1 ? "card" : "cards"}
+              </span>
               <DeckGenerationBadge status={deck.generation_status} />
-            </div>
-            <span className="text-xs text-muted-foreground">
-              {deck.card_count ?? 0} {(deck.card_count ?? 0) === 1 ? "card" : "cards"}
+              <span className="text-muted-foreground/40" aria-hidden>
+                ·
+              </span>
+              <DeckStudyStatusPillMenu
+                studyStatus={coerceDeckStudyStatus(deck.study_status)}
+                density="list"
+                onSelect={async (study_status) => {
+                  await updateDeck(deck.id, { study_status });
+                  setDecks((prev) =>
+                    prev.map((d) => (d.id === deck.id ? { ...d, study_status } : d))
+                  );
+                }}
+              />
               {deck.is_public && (
                 <>
-                  {" "}
-                  · <span className="text-emerald-600 dark:text-emerald-400">Public</span>
+                  <span className="text-muted-foreground/40" aria-hidden>
+                    ·
+                  </span>
+                  <span className="text-emerald-600 dark:text-emerald-400">Public</span>
                 </>
               )}
-            </span>
+            </div>
           </div>
         </div>
         {showCategoryReorder && (
@@ -274,24 +294,43 @@ export default function CategoryPage({ params }: CategoryPageProps) {
             </Button>
           </div>
         )}
-        <div className={`flex flex-wrap items-center gap-2 min-w-0 ${showCategoryReorder ? "pr-14" : ""}`}>
-          <h3 className="font-semibold text-sm leading-snug line-clamp-2 min-w-0 flex-1">{deck.name}</h3>
-          <DeckGenerationBadge status={deck.generation_status} />
+        <div className={`min-w-0 ${showCategoryReorder ? "pr-14" : ""}`}>
+          <h3 className="font-semibold text-sm leading-snug line-clamp-2 min-w-0">
+            {deck.name}
+          </h3>
+          <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-x-1 overflow-hidden text-muted-foreground text-[10px] leading-tight sm:text-[11px]">
+            <span className="shrink-0 tabular-nums">
+              {deck.card_count ?? 0} {(deck.card_count ?? 0) === 1 ? "card" : "cards"}
+            </span>
+            <DeckGenerationBadge status={deck.generation_status} />
+            <span className="shrink-0 text-muted-foreground/40" aria-hidden>
+              ·
+            </span>
+            <DeckStudyStatusPillMenu
+              studyStatus={coerceDeckStudyStatus(deck.study_status)}
+              density="grid"
+              onSelect={async (study_status) => {
+                await updateDeck(deck.id, { study_status });
+                setDecks((prev) =>
+                  prev.map((d) => (d.id === deck.id ? { ...d, study_status } : d))
+                );
+              }}
+            />
+            {deck.is_public && (
+              <>
+                <span className="shrink-0 text-muted-foreground/40" aria-hidden>
+                  ·
+                </span>
+                <span className="shrink-0 text-emerald-600 dark:text-emerald-400">Public</span>
+              </>
+            )}
+          </div>
         </div>
         {deck.description ? (
-          <p className="text-xs text-muted-foreground leading-relaxed line-clamp-2">{deck.description}</p>
+          <p className="text-xs text-muted-foreground leading-relaxed line-clamp-2 mt-1.5">
+            {deck.description}
+          </p>
         ) : null}
-        <div className="flex items-center gap-2 mt-auto pt-1 text-xs text-muted-foreground">
-          <span>
-            {deck.card_count ?? 0} {(deck.card_count ?? 0) === 1 ? "card" : "cards"}
-          </span>
-          {deck.is_public && (
-            <>
-              {" "}
-              · <span className="text-emerald-600 dark:text-emerald-400">Public</span>
-            </>
-          )}
-        </div>
       </div>
     );
   }

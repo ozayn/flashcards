@@ -358,7 +358,13 @@ export function DeckStudyStatusPillMenu({
             );
           }}
         />
-        <TooltipContent variant="hint" side="top" sideOffset={6}>
+        <TooltipContent
+          variant="hint"
+          side="right"
+          sideOffset={8}
+          align="center"
+          className="max-w-[14rem] text-balance"
+        >
           {label}
         </TooltipContent>
       </Tooltip>
