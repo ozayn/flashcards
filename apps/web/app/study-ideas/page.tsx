@@ -1,12 +1,20 @@
 "use client";
 
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type ComponentPropsWithRef,
+} from "react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
 import {
   Archive,
   CheckCircle2,
   ExternalLink,
+  HelpCircle,
   Loader2,
   MoreVertical,
   Pencil,
@@ -17,6 +25,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import PageContainer from "@/components/layout/page-container";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { getStoredUserId } from "@/components/user-selector";
 import {
   buildCreateDeckSearchParamsFromIdea,
@@ -41,6 +50,29 @@ const STATUS_SHORT: Record<StudyIdeaStatus, string> = {
   ready: "Ready",
   archived: "Archived",
 };
+
+/** Shown in tooltips (filters, card badge, status help in edit). */
+const STATUS_HELP: Record<"all" | StudyIdeaStatus, string> = {
+  all: "Show every study idea, any status.",
+  idea: "A rough topic or note to revisit later.",
+  ready:
+    "Prepared enough to turn into a deck—use Create deck when you are ready to build one.",
+  archived: "Hidden from your active list.",
+};
+
+const ALL_STATUSES_STATUS_HELP = (
+  <div className="space-y-1.5 text-left">
+    <p>
+      <span className="font-medium text-foreground/95">Idea</span> — {STATUS_HELP.idea}
+    </p>
+    <p>
+      <span className="font-medium text-foreground/95">Ready</span> — {STATUS_HELP.ready}
+    </p>
+    <p>
+      <span className="font-medium text-foreground/95">Archived</span> — {STATUS_HELP.archived}
+    </p>
+  </div>
+);
 
 function useCloseOnEscape(open: boolean, onClose: () => void) {
   useEffect(() => {
@@ -243,9 +275,33 @@ function IdeaCard({
             <h2 className="text-[15px] font-medium leading-snug text-foreground [overflow-wrap:anywhere]">
               {idea.title}
             </h2>
-            <span className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-muted-foreground/90">
-              {STATUS_SHORT[idea.status]}
-            </span>
+            <Tooltip>
+              <TooltipTrigger
+                delay={400}
+                render={(props: ComponentPropsWithRef<"span">) => {
+                  const { className: tc, ...tr } = props;
+                  return (
+                    <span
+                      {...tr}
+                      className={cn(
+                        "shrink-0 cursor-default text-[10px] font-medium uppercase tracking-wide text-muted-foreground/90",
+                        tc
+                      )}
+                    >
+                      {STATUS_SHORT[idea.status]}
+                    </span>
+                  );
+                }}
+              />
+              <TooltipContent
+                variant="hint"
+                side="left"
+                sideOffset={6}
+                className="max-w-[16rem] text-balance"
+              >
+                {STATUS_HELP[idea.status]}
+              </TooltipContent>
+            </Tooltip>
           </div>
           {idea.body?.trim() ? (
             <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground line-clamp-3 whitespace-pre-wrap">
@@ -488,19 +544,42 @@ export default function StudyIdeasPage() {
               aria-label="Filter by status"
             >
               {STATUS_FILTER.map((f) => (
-                <button
-                  key={f.value}
-                  type="button"
-                  onClick={() => setFilter(f.value)}
-                  className={cn(
-                    "border-b-2 py-1.5 text-xs transition-colors",
-                    filter === f.value
-                      ? "border-foreground/70 font-medium text-foreground"
-                      : "border-transparent text-muted-foreground hover:text-foreground/80"
-                  )}
-                >
-                  {f.label}
-                </button>
+                <Tooltip key={f.value}>
+                  <TooltipTrigger
+                    delay={400}
+                    render={(props: ComponentPropsWithRef<"button">) => {
+                      const { className: tc, ref, ...tr } = props;
+                      return (
+                        <button
+                          ref={ref}
+                          type="button"
+                          {...tr}
+                          onClick={(e) => {
+                            tr.onClick?.(e);
+                            setFilter(f.value);
+                          }}
+                          className={cn(
+                            "border-b-2 py-1.5 text-xs transition-colors",
+                            filter === f.value
+                              ? "border-foreground/70 font-medium text-foreground"
+                              : "border-transparent text-muted-foreground hover:text-foreground/80",
+                            tc
+                          )}
+                        >
+                          {f.label}
+                        </button>
+                      );
+                    }}
+                  />
+                  <TooltipContent
+                    variant="hint"
+                    side="bottom"
+                    sideOffset={6}
+                    className="z-50 max-w-[16rem] text-balance"
+                  >
+                    {STATUS_HELP[f.value]}
+                  </TooltipContent>
+                </Tooltip>
               ))}
             </nav>
           </div>
@@ -622,17 +701,50 @@ export default function StudyIdeasPage() {
                 setUrl={setEditUrl}
               />
               <div>
-                <label htmlFor="edit-status" className="text-xs text-muted-foreground">
-                  Status
-                </label>
+                <div className="mb-1 flex items-center gap-0.5">
+                  <label htmlFor="edit-status" className="text-xs text-muted-foreground">
+                    Status
+                  </label>
+                  <Tooltip>
+                    <TooltipTrigger
+                      delay={300}
+                      render={(props: ComponentPropsWithRef<"button">) => {
+                        const { className: tc, ref, ...tr } = props;
+                        return (
+                          <button
+                            ref={ref}
+                            type="button"
+                            {...tr}
+                            className={cn(
+                              "inline-flex size-6 items-center justify-center rounded text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+                              tc
+                            )}
+                            aria-label="What Idea, Ready, and Archived mean"
+                          >
+                            <HelpCircle className="size-3" strokeWidth={1.75} />
+                          </button>
+                        );
+                      }}
+                    />
+                    <TooltipContent
+                      variant="hint"
+                      side="right"
+                      align="start"
+                      sideOffset={8}
+                      className="z-[110] max-w-[17rem]"
+                    >
+                      {ALL_STATUSES_STATUS_HELP}
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
                 <select
                   id="edit-status"
-                  className="mt-1 h-8 w-full rounded-md border border-border/50 bg-background px-2 text-sm"
+                  className="h-8 w-full rounded-md border border-border/50 bg-background px-2 text-sm"
                   value={editStatus}
                   onChange={(e) => setEditStatus(e.target.value as StudyIdeaStatus)}
                 >
                   {(["idea", "ready", "archived"] as const).map((s) => (
-                    <option key={s} value={s}>
+                    <option key={s} value={s} title={STATUS_HELP[s]}>
                       {STATUS_SHORT[s]}
                     </option>
                   ))}
