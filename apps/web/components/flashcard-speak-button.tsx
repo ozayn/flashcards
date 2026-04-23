@@ -4,7 +4,6 @@ import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { Volume2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { TtsDevDebugLine } from "@/components/tts-dev-debug-line";
 import {
   flashcardSpeechStore,
   isSpeechSynthesisAvailable,
@@ -61,23 +60,20 @@ export function FlashcardSpeakButton({
   if (!apiOk) return null;
 
   return (
-    <span className="inline-flex flex-col items-start gap-0">
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon"
-        className={cn(
-          "h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground hover:bg-muted/70",
-          isPlaying && "text-foreground",
-          className
-        )}
-        aria-label={ariaLabel}
-        aria-pressed={isPlaying}
-        onClick={onClick}
-      >
-        <Volume2 className={cn("size-3.5", isPlaying && "opacity-100", !isPlaying && "opacity-80")} />
-      </Button>
-      <TtsDevDebugLine className="max-w-[8rem] sm:max-w-[10rem] mt-0.5" />
-    </span>
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon"
+      className={cn(
+        "h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground hover:bg-muted/70",
+        isPlaying && "text-foreground",
+        className
+      )}
+      aria-label={ariaLabel}
+      aria-pressed={isPlaying}
+      onClick={onClick}
+    >
+      <Volume2 className={cn("size-3.5", isPlaying && "opacity-100", !isPlaying && "opacity-80")} />
+    </Button>
   );
 }

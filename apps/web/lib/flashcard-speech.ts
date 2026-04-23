@@ -214,36 +214,6 @@ export function normalizeSpeechVoiceKey(raw: string | null | undefined): string 
   return String(raw).trim().slice(0, 512);
 }
 
-export type TtsDebugSnapshot = {
-  /** Human-readable text classification (for logs / dev line). */
-  detectedTextLanguage: string;
-  voiceName: string;
-  voiceLang: string;
-  /** How the voice was chosen. */
-  resolution: "user_picker" | "preference" | "user_picker_unavailable" | "browser_default";
-  updatedAt: number;
-};
-
-const ttsDebugListeners = new Set<() => void>();
-let lastTtsDebug: TtsDebugSnapshot | null = null;
-
-function emitTtsDebug(snapshot: TtsDebugSnapshot) {
-  lastTtsDebug = snapshot;
-  ttsDebugListeners.forEach((cb) => cb());
-}
-
-/**
- * Development / dev tools: last resolved voice for an utterance (read-only).
- */
-export function getTtsDebugSnapshot(): TtsDebugSnapshot | null {
-  return lastTtsDebug;
-}
-
-export function subscribeTtsDebug(cb: () => void) {
-  ttsDebugListeners.add(cb);
-  return () => ttsDebugListeners.delete(cb);
-}
-
 let playingKey: string | null = null;
 const listeners = new Set<() => void>();
 let opSeq = 0;
@@ -450,7 +420,8 @@ function resolveFlashcardVoice(
   return { voice: vAlgo, resolution: "preference", hadUserKey: false };
 }
 
-function logAndEmitTtsDebug(plain: string, voice: SpeechSynthesisVoice | null, resolution: VoiceResolution) {
+/** Logs TTS voice resolution in development only (no user-facing UI). */
+function logTtsSelection(plain: string, voice: SpeechSynthesisVoice | null, resolution: VoiceResolution) {
   const detectedTextLanguage = detectTextLanguageForTts(plain);
   const voiceName = voice?.name?.trim() || "";
   const voiceLang = (voice?.lang && voice.lang.trim()) || "";
@@ -471,21 +442,6 @@ function logAndEmitTtsDebug(plain: string, voice: SpeechSynthesisVoice | null, r
       resolution: resLabel,
     });
   }
-
-  emitTtsDebug({
-    detectedTextLanguage,
-    voiceName: voiceName || "Browser default",
-    voiceLang: voiceLang || "—",
-    resolution:
-      resolution === "user_picker"
-        ? "user_picker"
-        : resolution === "user_picker_unavailable"
-          ? "user_picker_unavailable"
-          : resolution === "preference"
-            ? "preference"
-            : "browser_default",
-    updatedAt: Date.now(),
-  });
 }
 
 function applyPickedVoiceToUtterance(
@@ -501,7 +457,7 @@ function applyPickedVoiceToUtterance(
   } else if (RTL_SCRIPT_RE.test(plain) && !CJK_RE.test(plain) && !/[\u0400-\u04FF]/.test(plain) && !/[\u0590-\u05FF]/.test(plain)) {
     ut.lang = isLikelyFarsiCardText(plain) ? "fa-IR" : "ar";
   }
-  logAndEmitTtsDebug(plain, voice, resolution);
+  logTtsSelection(plain, voice, resolution);
   return voice;
 }
 
@@ -870,10 +826,4 @@ export const flashcardSpeechStore = {
   getSnapshot,
   getServerSnapshot,
   subscribe: subscribeFlashcardSpeechState,
-};
-
-export const ttsDebugStore = {
-  getSnapshot: getTtsDebugSnapshot,
-  getServerSnapshot: () => null as TtsDebugSnapshot | null,
-  subscribe: subscribeTtsDebug,
 };
