@@ -2,13 +2,10 @@
 
 import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
-import { Plus } from "lucide-react";
 import {
   getUsers,
   getUser,
-  createUser,
   waitForApiReadiness,
   apiUrl,
   getUserSettings,
@@ -74,7 +71,6 @@ export type User = {
 };
 
 export function UserSelector() {
-  const router = useRouter();
   const { data: session, status: sessionStatus } = useSession();
   const isAdmin = useClientIsAdmin();
   const [users, setUsers] = useState<User[]>([]);
@@ -82,11 +78,6 @@ export function UserSelector() {
   const [loading, setLoading] = useState(true);
   const [apiError, setApiError] = useState(false);
   const [open, setOpen] = useState(false);
-  const [showAddForm, setShowAddForm] = useState(false);
-  const [addEmail, setAddEmail] = useState("");
-  const [addName, setAddName] = useState("");
-  const [addError, setAddError] = useState<string | null>(null);
-  const [addLoading, setAddLoading] = useState(false);
   const [cardSettings, setCardSettings] = useState<UserSettings | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -239,12 +230,10 @@ export function UserSelector() {
       if (!el || !document.contains(el)) return;
       if (!el.contains(e.target as Node)) {
         setOpen(false);
-        setShowAddForm(false);
       }
     }
     function handleBlur() {
       setOpen(false);
-      setShowAddForm(false);
     }
     document.addEventListener("mousedown", handleClickOutside);
     window.addEventListener("blur", handleBlur);
@@ -253,26 +242,6 @@ export function UserSelector() {
       window.removeEventListener("blur", handleBlur);
     };
   }, [open]);
-
-  const handleSelect = (userId: string) => {
-    const changed = userId !== selectedUserId;
-    setSelectedUserId(userId);
-    localStorage.setItem(STORAGE_KEY, userId);
-    const matchedUser = users.find((u) => u.id === userId);
-    if (matchedUser) {
-      localStorage.setItem(ROLE_STORAGE_KEY, matchedUser.role);
-      localStorage.setItem(NAME_STORAGE_KEY, matchedUser.name);
-      localStorage.setItem(EMAIL_STORAGE_KEY, matchedUser.email);
-    }
-    setOpen(false);
-    setShowAddForm(false);
-    window.dispatchEvent(
-      new CustomEvent("flashcard_user_changed", { detail: { userId } })
-    );
-    if (changed) {
-      router.push("/decks");
-    }
-  };
 
   const handleCardStyleChange = async (
     style: "paper" | "minimal" | "modern" | "anki"
@@ -289,24 +258,6 @@ export function UserSelector() {
       );
     } catch {
       /* ignore */
-    }
-  };
-
-  const handleAddUser = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setAddError(null);
-    setAddLoading(true);
-    try {
-      const newUser = await createUser({ email: addEmail.trim(), name: addName.trim() });
-      setUsers((prev) => [...prev, newUser]);
-      handleSelect(newUser.id);
-      setAddEmail("");
-      setAddName("");
-      setShowAddForm(false);
-    } catch (err) {
-      setAddError(err instanceof Error ? err.message : "Failed to create user");
-    } finally {
-      setAddLoading(false);
     }
   };
 
@@ -333,7 +284,6 @@ export function UserSelector() {
 
   const closeMenu = () => {
     setOpen(false);
-    setShowAddForm(false);
   };
 
   const menuCardStyleSection =
@@ -397,120 +347,6 @@ export function UserSelector() {
     </div>
   );
 
-  if (users.length === 0) {
-    const initialsEmpty = accountMenuInitials(
-      session?.user?.name,
-      session?.user?.email ?? undefined
-    );
-    const emptyListImageUrl =
-      sessionStatus === "authenticated" && session?.user?.image?.trim()
-        ? session.user.image.trim()
-        : undefined;
-    return (
-      <div ref={containerRef} className="relative">
-        <button
-          type="button"
-          onClick={() => setOpen(!open)}
-          className={cn(
-            "relative flex size-9 shrink-0 overflow-hidden rounded-full bg-muted p-0 text-xs font-medium text-foreground ring-offset-background transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-            open && "ring-2 ring-ring ring-offset-2"
-          )}
-          aria-haspopup="menu"
-          aria-expanded={open}
-          aria-label="Account menu"
-        >
-          <AccountAvatar
-            initials={initialsEmpty}
-            imageUrl={emptyListImageUrl}
-            sizePx={36}
-            className="size-full"
-          />
-        </button>
-        {open && (
-          <div
-            className={cn(
-              "absolute right-0 top-full z-50 mt-1 flex w-56 max-w-[calc(100vw-2rem)] flex-col overflow-y-auto overscroll-contain rounded-md border border-border bg-popover py-1 shadow-lg",
-              ACCOUNT_MENU_MAX_H
-            )}
-            role="menu"
-          >
-            {(session?.user?.name || session?.user?.email) && (
-              <div className="px-3 py-2 border-b border-border">
-                {session?.user?.name ? (
-                  <p className="text-sm font-medium truncate">{session.user.name}</p>
-                ) : null}
-                {session?.user?.email ? (
-                  <p className="text-xs text-muted-foreground truncate">{session.user.email}</p>
-                ) : null}
-              </div>
-            )}
-            {menuAccountLinks}
-            {menuCardStyleSection}
-            <div className="border-t border-border mt-1 pt-1 px-1">
-              {showAddForm ? (
-                <form onSubmit={handleAddUser} className="space-y-2 p-2">
-                  <input
-                    id="add-user-email"
-                    name="email"
-                    type="email"
-                    placeholder="Email"
-                    value={addEmail}
-                    onChange={(e) => setAddEmail(e.target.value)}
-                    required
-                    autoComplete="email"
-                    className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm"
-                  />
-                  <input
-                    id="add-user-name"
-                    name="name"
-                    type="text"
-                    placeholder="Name"
-                    value={addName}
-                    onChange={(e) => setAddName(e.target.value)}
-                    required
-                    autoComplete="name"
-                    className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm"
-                  />
-                  {addError && (
-                    <p className="text-xs text-destructive">{addError}</p>
-                  )}
-                  <div className="flex gap-2">
-                    <button
-                      type="submit"
-                      disabled={addLoading}
-                      className="rounded-md bg-primary px-2 py-1.5 text-sm text-primary-foreground hover:bg-primary/80 disabled:opacity-50"
-                    >
-                      {addLoading ? "Adding..." : "Add"}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowAddForm(false);
-                        setAddError(null);
-                      }}
-                      className="rounded-md border border-input px-2 py-1.5 text-sm hover:bg-muted"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </form>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => setShowAddForm(true)}
-                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-                >
-                  <Plus className="size-4" />
-                  Add user
-                </button>
-              )}
-            </div>
-          </div>
-        )}
-      </div>
-    );
-  }
-
   const selectedUser = users.find((u) => u.id === selectedUserId);
   const initials = accountMenuInitials(
     selectedUser?.name ?? session?.user?.name,
@@ -545,109 +381,27 @@ export function UserSelector() {
       {open && (
         <div
           className={cn(
-            "absolute right-0 top-full z-50 mt-1 flex min-w-[11rem] w-56 max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-md border border-border bg-popover py-1 shadow-lg",
+            "absolute right-0 top-full z-50 mt-1 flex w-56 min-w-[11rem] max-w-[calc(100vw-2rem)] flex-col overflow-y-auto overscroll-contain rounded-md border border-border bg-popover py-1 shadow-lg",
             ACCOUNT_MENU_MAX_H
           )}
           role="menu"
         >
-          <div className="shrink-0">
-            {(selectedUser?.name || selectedUser?.email || session?.user?.name || session?.user?.email) && (
-              <div className="border-b border-border px-3 py-2">
-                {(selectedUser?.name || session?.user?.name) ? (
-                  <p className="truncate text-sm font-medium">
-                    {selectedUser?.name ?? session?.user?.name}
-                  </p>
-                ) : null}
-                {(selectedUser?.email || session?.user?.email) ? (
-                  <p className="truncate text-xs text-muted-foreground">
-                    {selectedUser?.email ?? session?.user?.email}
-                  </p>
-                ) : null}
-              </div>
-            )}
-            {menuAccountLinks}
-            {menuCardStyleSection}
-          </div>
-
-          <div className="mt-1 flex min-h-0 flex-1 flex-col border-t border-border">
-            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-              <p className="sticky top-0 z-[1] border-b border-border/60 bg-popover px-3 pb-1 pt-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                Switch user
-              </p>
-              <div className="pb-0.5">
-                {users.map((user) => (
-                  <button
-                    key={user.id}
-                    type="button"
-                    role="menuitem"
-                    onClick={() => handleSelect(user.id)}
-                    className={cn(
-                      "w-full px-3 py-1.5 text-left text-sm leading-tight text-popover-foreground hover:bg-accent hover:text-accent-foreground",
-                      user.id === selectedUserId && "bg-accent/50 font-medium"
-                    )}
-                  >
-                    {user.name}
-                  </button>
-                ))}
-              </div>
+          {(selectedUser?.name || selectedUser?.email || session?.user?.name || session?.user?.email) && (
+            <div className="border-b border-border px-3 py-2">
+              {(selectedUser?.name || session?.user?.name) ? (
+                <p className="truncate text-sm font-medium">
+                  {selectedUser?.name ?? session?.user?.name}
+                </p>
+              ) : null}
+              {(selectedUser?.email || session?.user?.email) ? (
+                <p className="truncate text-xs text-muted-foreground">
+                  {selectedUser?.email ?? session?.user?.email}
+                </p>
+              ) : null}
             </div>
-            <div className="shrink-0 border-t border-border/80 bg-popover pt-0.5">
-              {showAddForm ? (
-                <div className="p-2">
-                  <form onSubmit={handleAddUser} className="space-y-2">
-                    <input
-                      id="add-user-email-dropdown"
-                      name="email"
-                      type="email"
-                      placeholder="Email"
-                      value={addEmail}
-                      onChange={(e) => setAddEmail(e.target.value)}
-                      required
-                      autoComplete="email"
-                      className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm"
-                    />
-                    <input
-                      id="add-user-name-dropdown"
-                      name="name"
-                      type="text"
-                      placeholder="Name"
-                      value={addName}
-                      onChange={(e) => setAddName(e.target.value)}
-                      required
-                      autoComplete="name"
-                      className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm"
-                    />
-                    {addError && <p className="text-xs text-destructive">{addError}</p>}
-                    <div className="flex gap-2">
-                      <button
-                        type="submit"
-                        disabled={addLoading}
-                        className="rounded-md bg-primary px-2 py-1.5 text-sm text-primary-foreground hover:bg-primary/80 disabled:opacity-50"
-                      >
-                        {addLoading ? "Adding..." : "Add"}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => { setShowAddForm(false); setAddError(null); }}
-                        className="rounded-md border border-input px-2 py-1.5 text-sm hover:bg-muted"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </form>
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => setShowAddForm(true)}
-                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-                >
-                  <Plus className="size-4 shrink-0" />
-                  Add user
-                </button>
-              )}
-            </div>
-          </div>
+          )}
+          {menuAccountLinks}
+          {menuCardStyleSection}
         </div>
       )}
     </div>
@@ -724,9 +478,9 @@ export function useTierLimits(): {
 }
 
 /**
- * Whether the selected user has product admin access (from localStorage, synced from
+ * Whether the current user has product admin access (from localStorage, synced from
  * the user list). Always false until mount so server HTML matches the client’s first paint.
- * Updates when the account selector finishes loading or the user switches accounts.
+ * Updates when the user list / stored role changes.
  */
 export function useClientIsAdmin(): boolean {
   const [admin, setAdmin] = useState(false);
