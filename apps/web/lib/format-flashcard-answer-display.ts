@@ -84,3 +84,17 @@ export function shouldShowAnswerDetailed(
   if (d === buildAnswerDisplayText(answerShort, answerExample).trim()) return false;
   return true;
 }
+
+/** Text for TTS: main answer (short + example) and notes when the UI shows a separate notes block. */
+export function buildAnswerSpeechText(
+  answerShort: string,
+  answerExample: string | null | undefined,
+  answerDetailed: string | null | undefined
+): string {
+  const main = buildAnswerDisplayText(answerShort, answerExample);
+  if (shouldShowAnswerDetailed(answerDetailed, answerShort, answerExample)) {
+    const d = (answerDetailed || "").replace(/\r\n/g, "\n").trim();
+    if (d) return `${main}\n\n${d}`.trim();
+  }
+  return main;
+}

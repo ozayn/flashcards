@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, Suspense } from "react";
+import { useState, useEffect, useRef, useMemo, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -15,7 +15,7 @@ import {
   importFlashcards,
   isYouTubePlaylistUrl,
   normalizeYouTubeUrl,
-  parseQAPairs,
+  parseDeckTextImport,
   TranscriptFetchError,
 } from "@/lib/api";
 import { getStoredUserId, useTierLimits } from "@/components/user-selector";
@@ -126,7 +126,18 @@ function CreateDeckForm() {
   const articleUrlTrimmed = articleUrl.trim();
 
   const importTextTrimmed = importText.trim();
-  const importQAPairs = generationMode === "import" ? parseQAPairs(importTextTrimmed) : null;
+  const importDeckTextResult = useMemo(() => {
+    if (generationMode !== "import" || !importTextTrimmed) {
+      return null;
+    }
+    return parseDeckTextImport(importTextTrimmed);
+  }, [generationMode, importTextTrimmed]);
+  const importQAPairs =
+    importDeckTextResult && importDeckTextResult.ok ? importDeckTextResult.pairs : null;
+  const importParseError =
+    importDeckTextResult && !importDeckTextResult.ok
+      ? importDeckTextResult.error
+      : null;
 
   const topicForGeneration =
     topicTrimmed || (useNameAsTopic && !topicTrimmed ? nameTrimmed : "");
@@ -163,19 +174,19 @@ function CreateDeckForm() {
       const reader = new FileReader();
       reader.onload = () => {
         const text = reader.result as string;
-        const pairs = parseQAPairs(text.trim());
-        if (pairs && pairs.length > 0) {
+        const parsed = parseDeckTextImport(text.trim());
+        if (parsed.ok && parsed.pairs.length > 0) {
           allTexts.push(text);
-          fileSummaries.push({ name: file.name, pairCount: pairs.length });
+          fileSummaries.push({ name: file.name, pairCount: parsed.pairs.length });
         } else {
-          fileSummaries.push({ name: file.name, pairCount: 0, error: "No valid Q:/A: pairs" });
+          fileSummaries.push({ name: file.name, pairCount: 0, error: "No importable cards" });
         }
         loaded++;
         if (loaded === validFiles.length) {
           setImportText(allTexts.join("\n\n"));
           setImportFiles(fileSummaries);
           if (allTexts.length === 0) {
-            setImportError("No valid Q:/A: pairs found in any of the uploaded files.");
+            setImportError("No importable text found. Use a deck .txt export or Q: / A: pairs in each file.");
           }
           if (importFileRef.current) importFileRef.current.value = "";
         }
@@ -234,12 +245,21 @@ function CreateDeckForm() {
         return;
       }
     } else if (generationMode === "import") {
-      if (!nameTrimmed) {
-        setFormError("Please enter a deck name for the imported cards.");
+      if (!importQAPairs || importQAPairs.length === 0) {
+        setFormError(
+          importParseError ||
+            "Paste or upload a deck export (.txt) or Q: / A: list first."
+        );
         return;
       }
-      if (!importQAPairs || importQAPairs.length === 0) {
-        setFormError("No valid Q:/A: pairs found. Paste or upload Q/A content first.");
+      const exportTitle =
+        importDeckTextResult?.ok &&
+        importDeckTextResult.format === "export" &&
+        importDeckTextResult.metadata?.title
+          ? importDeckTextResult.metadata.title
+          : null;
+      if (!nameTrimmed && !exportTitle) {
+        setFormError("Please enter a deck name for the imported cards.");
         return;
       }
     } else if (generationMode === "url") {
@@ -302,10 +322,23 @@ function CreateDeckForm() {
 
       if (generationMode === "import" && importQAPairs) {
         setLoadingMessage("Saving…");
+        const m =
+          importDeckTextResult?.ok && importDeckTextResult.format === "export"
+            ? importDeckTextResult.metadata
+            : undefined;
+        const deckName = nameTrimmed || m?.title || "Imported deck";
+        const sourceUrl = m?.sourceUrl;
+        const isYoutubeExport = Boolean(
+          sourceUrl &&
+            /youtube\.com|youtu\.be/i.test(sourceUrl) &&
+            /youtube/i.test((m?.source || "").toLowerCase())
+        );
         const deck = await createDeck({
           user_id: userId,
-          name: nameTrimmed,
-          source_type: "text",
+          name: deckName,
+          source_type: isYoutubeExport ? "youtube" : "text",
+          source_url: m?.sourceUrl || undefined,
+          source_topic: m?.topic || m?.title || undefined,
         });
         const deckId = (deck as { id: string }).id;
         setLoadingMessage("Importing…");
@@ -862,7 +895,7 @@ function CreateDeckForm() {
                   </label>
                   <textarea
                     id="import-text"
-                    placeholder={"Q: …\nA: …"}
+                    placeholder={"Deck .txt export, or Q: … / A: … blocks"}
                     value={importText}
                     onChange={(e) => {
                       setImportText(e.target.value);
@@ -895,7 +928,15 @@ function CreateDeckForm() {
                         Format
                       </summary>
                       <p className="mt-2 border-l-2 border-border/60 pl-2 text-[11px] leading-relaxed">
-                        One card per Q:/A: block. Imported as-is (no AI).
+                        <span className="block">
+                          <strong>Export</strong>: paste a .txt from the deck page (dashed lines and
+                          1. 2. … questions). Optional title, category, and source are read from the
+                          header.
+                        </span>
+                        <span className="mt-1 block">
+                          <strong>Simple</strong>: one card per <code className="text-[10px]">Q:</code> /{" "}
+                          <code className="text-[10px]">A:</code> block. No AI.
+                        </span>
                       </p>
                     </details>
                   </div>
@@ -922,7 +963,8 @@ function CreateDeckForm() {
                 )}
                 {importTextTrimmed && !importQAPairs && importFiles.length === 0 && (
                   <p className="text-xs text-amber-600 dark:text-amber-400">
-                    Need Q: and A: lines per card.
+                    {importParseError ||
+                      "Paste a deck export or use Q: and A: lines for each card."}
                   </p>
                 )}
                 {importError && <p className="text-xs text-destructive">{importError}</p>}

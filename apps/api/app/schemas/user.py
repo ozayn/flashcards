@@ -62,6 +62,7 @@ class UserSettingsResponse(BaseModel):
     think_delay_enabled: bool = True
     think_delay_ms: int = Field(default=1500, ge=0, le=30000)
     card_style: str = "paper"
+    english_tts: str = "default"
 
     model_config = {"from_attributes": True}
 
@@ -70,6 +71,9 @@ class UserSettingsUpdate(BaseModel):
     think_delay_enabled: Optional[bool] = None
     think_delay_ms: Optional[int] = Field(default=None, ge=0, le=30000)
     card_style: Optional[str] = Field(default=None, pattern="^(paper|minimal|modern|anki)$")
+    english_tts: Optional[str] = Field(
+        default=None, pattern="^(default|british|american)$"
+    )
 
 
 class UserProfileNameUpdate(BaseModel):

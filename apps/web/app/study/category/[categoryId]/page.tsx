@@ -8,8 +8,10 @@ import { Flashcard } from "@/components/study/Flashcard";
 import FormattedText from "@/components/FormattedText";
 import {
   buildAnswerDisplayText,
+  buildAnswerSpeechText,
   shouldShowAnswerDetailed,
 } from "@/lib/format-flashcard-answer-display";
+import { cancelAllFlashcardSpeech } from "@/lib/flashcard-speech";
 import {
   getCategoryDecks,
   getCategories,
@@ -20,6 +22,7 @@ import {
   type UserSettings,
 } from "@/lib/api";
 import { getStoredUserId } from "@/components/user-selector";
+import { FlashcardSpeakButton } from "@/components/flashcard-speak-button";
 
 interface CategoryStudyPageProps {
   params: { categoryId: string };
@@ -63,6 +66,7 @@ export default function CategoryStudyPage({ params }: CategoryStudyPageProps) {
     think_delay_enabled: true,
     think_delay_ms: 1500,
     card_style: "paper",
+    english_tts: "default",
   });
   const touchStartX = useRef(0);
 
@@ -209,6 +213,16 @@ export default function CategoryStudyPage({ params }: CategoryStudyPageProps) {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [cardsLoading, flashcards.length, canFlip, handleNext, handlePrev]);
+
+  useEffect(() => {
+    return () => {
+      cancelAllFlashcardSpeech();
+    };
+  }, []);
+
+  useEffect(() => {
+    cancelAllFlashcardSpeech();
+  }, [currentCardIndex, currentDeckIndex, params.categoryId]);
 
   function advanceToNextDeck() {
     const next = currentDeckIndex + 1;
@@ -464,6 +478,25 @@ export default function CategoryStudyPage({ params }: CategoryStudyPageProps) {
               dir="auto"
               className="flashcard relative mx-auto flex w-full max-w-2xl touch-pan-y flex-col overflow-hidden rounded-2xl shadow-md sm:max-w-3xl aspect-[3/2] landscape-mobile:aspect-auto landscape-mobile:max-h-[min(28rem,calc(100dvh-6.75rem-env(safe-area-inset-top,0px)-env(safe-area-inset-bottom,0px)))] landscape-mobile:min-h-[11rem] landscape-mobile:w-full transition-shadow duration-200 hover:shadow-lg"
             >
+              <div className="pointer-events-auto absolute start-2 top-2 z-20 sm:start-3 sm:top-3">
+                <div className="flex rounded-md bg-background/80 backdrop-blur-sm">
+                  <FlashcardSpeakButton
+                    className="h-8 w-8"
+                    utteranceKey={`cat-study-${params.categoryId}-${card.id}-${showAnswer ? "a" : "q"}`}
+                    text={
+                      showAnswer
+                        ? buildAnswerSpeechText(
+                            card.answer_short,
+                            card.answer_example,
+                            card.answer_detailed
+                          )
+                        : card.question
+                    }
+                    aria-label={showAnswer ? "Speak answer" : "Speak question"}
+                    englishTts={userSettings.english_tts}
+                  />
+                </div>
+              </div>
               <Flashcard
                 cardStyle={userSettings.card_style}
                 front={

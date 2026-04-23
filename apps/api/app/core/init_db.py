@@ -255,6 +255,16 @@ async def init_db() -> None:
     logger.info("Applied card_style column migration")
 
     async with engine.begin() as conn:
+        def _migrate_english_tts(sync_conn):
+            _add_column_if_missing(
+                sync_conn, "users", "english_tts",
+                "ALTER TABLE users ADD COLUMN english_tts TEXT DEFAULT 'default'",
+                pg_if_not_exists="ALTER TABLE users ADD COLUMN IF NOT EXISTS english_tts VARCHAR(16) DEFAULT 'default'",
+            )
+        await conn.run_sync(_migrate_english_tts)
+    logger.info("Applied english_tts column migration")
+
+    async with engine.begin() as conn:
         def _migrate_google_sub(sync_conn):
             # SQLite rejects "ADD COLUMN ... UNIQUE" (OperationalError: Cannot add a UNIQUE column).
             # Add the column plain, then enforce uniqueness with a unique index (multiple NULLs allowed).

@@ -2,6 +2,11 @@
  * Client-side: call same-origin Next.js API proxy. Server-side proxy uses
  * API_INTERNAL_URL (Railway private networking) when available.
  */
+import type { EnglishTtsPreference } from "./flashcard-speech";
+import { normalizeEnglishTtsPreference } from "./flashcard-speech";
+
+export type { EnglishTtsPreference } from "./flashcard-speech";
+
 const API_BASE = "/api/proxy";
 
 /** Parse FastAPI `detail` (string or validation list) for user-facing errors. */
@@ -971,6 +976,15 @@ export async function importFlashcards(data: {
 }
 
 export { parseQAPairs } from "./parse-qa-pairs";
+export {
+  parseDeckTextImport,
+  looksLikeExportFormat,
+  parseExportFormat,
+} from "./parse-deck-text-import";
+export type {
+  DeckTextImportResult,
+  DeckTextImportMetadata,
+} from "./parse-deck-text-import";
 
 export async function getFlashcard(flashcardId: string) {
   const res = await fetch(`${API_BASE}/flashcards/${flashcardId}`, {
@@ -1093,12 +1107,13 @@ export interface UserSettings {
   think_delay_enabled: boolean;
   think_delay_ms: number;
   card_style: "paper" | "minimal" | "modern" | "anki";
+  english_tts: EnglishTtsPreference;
 }
 
 const _userSettingsTtl = new Map<string, _TtlEntry<UserSettings>>();
 
 function _cloneUserSettings(s: UserSettings): UserSettings {
-  return { ...s };
+  return { ...s, english_tts: normalizeEnglishTtsPreference(s.english_tts) };
 }
 
 const _getUserSettingsInFlight = new Map<string, Promise<UserSettings>>();
@@ -1116,7 +1131,11 @@ export async function getUserSettings(userId: string): Promise<UserSettings> {
         cache: "no-store",
       });
       if (!res.ok) throw new Error("Failed to fetch user settings");
-      const data = (await res.json()) as UserSettings;
+      const raw = (await res.json()) as UserSettings;
+      const data: UserSettings = {
+        ...raw,
+        english_tts: normalizeEnglishTtsPreference(raw.english_tts),
+      };
       _userSettingsTtl.set(userId, {
         value: data,
         until: Date.now() + _USER_API_HYDRATION_TTL_MS,
@@ -1142,7 +1161,11 @@ export async function updateUserSettings(
     body: JSON.stringify(data),
   });
   if (!res.ok) throw new Error("Failed to update user settings");
-  const updated = (await res.json()) as UserSettings;
+  const raw = (await res.json()) as UserSettings;
+  const updated: UserSettings = {
+    ...raw,
+    english_tts: normalizeEnglishTtsPreference(raw.english_tts),
+  };
   _userSettingsTtl.set(userId, {
     value: updated,
     until: Date.now() + _USER_API_HYDRATION_TTL_MS,

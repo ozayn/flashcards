@@ -16,6 +16,8 @@ export type ParsedQAPair = {
   question: string;
   answer_short: string;
   answer_example?: string;
+  /** Set by export-format import when a "More detail:" block is present. */
+  answer_detailed?: string;
 };
 
 export function parseQAPairs(text: string): ParsedQAPair[] | null {

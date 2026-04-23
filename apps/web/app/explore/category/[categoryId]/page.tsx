@@ -8,8 +8,10 @@ import { Flashcard } from "@/components/study/Flashcard";
 import FormattedText from "@/components/FormattedText";
 import {
   buildAnswerDisplayText,
+  buildAnswerSpeechText,
   shouldShowAnswerDetailed,
 } from "@/lib/format-flashcard-answer-display";
+import { cancelAllFlashcardSpeech } from "@/lib/flashcard-speech";
 import {
   getCategoryDecks,
   getCategories,
@@ -20,6 +22,7 @@ import {
 } from "@/lib/api";
 import { FlashcardBookmarkStar } from "@/components/flashcard-bookmark-star";
 import { getStoredUserId } from "@/components/user-selector";
+import { FlashcardSpeakButton } from "@/components/flashcard-speak-button";
 import { cn } from "@/lib/utils";
 
 interface CategoryExplorePageProps {
@@ -61,6 +64,7 @@ export default function CategoryExplorePage({ params }: CategoryExplorePageProps
     think_delay_enabled: true,
     think_delay_ms: 1500,
     card_style: "paper",
+    english_tts: "default",
   });
   const touchStartX = useRef(0);
   const [bookmarkBusyId, setBookmarkBusyId] = useState<string | null>(null);
@@ -241,6 +245,16 @@ export default function CategoryExplorePage({ params }: CategoryExplorePageProps
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [cardsLoading, flashcards.length, handleNext, handlePrev, exploreView]);
+
+  useEffect(() => {
+    return () => {
+      cancelAllFlashcardSpeech();
+    };
+  }, []);
+
+  useEffect(() => {
+    cancelAllFlashcardSpeech();
+  }, [currentCardIndex, currentDeckIndex, params.categoryId]);
 
   function advanceToNextDeck() {
     const next = currentDeckIndex + 1;
@@ -518,6 +532,24 @@ export default function CategoryExplorePage({ params }: CategoryExplorePageProps
                   />
                 </div>
               ) : null}
+              <div className="mb-0 flex min-h-0 items-center gap-0.5">
+                <FlashcardSpeakButton
+                  utteranceKey={`explore-cat-${params.categoryId}-read-${card.id}-q`}
+                  text={card.question}
+                  aria-label="Speak question"
+                  englishTts={userSettings.english_tts}
+                />
+                <FlashcardSpeakButton
+                  utteranceKey={`explore-cat-${params.categoryId}-read-${card.id}-a`}
+                  text={buildAnswerSpeechText(
+                    card.answer_short,
+                    card.answer_example,
+                    card.answer_detailed
+                  )}
+                  aria-label="Speak answer"
+                  englishTts={userSettings.english_tts}
+                />
+              </div>
               <FormattedText
                 text={card.question}
                 className="text-2xl sm:text-3xl lg:text-4xl font-medium leading-snug sm:leading-relaxed"
@@ -600,6 +632,25 @@ export default function CategoryExplorePage({ params }: CategoryExplorePageProps
                     />
                   </div>
                 ) : null}
+                <div className="pointer-events-auto absolute start-2 top-2 z-20 sm:start-3 sm:top-3">
+                  <div className="flex rounded-md bg-background/80 backdrop-blur-sm">
+                    <FlashcardSpeakButton
+                      className="h-8 w-8"
+                      utteranceKey={`explore-cat-${params.categoryId}-flip-${card.id}-${showAnswer ? "a" : "q"}`}
+                      text={
+                        showAnswer
+                          ? buildAnswerSpeechText(
+                              card.answer_short,
+                              card.answer_example,
+                              card.answer_detailed
+                            )
+                          : card.question
+                      }
+                      aria-label={showAnswer ? "Speak answer" : "Speak question"}
+                      englishTts={userSettings.english_tts}
+                    />
+                  </div>
+                </div>
                 <Flashcard
                   cardStyle={userSettings.card_style}
                   reserveBookmarkCorner={Boolean(getStoredUserId())}

@@ -35,10 +35,12 @@ import {
   getFlashcards,
   setFlashcardBookmark,
   getRelatedDecks,
+  getUserSettings,
   importFlashcards,
   moveDeckToCategory,
-  parseQAPairs,
+  parseDeckTextImport,
   parseYoutubeDeckSourceMetadata,
+  type UserSettings,
   updateDeck,
 } from "@/lib/api";
 import { getStoredUserId, useTierLimits } from "@/components/user-selector";
@@ -420,6 +422,12 @@ export default function DeckPage({ params }: DeckPageProps) {
   const [cardSort, setCardSort] = useState<"newest" | "oldest" | "az">("newest");
   const [cardBookmarkFilter, setCardBookmarkFilter] = useState<"all" | "bookmarked">("all");
   const [bookmarkPendingId, setBookmarkPendingId] = useState<string | null>(null);
+  const [userSettings, setUserSettings] = useState<UserSettings>({
+    think_delay_enabled: true,
+    think_delay_ms: 1500,
+    card_style: "paper",
+    english_tts: "default",
+  });
 
   type SortOption = typeof cardSort;
   const SORT_OPTIONS: { value: SortOption; label: string }[] = [
@@ -474,6 +482,24 @@ export default function DeckPage({ params }: DeckPageProps) {
       setBookmarkPendingId(null);
     }
   };
+
+  useEffect(() => {
+    const userId = getStoredUserId();
+    if (userId) {
+      getUserSettings(userId)
+        .then(setUserSettings)
+        .catch(() => {});
+    }
+  }, []);
+
+  useEffect(() => {
+    const onSettings = (e: Event) => {
+      const ce = e as CustomEvent<{ settings: UserSettings }>;
+      if (ce.detail?.settings) setUserSettings(ce.detail.settings);
+    };
+    window.addEventListener("flashcard_settings_changed", onSettings);
+    return () => window.removeEventListener("flashcard_settings_changed", onSettings);
+  }, []);
 
   useEffect(() => {
     function onUserChange() {
@@ -666,7 +692,18 @@ export default function DeckPage({ params }: DeckPageProps) {
     });
   }, [cardCountOptions]);
 
-  const importQAPairs = genMode === "import" ? parseQAPairs(importText.trim()) : null;
+  const importDeckTextResult = useMemo(() => {
+    if (genMode !== "import" || !importText.trim()) {
+      return null;
+    }
+    return parseDeckTextImport(importText.trim());
+  }, [genMode, importText]);
+  const importQAPairs =
+    importDeckTextResult && importDeckTextResult.ok ? importDeckTextResult.pairs : null;
+  const importParseError =
+    importDeckTextResult && !importDeckTextResult.ok
+      ? importDeckTextResult.error
+      : null;
 
   const generationPanelBusy = useMemo(
     () => (generating ? addCardsBusyCopy(genMode) : null),
@@ -815,12 +852,12 @@ export default function DeckPage({ params }: DeckPageProps) {
       const reader = new FileReader();
       reader.onload = () => {
         const text = reader.result as string;
-        const pairs = parseQAPairs(text.trim());
-        if (pairs && pairs.length > 0) {
+        const parsed = parseDeckTextImport(text.trim());
+        if (parsed.ok && parsed.pairs.length > 0) {
           allTexts.push(text);
-          fileSummaries.push({ name: file.name, pairCount: pairs.length });
+          fileSummaries.push({ name: file.name, pairCount: parsed.pairs.length });
         } else {
-          fileSummaries.push({ name: file.name, pairCount: 0, error: "No valid Q:/A: pairs" });
+          fileSummaries.push({ name: file.name, pairCount: 0, error: "No importable cards" });
         }
         loaded++;
         if (loaded === validFiles.length) {
@@ -828,7 +865,9 @@ export default function DeckPage({ params }: DeckPageProps) {
           setImportText(combined);
           setImportFiles(fileSummaries);
           if (allTexts.length === 0) {
-            setImportError("No valid Q:/A: pairs found in any of the uploaded files.");
+            setImportError(
+              "No importable text in these files. Use a deck .txt export or Q: / A: pairs per card."
+            );
           }
           if (fileInputRef.current) fileInputRef.current.value = "";
         }
@@ -1802,11 +1841,13 @@ export default function DeckPage({ params }: DeckPageProps) {
                   <div className="space-y-3 pt-1">
                     <div className="space-y-2">
                       <label htmlFor="import-text" className="text-sm font-medium">
-                        Paste Q/A text or upload a .txt file
+                        Paste a deck export, Q: / A: list, or upload a .txt file
                       </label>
                       <textarea
                         id="import-text"
-                        placeholder={"Q: What is photosynthesis?\nA: The process by which plants convert light energy into chemical energy.\n\nQ: What is mitosis?\nA: A type of cell division that results in two identical daughter cells."}
+                        placeholder={
+                          "Q: What is photosynthesis?\nA: …\n\n— or a deck .txt with dashed lines and 1. 2. …"
+                        }
                         value={importText}
                         onChange={(e) => { setImportText(e.target.value); setImportResult(null); setImportError(null); setImportFiles([]); }}
                         className="w-full min-h-[140px] rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 font-mono"
@@ -1841,12 +1882,13 @@ export default function DeckPage({ params }: DeckPageProps) {
                     )}
                     {importQAPairs && importQAPairs.length > 0 && (
                       <p className="text-xs text-emerald-600 dark:text-emerald-400">
-                        {importQAPairs.length} Q/A pair{importQAPairs.length === 1 ? "" : "s"} detected — will be imported directly, no AI.
+                        {importQAPairs.length} card{importQAPairs.length === 1 ? "" : "s"} ready — imported as-is (no AI).
                       </p>
                     )}
                     {importText.trim() && !importQAPairs && importFiles.length === 0 && (
                       <p className="text-xs text-amber-600 dark:text-amber-400">
-                        No valid Q:/A: pairs found. Each card needs a Q: and A: line.
+                        {importParseError ||
+                          "Paste a deck .txt export or a Q: / A: list for each card."}
                       </p>
                     )}
                     {importError && (
@@ -2401,6 +2443,7 @@ export default function DeckPage({ params }: DeckPageProps) {
             currentUserId ? handleBookmarkToggle : undefined
           }
           bookmarkPendingId={bookmarkPendingId}
+          englishTts={userSettings.english_tts}
         />
 
         {!isReadOnly && deleteConfirmId && (

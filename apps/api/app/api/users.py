@@ -273,6 +273,7 @@ async def get_user_settings(
         think_delay_enabled=user.think_delay_enabled,
         think_delay_ms=user.think_delay_ms,
         card_style=getattr(user, "card_style", "paper"),
+        english_tts=getattr(user, "english_tts", "default"),
     )
 
 
@@ -291,10 +292,13 @@ async def update_user_settings(
         user.think_delay_ms = payload.think_delay_ms
     if payload.card_style is not None:
         user.card_style = payload.card_style
+    if payload.english_tts is not None:
+        user.english_tts = payload.english_tts
     await db.flush()
     await db.refresh(user)
     return UserSettingsResponse(
         think_delay_enabled=user.think_delay_enabled,
         think_delay_ms=user.think_delay_ms,
         card_style=getattr(user, "card_style", "paper"),
+        english_tts=getattr(user, "english_tts", "default"),
     )

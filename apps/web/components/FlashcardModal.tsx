@@ -9,8 +9,11 @@ import { FlashcardFlip } from "@/components/FlashcardFlip";
 import FormattedText from "@/components/FormattedText";
 import {
   buildAnswerDisplayText,
+  buildAnswerSpeechText,
   shouldShowAnswerDetailed,
 } from "@/lib/format-flashcard-answer-display";
+import { cancelAllFlashcardSpeech, type EnglishTtsPreference } from "@/lib/flashcard-speech";
+import { FlashcardSpeakButton } from "@/components/flashcard-speak-button";
 import { inferTextDirection } from "@/lib/infer-text-direction";
 import { cn } from "@/lib/utils";
 
@@ -35,6 +38,8 @@ export interface FlashcardModalProps {
   /** When set, show save control and call with the desired bookmark state */
   onBookmarkToggle?: (cardId: string, bookmarked: boolean) => void;
   bookmarkPendingId?: string | null;
+  /** English read-aloud accent; other languages are unchanged. */
+  englishTts?: EnglishTtsPreference;
 }
 
 type ViewMode = "details" | "flashcard";
@@ -48,6 +53,7 @@ export function FlashcardModal({
   editQuerySuffix = "",
   onBookmarkToggle,
   bookmarkPendingId,
+  englishTts = "default",
 }: FlashcardModalProps) {
   const [currentIndex, setCurrentIndex] = useState(initialIndex);
   const [viewMode, setViewMode] = useState<ViewMode>("details");
@@ -76,6 +82,23 @@ export function FlashcardModal({
   useEffect(() => {
     setFlipState(false);
   }, [currentIndex, viewMode]);
+
+  useEffect(() => {
+    return () => {
+      cancelAllFlashcardSpeech();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen) {
+      cancelAllFlashcardSpeech();
+    }
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    cancelAllFlashcardSpeech();
+  }, [isOpen, currentIndex, viewMode, flipState, card?.id]);
 
   // Keyboard handlers (only when modal is open)
   useEffect(() => {
@@ -230,17 +253,37 @@ export function FlashcardModal({
                     </div>
                   ) : null}
                   <div>
-                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1.5">
-                      Question
-                    </p>
+                    <div className="mb-1.5 flex items-center gap-0.5">
+                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                        Question
+                      </p>
+                      <FlashcardSpeakButton
+                        utteranceKey={`fc-modal-${card.id}-d-q`}
+                        text={card.question}
+                        aria-label="Speak question"
+                        englishTts={englishTts}
+                      />
+                    </div>
                     <div dir="auto" className="text-base font-medium leading-relaxed text-foreground">
                       <FormattedText text={card.question} className="text-inherit" />
                     </div>
                   </div>
                   <div>
-                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1.5">
-                      Answer
-                    </p>
+                    <div className="mb-1.5 flex items-center gap-0.5">
+                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                        Answer
+                      </p>
+                      <FlashcardSpeakButton
+                        utteranceKey={`fc-modal-${card.id}-d-a`}
+                        text={buildAnswerSpeechText(
+                          card.answer_short,
+                          card.answer_example,
+                          card.answer_detailed
+                        )}
+                        aria-label="Speak answer"
+                        englishTts={englishTts}
+                      />
+                    </div>
                     <div dir="auto" className="text-base leading-relaxed text-foreground">
                       <FormattedText
                         text={buildAnswerDisplayText(
@@ -258,9 +301,17 @@ export function FlashcardModal({
                     card.answer_example
                   ) ? (
                     <div>
-                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1.5">
-                        Notes
-                      </p>
+                      <div className="mb-1.5 flex items-center gap-0.5">
+                        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                          Notes
+                        </p>
+                        <FlashcardSpeakButton
+                          utteranceKey={`fc-modal-${card.id}-d-n`}
+                          text={card.answer_detailed ?? ""}
+                          aria-label="Speak notes"
+                          englishTts={englishTts}
+                        />
+                      </div>
                       <div dir="auto" className="text-base leading-relaxed text-muted-foreground">
                         <FormattedText
                           text={card.answer_detailed ?? ""}
@@ -351,6 +402,25 @@ export function FlashcardModal({
                       />
                     </div>
                   ) : null}
+                  <div className="pointer-events-auto absolute start-2 top-2 z-25 sm:start-3 sm:top-3">
+                    <div className="flex rounded-md bg-background/80 backdrop-blur-sm">
+                      <FlashcardSpeakButton
+                        className="h-8 w-8"
+                        utteranceKey={`fc-modal-${card.id}-f-${flipState ? "a" : "q"}`}
+                        text={
+                          flipState
+                            ? buildAnswerSpeechText(
+                                card.answer_short,
+                                card.answer_example,
+                                card.answer_detailed
+                              )
+                            : card.question
+                        }
+                        aria-label={flipState ? "Speak answer" : "Speak question"}
+                        englishTts={englishTts}
+                      />
+                    </div>
+                  </div>
                   <FlashcardFlip
                     key={card.id}
                     reserveBookmarkCorner={Boolean(onBookmarkToggle)}

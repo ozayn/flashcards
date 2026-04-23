@@ -38,6 +38,10 @@ class User(Base):
     card_style: Mapped[str] = mapped_column(
         String(32), default="paper", nullable=False
     )
+    # Browser TTS: preferred English voice style (default, british, american)
+    english_tts: Mapped[str] = mapped_column(
+        String(16), default="default", nullable=False
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, nullable=False
     )

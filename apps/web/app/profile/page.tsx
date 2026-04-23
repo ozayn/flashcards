@@ -11,8 +11,12 @@ import {
 import {
   getUser,
   getUserActivity,
+  getUserSettings,
   patchUserProfileName,
+  updateUserSettings,
+  type EnglishTtsPreference,
   type UserActivityEntry,
+  type UserSettings,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -103,6 +107,7 @@ export default function ProfilePage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [activity, setActivity] = useState<UserActivityEntry[]>([]);
   const [activityLoading, setActivityLoading] = useState(false);
+  const [userSettings, setUserSettings] = useState<UserSettings | null>(null);
 
   useEffect(() => {
     if (status === "loading") return;
@@ -113,6 +118,7 @@ export default function ProfilePage() {
     if (!id) {
       setLoading(false);
       setUser(null);
+      setUserSettings(null);
       setLoadError(null);
       return;
     }
@@ -139,6 +145,38 @@ export default function ProfilePage() {
       cancelled = true;
     };
   }, [session?.backendUserId, status]);
+
+  useEffect(() => {
+    if (status === "loading") return;
+    const bid = session?.backendUserId;
+    const stored = getStoredUserId();
+    const id = bid || stored || null;
+    if (!id) {
+      setUserSettings(null);
+      return;
+    }
+    let cancelled = false;
+    getUserSettings(id)
+      .then((s) => {
+        if (!cancelled) setUserSettings(s);
+      })
+      .catch(() => {
+        if (!cancelled) setUserSettings(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.backendUserId, status]);
+
+  useEffect(() => {
+    const onSettings = (e: Event) => {
+      const ce = e as CustomEvent<{ settings: UserSettings }>;
+      if (!ce.detail?.settings) return;
+      if (ce.detail.settings) setUserSettings(ce.detail.settings);
+    };
+    window.addEventListener("flashcard_settings_changed", onSettings);
+    return () => window.removeEventListener("flashcard_settings_changed", onSettings);
+  }, []);
 
   useEffect(() => {
     if (status !== "authenticated" || !userId || !user) return;
@@ -211,6 +249,21 @@ export default function ProfilePage() {
     if (user) setDraftName(user.name);
     setSaveError(null);
     setEditingName(true);
+  }
+
+  async function handleEnglishTtsChange(pref: EnglishTtsPreference) {
+    if (!userId || !userSettings) return;
+    try {
+      const updated = await updateUserSettings(userId, { english_tts: pref });
+      setUserSettings(updated);
+      window.dispatchEvent(
+        new CustomEvent("flashcard_settings_changed", {
+          detail: { settings: updated },
+        })
+      );
+    } catch {
+      /* ignore */
+    }
   }
 
   if (status === "loading" || (loading && userId)) {
@@ -345,6 +398,41 @@ export default function ProfilePage() {
         <div className="w-full border-t border-border/40 pt-4">
           <p className="break-all text-sm text-muted-foreground">{user.email}</p>
         </div>
+
+        {userSettings ? (
+          <div className="w-full border-t border-border/40 pt-4 text-left">
+            <h2 className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+              Read aloud (English)
+            </h2>
+            <div className="flex flex-col gap-1.5 text-sm">
+              {(
+                [
+                  { value: "default" as const, label: "Default" },
+                  { value: "british" as const, label: "British" },
+                  { value: "american" as const, label: "American" },
+                ] as const
+              ).map(({ value, label }) => (
+                <label
+                  key={value}
+                  className={`flex cursor-pointer items-center gap-2 rounded-md py-0.5 ${
+                    userSettings.english_tts === value
+                      ? "text-foreground"
+                      : "text-muted-foreground"
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="profile-english-tts"
+                    className="rounded-full"
+                    checked={userSettings.english_tts === value}
+                    onChange={() => void handleEnglishTtsChange(value)}
+                  />
+                  {label}
+                </label>
+              ))}
+            </div>
+          </div>
+        ) : null}
 
         {session?.backendUserId === userId ? (
           <div className="w-full border-t border-border/40 pt-4 text-left">

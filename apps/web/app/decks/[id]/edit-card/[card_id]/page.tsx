@@ -11,8 +11,10 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import {
+  deleteFlashcard,
   getFlashcard,
   getFlashcards,
+  setFlashcardBookmark,
   updateFlashcard,
 } from "@/lib/api";
 import {
@@ -20,6 +22,7 @@ import {
   getPrevEditCardId,
   parseDeckEditCardQuery,
 } from "@/lib/deck-flashcards-display-order";
+import { FlashcardBookmarkStar } from "@/components/flashcard-bookmark-star";
 import { cn } from "@/lib/utils";
 import PageContainer from "@/components/layout/page-container";
 import { FlashcardMarkdownToolbar } from "@/components/flashcard-markdown-toolbar";
@@ -54,6 +57,10 @@ export default function EditCardPage({ params }: EditCardPageProps) {
   const [savedHint, setSavedHint] = useState(false);
   const [listHint, setListHint] = useState<string | null>(null);
   const [deckCards, setDeckCards] = useState<DeckCardRow[]>([]);
+  const [bookmarked, setBookmarked] = useState(false);
+  const [bookmarkPending, setBookmarkPending] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
 
   const questionRef = useRef<HTMLTextAreaElement>(null);
   const answerRef = useRef<HTMLTextAreaElement>(null);
@@ -115,6 +122,7 @@ export default function EditCardPage({ params }: EditCardPageProps) {
         setAnswerExample(data.answer_example ?? "");
         setAnswerDetailed(data.answer_detailed ?? "");
         setDifficulty((data.difficulty as "easy" | "medium" | "hard") ?? "medium");
+        setBookmarked(Boolean((data as { bookmarked?: boolean }).bookmarked));
       } catch {
         if (!cancelled) setError("Failed to load card");
       } finally {
@@ -182,6 +190,49 @@ export default function EditCardPage({ params }: EditCardPageProps) {
     }
   };
 
+  const handleBookmarkToggle = async () => {
+    if (!actingUserId || bookmarkPending || deleting) return;
+    const next = !bookmarked;
+    setBookmarkPending(true);
+    setError(null);
+    try {
+      await setFlashcardBookmark(params.card_id, next);
+      setBookmarked(next);
+      setDeckCards((prev) =>
+        prev.map((c) => (c.id === params.card_id ? { ...c, bookmarked: next } : c))
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not update saved state");
+    } finally {
+      setBookmarkPending(false);
+    }
+  };
+
+  const handleDeleteCard = async () => {
+    if (deleting) return;
+    setError(null);
+    setDeleting(true);
+    const targetNextId = nextCardId;
+    const targetPrevId = prevCardId;
+    try {
+      await deleteFlashcard(params.card_id);
+      setDeleteConfirmOpen(false);
+      if (targetNextId) {
+        router.replace(`/decks/${params.id}/edit-card/${targetNextId}${querySuffix}`);
+      } else if (targetPrevId) {
+        router.replace(`/decks/${params.id}/edit-card/${targetPrevId}${querySuffix}`);
+      } else {
+        router.replace(`/decks/${params.id}`);
+      }
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to delete card. Try again."
+      );
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   const handleSaveAndPrev = async () => {
     if (!formRef.current?.checkValidity()) {
       formRef.current?.reportValidity();
@@ -240,8 +291,21 @@ export default function EditCardPage({ params }: EditCardPageProps) {
         </Link>
       </div>
       <Card>
-        <CardHeader>
+        <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0 pb-4">
           <CardTitle>Edit Card</CardTitle>
+          {actingUserId ? (
+            <div className="flex items-center gap-1.5 shrink-0 pt-0.5">
+              <span className="text-xs text-muted-foreground sm:text-sm">
+                Saved for later
+              </span>
+              <FlashcardBookmarkStar
+                bookmarked={bookmarked}
+                onToggle={() => void handleBookmarkToggle()}
+                busy={bookmarkPending}
+                disabled={deleting}
+              />
+            </div>
+          ) : null}
         </CardHeader>
         <CardContent>
           <form
@@ -379,13 +443,17 @@ export default function EditCardPage({ params }: EditCardPageProps) {
               </p>
             )}
             <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
-              <Button type="submit" disabled={submitting} className="w-full sm:w-auto">
+              <Button
+                type="submit"
+                disabled={submitting || deleting}
+                className="w-full sm:w-auto"
+              >
                 {submitting ? "Saving..." : "Save"}
               </Button>
               <Button
                 type="button"
                 variant="secondary"
-                disabled={submitting || !nextCardId}
+                disabled={submitting || deleting || !nextCardId}
                 className="w-full sm:w-auto"
                 onClick={() => void handleSaveAndNext()}
               >
@@ -394,12 +462,56 @@ export default function EditCardPage({ params }: EditCardPageProps) {
               <Button
                 type="button"
                 variant="outline"
-                disabled={submitting || !prevCardId}
+                disabled={submitting || deleting || !prevCardId}
                 className="w-full sm:w-auto"
                 onClick={() => void handleSaveAndPrev()}
               >
                 Save &amp; Previous
               </Button>
+            </div>
+            <div className="mt-6 border-t border-border/80 pt-5">
+              {!deleteConfirmOpen ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="h-9 w-full justify-center px-3 text-sm font-normal text-destructive/90 hover:bg-destructive/10 hover:text-destructive sm:w-auto"
+                  disabled={deleting}
+                  onClick={() => {
+                    setDeleteConfirmOpen(true);
+                    setError(null);
+                  }}
+                >
+                  Delete card
+                </Button>
+              ) : (
+                <div className="rounded-lg border border-destructive/25 bg-destructive/5 p-3 space-y-3">
+                  <p className="text-sm text-foreground">
+                    Delete this card permanently? This cannot be undone.
+                  </p>
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      className="w-full sm:w-auto"
+                      disabled={deleting}
+                      onClick={() => void handleDeleteCard()}
+                    >
+                      {deleting ? "Deleting…" : "Delete permanently"}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="w-full sm:w-auto"
+                      disabled={deleting}
+                      onClick={() => {
+                        if (!deleting) setDeleteConfirmOpen(false);
+                      }}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
           </form>
         </CardContent>

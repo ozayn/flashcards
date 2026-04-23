@@ -10,8 +10,10 @@ import { Flashcard } from "@/components/study/Flashcard";
 import FormattedText from "@/components/FormattedText";
 import {
   buildAnswerDisplayText,
+  buildAnswerSpeechText,
   shouldShowAnswerDetailed,
 } from "@/lib/format-flashcard-answer-display";
+import { cancelAllFlashcardSpeech } from "@/lib/flashcard-speech";
 import {
   getFlashcards,
   getUserSettings,
@@ -29,6 +31,7 @@ import {
   writeDeckStudyResume,
 } from "@/lib/deck-study-resume";
 import { getStoredUserId } from "@/components/user-selector";
+import { FlashcardSpeakButton } from "@/components/flashcard-speak-button";
 import { cn } from "@/lib/utils";
 
 interface StudyPageProps {
@@ -83,6 +86,7 @@ export default function StudyPage({ params }: StudyPageProps) {
     think_delay_enabled: true,
     think_delay_ms: 1500,
     card_style: "paper",
+    english_tts: "default",
   });
   const [canFlip, setCanFlip] = useState(false);
   const [studyMenuOpen, setStudyMenuOpen] = useState(false);
@@ -448,6 +452,15 @@ export default function StudyPage({ params }: StudyPageProps) {
     };
   }, [handlePrev, handleNext, deckView]);
 
+  useEffect(() => {
+    return () => {
+      cancelAllFlashcardSpeech();
+    };
+  }, []);
+
+  useEffect(() => {
+    cancelAllFlashcardSpeech();
+  }, [currentCardIndex, params.deck_id]);
 
   useEffect(() => {
     if (!studyMenuOpen) return;
@@ -829,6 +842,24 @@ export default function StudyPage({ params }: StudyPageProps) {
                   "pt-1 pe-11 sm:pe-12 landscape-mobile:pt-0.5 landscape-mobile:pe-10"
               )}
             >
+              <div className="mb-0 flex min-h-0 items-center gap-0.5">
+                <FlashcardSpeakButton
+                  utteranceKey={`study-deck-${params.deck_id}-read-${card.id}-q`}
+                  text={card.question}
+                  aria-label="Speak question"
+                  englishTts={userSettings.english_tts}
+                />
+                <FlashcardSpeakButton
+                  utteranceKey={`study-deck-${params.deck_id}-read-${card.id}-a`}
+                  text={buildAnswerSpeechText(
+                    card.answer_short,
+                    card.answer_example,
+                    card.answer_detailed
+                  )}
+                  aria-label="Speak answer"
+                  englishTts={userSettings.english_tts}
+                />
+              </div>
               {getStoredUserId() ? (
                 <div className="absolute end-1 top-0 z-10 sm:end-1.5 sm:top-0.5 landscape-mobile:end-0.5 landscape-mobile:-top-0.5">
                   <FlashcardBookmarkStar
@@ -922,6 +953,25 @@ export default function StudyPage({ params }: StudyPageProps) {
                     />
                   </div>
                 ) : null}
+                <div className="pointer-events-auto absolute start-2 top-2 z-20 sm:start-3 sm:top-3">
+                  <div className="flex rounded-md bg-background/80 backdrop-blur-sm">
+                    <FlashcardSpeakButton
+                      className="h-8 w-8"
+                      utteranceKey={`study-deck-${params.deck_id}-flip-${card.id}-${showAnswer ? "a" : "q"}`}
+                      text={
+                        showAnswer
+                          ? buildAnswerSpeechText(
+                              card.answer_short,
+                              card.answer_example,
+                              card.answer_detailed
+                            )
+                          : card.question
+                      }
+                      aria-label={showAnswer ? "Speak answer" : "Speak question"}
+                      englishTts={userSettings.english_tts}
+                    />
+                  </div>
+                </div>
                 <Flashcard
                   cardStyle={userSettings.card_style}
                   reserveBookmarkCorner={Boolean(getStoredUserId())}
