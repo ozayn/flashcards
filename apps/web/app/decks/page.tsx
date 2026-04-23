@@ -61,16 +61,21 @@ import { getStoredUserId } from "@/components/user-selector";
 import PageContainer from "@/components/layout/page-container";
 import { DeckGenerationBadge } from "@/components/DeckGenerationBadge";
 import { DeckActionsMenu } from "@/components/DeckActionsMenu";
-import { DeckStudyStatusPillMenu } from "@/components/DeckStudyStatusPillMenu";
+import {
+  DeckStudyStatusPillMenu,
+  StudyStatusIcon,
+} from "@/components/DeckStudyStatusPillMenu";
 import { AdminTransferDeckConfirmModal } from "@/components/AdminTransferDeckConfirmModal";
 import { AdminBulkLegacyTransferConfirmModal } from "@/components/AdminBulkLegacyTransferConfirmModal";
 import { formatDeckCreatedCalendarDate } from "@/lib/format-deck-date";
 import {
   coerceDeckStudyStatus,
+  deckStudyStatusTriggerClass,
   DECK_STUDY_STATUSES,
   DECK_STUDY_STATUS_LABELS,
   type DeckStudyStatus,
 } from "@/lib/deck-study-status";
+import { cn } from "@/lib/utils";
 
 const SHOW_DECK_DATES_STORAGE_KEY = "flashcards_deck_show_dates";
 
@@ -1610,26 +1615,51 @@ export default function DecksPage() {
                       </select>
                     </div>
                   )}
-                  <div className="space-y-1">
-                    <label htmlFor="deck-study-filter" className="text-xs font-medium text-muted-foreground">
-                      Study status
-                    </label>
-                    <select
-                      id="deck-study-filter"
-                      value={studyStatusFilter}
-                      onChange={(e) => {
-                        const v = e.target.value;
-                        setStudyStatusFilter(v === "all" ? "all" : (v as DeckStudyStatus));
-                      }}
-                      className="w-full h-9 rounded-md border border-border bg-background px-2 text-sm"
+                  <div className="space-y-1.5">
+                    <p className="text-xs font-medium text-muted-foreground">Study status</p>
+                    <div
+                      className="flex w-full min-w-0 max-w-full flex-nowrap items-stretch justify-between gap-0.5 rounded-lg border border-border/80 bg-muted/25 p-0.5"
+                      role="group"
+                      aria-label="Filter decks by study status"
                     >
-                      <option value="all">All</option>
-                      {DECK_STUDY_STATUSES.map((s) => (
-                        <option key={s} value={s}>
-                          {DECK_STUDY_STATUS_LABELS[s]}
-                        </option>
-                      ))}
-                    </select>
+                      <button
+                        type="button"
+                        title="All statuses"
+                        aria-pressed={studyStatusFilter === "all"}
+                        onClick={() => setStudyStatusFilter("all")}
+                        className={cn(
+                          "inline-flex h-9 min-w-0 flex-1 shrink items-center justify-center rounded-md border text-foreground/90 touch-manipulation transition-colors",
+                          studyStatusFilter === "all"
+                            ? "border-border bg-background shadow-sm"
+                            : "border-transparent bg-transparent text-muted-foreground hover:bg-background/60 hover:text-foreground"
+                        )}
+                      >
+                        <List className="size-4" aria-hidden />
+                        <span className="sr-only">All</span>
+                      </button>
+                      {DECK_STUDY_STATUSES.map((s) => {
+                        const active = studyStatusFilter === s;
+                        return (
+                          <button
+                            key={s}
+                            type="button"
+                            title={DECK_STUDY_STATUS_LABELS[s]}
+                            aria-pressed={active}
+                            aria-label={DECK_STUDY_STATUS_LABELS[s]}
+                            onClick={() => setStudyStatusFilter(s)}
+                            className={cn(
+                              "inline-flex h-9 min-w-0 flex-1 shrink items-center justify-center rounded-md border touch-manipulation transition-colors",
+                              active
+                                ? deckStudyStatusTriggerClass(s)
+                                : "border-transparent bg-transparent text-muted-foreground hover:bg-background/50 hover:text-foreground"
+                            )}
+                          >
+                            <StudyStatusIcon status={s} className="size-4" />
+                            <span className="sr-only">{DECK_STUDY_STATUS_LABELS[s]}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
                   <label className="flex items-center gap-2 text-sm text-foreground cursor-pointer">
                     <input

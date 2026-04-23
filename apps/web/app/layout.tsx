@@ -36,7 +36,7 @@ const themeScript = `
     try {
       if (typeof Element !== 'undefined') {
         var blockDashlane = function(name) {
-          return String(name).toLowerCase() === 'data-dashlane-rid';
+          return String(name).toLowerCase().indexOf('data-dashlane-') === 0;
         };
         var _set = Element.prototype.setAttribute;
         Element.prototype.setAttribute = function(name, value) {
@@ -52,24 +52,36 @@ const themeScript = `
     } catch (e) {}
     try {
       if (typeof MutationObserver !== 'undefined' && document.documentElement) {
-        var stripRid = function(root) {
+        var stripOne = function(el) {
+          if (!el || el.nodeType !== 1 || !el.getAttributeNames) return;
+          el.getAttributeNames().forEach(function(n) {
+            if (n.toLowerCase().indexOf('data-dashlane-') === 0) el.removeAttribute(n);
+          });
+        };
+        var stripDashlane = function(root) {
           try {
-            if (!root || root.nodeType !== 1) return;
-            if (root.hasAttribute('data-dashlane-rid')) root.removeAttribute('data-dashlane-rid');
-            root.querySelectorAll('[data-dashlane-rid]').forEach(function(el) {
-              el.removeAttribute('data-dashlane-rid');
-            });
+            if (!root) return;
+            if (root.nodeType !== 1 && root.nodeType !== 11) return;
+            if (root.nodeType === 1) stripOne(root);
+            if (root.querySelectorAll) {
+              root.querySelectorAll('*').forEach(function(n) {
+                stripOne(n);
+              });
+            }
           } catch (e) {}
         };
-        stripRid(document.documentElement);
+        stripDashlane(document.documentElement);
         new MutationObserver(function(records) {
           records.forEach(function(r) {
-            if (r.type === 'attributes' && r.attributeName === 'data-dashlane-rid' && r.target && r.target.nodeType === 1) {
-              r.target.removeAttribute('data-dashlane-rid');
+            if (r.type === 'attributes' && r.target && r.target.nodeType === 1) {
+              var n = r.attributeName || '';
+              if (n && n.toLowerCase().indexOf('data-dashlane-') === 0) {
+                r.target.removeAttribute(n);
+              }
             }
             if (r.type === 'childList' && r.addedNodes) {
               r.addedNodes.forEach(function(n) {
-                stripRid(n);
+                stripDashlane(n);
               });
             }
           });
@@ -77,7 +89,13 @@ const themeScript = `
           subtree: true,
           childList: true,
           attributes: true,
-          attributeFilter: ['data-dashlane-rid'],
+          attributeFilter: [
+            'data-dashlane-rid',
+            'data-dashlane-label',
+            'data-dashlane-autofill',
+            'data-dashlane-frame',
+            'data-dashlane-ignore',
+          ],
         });
       }
     } catch (e) {}

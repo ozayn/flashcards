@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { ChevronDown, ChevronUp, Eye, LayoutGrid, List, Search } from "lucide-react";
 import { getCategoryDecks, getCategories, reorderCategoryDeck, updateDeck } from "@/lib/api";
 import { getStoredUserId } from "@/components/user-selector";
@@ -51,7 +50,6 @@ function swapDeckWithNeighbor<T extends { id: string }>(
 }
 
 export default function CategoryPage({ params }: CategoryPageProps) {
-  const router = useRouter();
   const [categoryName, setCategoryName] = useState<string | null>(null);
   const [decks, setDecks] = useState<CategoryDeck[]>([]);
   const [loading, setLoading] = useState(true);
@@ -164,20 +162,17 @@ export default function CategoryPage({ params }: CategoryPageProps) {
     return (
       <div
         key={deck.id}
-        role="link"
-        tabIndex={0}
-        onClick={() => router.push(`/decks/${deck.id}`)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            router.push(`/decks/${deck.id}`);
-          }
-        }}
-        className="deck-card group rounded-lg border border-border px-4 py-3.5 flex items-center justify-between gap-3 hover:bg-muted/40 transition-colors cursor-pointer max-mobile:px-3.5 max-mobile:py-3"
+        className="deck-card relative flex touch-pan-y items-center justify-between gap-3 overflow-hidden rounded-lg border border-border bg-background/40"
       >
-        <div className="flex items-center gap-3 flex-1 min-w-0">
-          <div className="flex flex-col gap-1 min-w-0">
-            <span className="font-medium text-sm leading-snug truncate">
+        <Link
+          href={`/decks/${deck.id}`}
+          prefetch={false}
+          className="absolute inset-0 z-0 rounded-lg transition-colors hover:bg-muted/40"
+          aria-label={`Open deck: ${deck.name}`}
+        />
+        <div className="relative z-10 flex min-w-0 flex-1 items-center gap-3 px-4 py-3.5 max-mobile:px-3.5 max-mobile:py-3 pointer-events-none">
+          <div className="flex min-w-0 flex-1 flex-col gap-1">
+            <span className="font-medium text-sm leading-snug truncate text-foreground">
               {deck.name}
             </span>
             <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
@@ -188,16 +183,18 @@ export default function CategoryPage({ params }: CategoryPageProps) {
               <span className="text-muted-foreground/40" aria-hidden>
                 ·
               </span>
-              <DeckStudyStatusPillMenu
-                studyStatus={coerceDeckStudyStatus(deck.study_status)}
-                density="list"
-                onSelect={async (study_status) => {
-                  await updateDeck(deck.id, { study_status });
-                  setDecks((prev) =>
-                    prev.map((d) => (d.id === deck.id ? { ...d, study_status } : d))
-                  );
-                }}
-              />
+              <span className="inline-flex items-center align-middle pointer-events-auto">
+                <DeckStudyStatusPillMenu
+                  studyStatus={coerceDeckStudyStatus(deck.study_status)}
+                  density="list"
+                  onSelect={async (study_status) => {
+                    await updateDeck(deck.id, { study_status });
+                    setDecks((prev) =>
+                      prev.map((d) => (d.id === deck.id ? { ...d, study_status } : d))
+                    );
+                  }}
+                />
+              </span>
               {deck.is_public && (
                 <>
                   <span className="text-muted-foreground/40" aria-hidden>
@@ -211,7 +208,7 @@ export default function CategoryPage({ params }: CategoryPageProps) {
         </div>
         {showCategoryReorder && (
           <div
-            className="flex shrink-0 items-center gap-0 rounded-md border border-border/80 bg-muted/50 p-0.5 shadow-sm"
+            className="relative z-20 flex shrink-0 items-center gap-0 self-center pr-2 max-mobile:pr-1.5"
             onClick={(e) => e.stopPropagation()}
             onPointerDown={(e) => e.stopPropagation()}
             onKeyDown={(e) => e.stopPropagation()}
@@ -263,17 +260,14 @@ export default function CategoryPage({ params }: CategoryPageProps) {
     return (
       <div
         key={deck.id}
-        role="link"
-        tabIndex={0}
-        onClick={() => router.push(`/decks/${deck.id}`)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            router.push(`/decks/${deck.id}`);
-          }
-        }}
-        className="group relative rounded-xl border border-border bg-background p-4 flex flex-col gap-2 hover:bg-muted/30 transition-colors cursor-pointer max-mobile:p-3.5"
+        className="relative flex touch-pan-y flex-col gap-2 overflow-hidden rounded-xl border border-border bg-background p-4 max-mobile:p-3.5"
       >
+        <Link
+          href={`/decks/${deck.id}`}
+          prefetch={false}
+          className="absolute inset-0 z-0 rounded-xl transition-colors hover:bg-muted/30"
+          aria-label={`Open deck: ${deck.name}`}
+        />
         {showCategoryReorder && (
           <div
             className="absolute right-2 top-2 z-20 flex items-center gap-0 rounded-md border border-border/80 bg-muted/50 p-0.5 shadow-sm backdrop-blur-sm"
@@ -317,11 +311,15 @@ export default function CategoryPage({ params }: CategoryPageProps) {
             </Button>
           </div>
         )}
-        <div className={`min-w-0 ${showCategoryReorder ? "pr-14" : ""}`}>
-          <h3 className="font-semibold text-sm leading-snug line-clamp-2 min-w-0">
+        <div
+          className={`relative z-10 flex min-w-0 flex-col gap-0 pointer-events-none ${
+            showCategoryReorder ? "pr-14" : ""
+          }`}
+        >
+          <h3 className="font-semibold text-sm leading-snug line-clamp-2 min-w-0 text-foreground">
             {deck.name}
           </h3>
-          <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-x-1 overflow-hidden text-muted-foreground text-[10px] leading-tight sm:text-[11px]">
+          <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-x-1 text-muted-foreground text-[10px] leading-tight sm:text-[11px]">
             <span className="shrink-0 tabular-nums">
               {deck.card_count ?? 0} {(deck.card_count ?? 0) === 1 ? "card" : "cards"}
             </span>
@@ -329,16 +327,18 @@ export default function CategoryPage({ params }: CategoryPageProps) {
             <span className="shrink-0 text-muted-foreground/40" aria-hidden>
               ·
             </span>
-            <DeckStudyStatusPillMenu
-              studyStatus={coerceDeckStudyStatus(deck.study_status)}
-              density="grid"
-              onSelect={async (study_status) => {
-                await updateDeck(deck.id, { study_status });
-                setDecks((prev) =>
-                  prev.map((d) => (d.id === deck.id ? { ...d, study_status } : d))
-                );
-              }}
-            />
+            <span className="inline-flex items-center align-middle pointer-events-auto">
+              <DeckStudyStatusPillMenu
+                studyStatus={coerceDeckStudyStatus(deck.study_status)}
+                density="grid"
+                onSelect={async (study_status) => {
+                  await updateDeck(deck.id, { study_status });
+                  setDecks((prev) =>
+                    prev.map((d) => (d.id === deck.id ? { ...d, study_status } : d))
+                  );
+                }}
+              />
+            </span>
             {deck.is_public && (
               <>
                 <span className="shrink-0 text-muted-foreground/40" aria-hidden>
@@ -350,7 +350,7 @@ export default function CategoryPage({ params }: CategoryPageProps) {
           </div>
         </div>
         {deck.description ? (
-          <p className="text-xs text-muted-foreground leading-relaxed line-clamp-2 mt-1.5">
+          <p className="relative z-10 min-w-0 text-xs text-muted-foreground leading-relaxed line-clamp-2 pointer-events-none">
             {deck.description}
           </p>
         ) : null}
@@ -488,11 +488,13 @@ export default function CategoryPage({ params }: CategoryPageProps) {
             No decks match &ldquo;{searchQuery.trim()}&rdquo;.
           </p>
         ) : deckLayout === "grid" ? (
-          <div className="mt-6 sm:mt-8 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+          <div className="mt-6 sm:mt-8 touch-pan-y grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
             {visibleDecks.map((deck) => renderDeckTile(deck))}
           </div>
         ) : (
-          <div className="mt-6 sm:mt-8 space-y-1.5">{visibleDecks.map((deck) => renderDeckRow(deck))}</div>
+          <div className="mt-6 sm:mt-8 space-y-1.5 touch-pan-y">
+            {visibleDecks.map((deck) => renderDeckRow(deck))}
+          </div>
         )}
       </div>
     </PageContainer>

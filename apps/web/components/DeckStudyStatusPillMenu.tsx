@@ -103,7 +103,8 @@ type DeckStudyStatusPillMenuProps = {
   density: "list" | "grid";
 };
 
-function StudyStatusIcon({
+/** Shared status glyphs (not started, in progress, studied) for menus and filter bars. */
+export function StudyStatusIcon({
   status,
   className,
 }: {
