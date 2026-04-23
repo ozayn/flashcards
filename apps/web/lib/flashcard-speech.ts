@@ -359,6 +359,22 @@ export function pickVoiceForText(
   return null;
 }
 
+function applyPickedVoiceToUtterance(
+  ut: SpeechSynthesisUtterance,
+  plain: string,
+  voiceList: ReadonlyArray<SpeechSynthesisVoice>,
+  options: PickVoiceForTextOptions
+): SpeechSynthesisVoice | null {
+  const voice = pickVoiceForText(plain, voiceList, options);
+  if (voice) {
+    ut.voice = voice;
+    ut.lang = voice.lang;
+  } else if (RTL_SCRIPT_RE.test(plain) && !CJK_RE.test(plain) && !/[\u0400-\u04FF]/.test(plain) && !/[\u0590-\u05FF]/.test(plain)) {
+    ut.lang = isLikelyFarsiCardText(plain) ? "fa-IR" : "ar";
+  }
+  return voice;
+}
+
 function getVoicesAsync(): Promise<ReadonlyArray<SpeechSynthesisVoice>> {
   return new Promise((resolve) => {
     if (typeof window === "undefined" || !window.speechSynthesis) {
@@ -447,7 +463,7 @@ export function speakOrToggle(
       return;
     }
     const ut = new SpeechSynthesisUtterance(plain);
-    const voice = pickVoiceForText(plain, voiceList, { englishTts, voiceStyle });
+    const voice = applyPickedVoiceToUtterance(ut, plain, voiceList, { englishTts, voiceStyle });
     if (_DEV && typeof console !== "undefined" && console.info) {
       const textLangHint = (() => {
         if (CJK_RE.test(plain) || /[\u0400-\u04FF]/.test(plain) || /[\u0590-\u05FF]/.test(plain)) {
@@ -476,12 +492,6 @@ export function speakOrToggle(
         });
       }
     }
-    if (voice) {
-      ut.voice = voice;
-      ut.lang = voice.lang;
-    } else if (RTL_SCRIPT_RE.test(plain) && !CJK_RE.test(plain) && !/[\u0400-\u04FF]/.test(plain) && !/[\u0590-\u05FF]/.test(plain)) {
-      ut.lang = isLikelyFarsiCardText(plain) ? "fa-IR" : "ar";
-    }
     /* else: browser default voice, including CJK and other languages */
     const done = () => {
       if (myOp === opSeq) {
@@ -498,6 +508,111 @@ export function speakOrToggle(
         playingKey = null;
         notify();
       }
+    }
+  });
+
+  return "started";
+}
+
+/** Short pause (ms) between question and answer on the Read tab full-card TTS. */
+export const READ_CARD_PAUSE_MS = 450;
+
+/**
+ * Read tab: speak the question, pause, then the answer, using one `utteranceKey`
+ * (toggle the same key to stop; same as `speakOrToggle` for that key).
+ * Each segment gets its own voice pick for mixed-language cards.
+ */
+export function speakOrToggleReadCard(
+  utteranceKey: string,
+  question: string,
+  answer: string,
+  options?: SpeakOrToggleOptions
+): SpeakOrToggleResult {
+  const englishTts = options?.englishTts ?? "default";
+  const voiceStyle = options?.voiceStyle ?? "default";
+  if (!isSpeechSynthesisAvailable()) return "skipped";
+  const plainQ = plainTextForSpeech(question);
+  const plainA = plainTextForSpeech(answer);
+  if (!plainQ && !plainA) return "skipped";
+
+  if (playingKey === utteranceKey) {
+    nextOp();
+    try {
+      window.speechSynthesis?.cancel();
+    } catch {
+      /* ignore */
+    }
+    playingKey = null;
+    notify();
+    return "stopped";
+  }
+
+  const myOp = nextOp();
+  try {
+    window.speechSynthesis?.cancel();
+  } catch {
+    /* ignore */
+  }
+  playingKey = utteranceKey;
+  notify();
+
+  getVoicesAsync().then((voiceList) => {
+    if (myOp !== opSeq) return;
+    const synth = window.speechSynthesis!;
+    const endSession = () => {
+      if (myOp === opSeq) {
+        playingKey = null;
+        notify();
+      }
+    };
+
+    const beginAnswer = () => {
+      if (myOp !== opSeq) return;
+      if (!plainA) {
+        endSession();
+        return;
+      }
+      const ut2 = new SpeechSynthesisUtterance(plainA);
+      applyPickedVoiceToUtterance(ut2, plainA, voiceList, { englishTts, voiceStyle });
+      ut2.onend = endSession;
+      ut2.onerror = endSession;
+      try {
+        synth.speak(ut2);
+      } catch {
+        endSession();
+      }
+    };
+
+    if (!plainQ) {
+      beginAnswer();
+      return;
+    }
+    if (!plainA) {
+      const ut = new SpeechSynthesisUtterance(plainQ);
+      applyPickedVoiceToUtterance(ut, plainQ, voiceList, { englishTts, voiceStyle });
+      ut.onend = endSession;
+      ut.onerror = endSession;
+      try {
+        synth.speak(ut);
+      } catch {
+        endSession();
+      }
+      return;
+    }
+    const ut1 = new SpeechSynthesisUtterance(plainQ);
+    applyPickedVoiceToUtterance(ut1, plainQ, voiceList, { englishTts, voiceStyle });
+    ut1.onend = () => {
+      if (myOp !== opSeq) return;
+      window.setTimeout(() => {
+        if (myOp !== opSeq) return;
+        beginAnswer();
+      }, READ_CARD_PAUSE_MS);
+    };
+    ut1.onerror = endSession;
+    try {
+      synth.speak(ut1);
+    } catch {
+      endSession();
     }
   });
 

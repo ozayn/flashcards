@@ -32,6 +32,7 @@ import {
 } from "@/lib/deck-study-resume";
 import { getStoredUserId } from "@/components/user-selector";
 import { FlashcardSpeakButton } from "@/components/flashcard-speak-button";
+import { ReadTabSpeakButton } from "@/components/read-tab-speak-button";
 import { cn } from "@/lib/utils";
 
 interface StudyPageProps {
@@ -461,7 +462,7 @@ export default function StudyPage({ params }: StudyPageProps) {
 
   useEffect(() => {
     cancelAllFlashcardSpeech();
-  }, [currentCardIndex, params.deck_id]);
+  }, [currentCardIndex, params.deck_id, deckView]);
 
   useEffect(() => {
     if (!studyMenuOpen) return;
@@ -843,22 +844,15 @@ export default function StudyPage({ params }: StudyPageProps) {
                   "pt-1 pe-11 sm:pe-12 landscape-mobile:pt-0.5 landscape-mobile:pe-10"
               )}
             >
-              <div className="mb-0 flex min-h-0 items-center gap-0.5">
-                <FlashcardSpeakButton
-                  utteranceKey={`study-deck-${params.deck_id}-read-${card.id}-q`}
-                  text={card.question}
-                  aria-label="Speak question"
-                  englishTts={userSettings.english_tts}
-                  voiceStyle={userSettings.voice_style}
-                />
-                <FlashcardSpeakButton
-                  utteranceKey={`study-deck-${params.deck_id}-read-${card.id}-a`}
-                  text={buildAnswerSpeechText(
+              <div className="mb-0 flex min-h-0 items-center">
+                <ReadTabSpeakButton
+                  utteranceKey={`study-deck-${params.deck_id}-read-full-${card.id}`}
+                  question={card.question}
+                  answer={buildAnswerSpeechText(
                     card.answer_short,
                     card.answer_example,
                     card.answer_detailed
                   )}
-                  aria-label="Speak answer"
                   englishTts={userSettings.english_tts}
                   voiceStyle={userSettings.voice_style}
                 />

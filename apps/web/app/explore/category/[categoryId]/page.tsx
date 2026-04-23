@@ -23,6 +23,7 @@ import {
 import { FlashcardBookmarkStar } from "@/components/flashcard-bookmark-star";
 import { getStoredUserId } from "@/components/user-selector";
 import { FlashcardSpeakButton } from "@/components/flashcard-speak-button";
+import { ReadTabSpeakButton } from "@/components/read-tab-speak-button";
 import { cn } from "@/lib/utils";
 
 interface CategoryExplorePageProps {
@@ -255,7 +256,7 @@ export default function CategoryExplorePage({ params }: CategoryExplorePageProps
 
   useEffect(() => {
     cancelAllFlashcardSpeech();
-  }, [currentCardIndex, currentDeckIndex, params.categoryId]);
+  }, [currentCardIndex, currentDeckIndex, params.categoryId, exploreView]);
 
   function advanceToNextDeck() {
     const next = currentDeckIndex + 1;
@@ -533,22 +534,15 @@ export default function CategoryExplorePage({ params }: CategoryExplorePageProps
                   />
                 </div>
               ) : null}
-              <div className="mb-0 flex min-h-0 items-center gap-0.5">
-                <FlashcardSpeakButton
-                  utteranceKey={`explore-cat-${params.categoryId}-read-${card.id}-q`}
-                  text={card.question}
-                  aria-label="Speak question"
-                  englishTts={userSettings.english_tts}
-                  voiceStyle={userSettings.voice_style}
-                />
-                <FlashcardSpeakButton
-                  utteranceKey={`explore-cat-${params.categoryId}-read-${card.id}-a`}
-                  text={buildAnswerSpeechText(
+              <div className="mb-0 flex min-h-0 items-center">
+                <ReadTabSpeakButton
+                  utteranceKey={`explore-cat-${params.categoryId}-read-full-${card.id}`}
+                  question={card.question}
+                  answer={buildAnswerSpeechText(
                     card.answer_short,
                     card.answer_example,
                     card.answer_detailed
                   )}
-                  aria-label="Speak answer"
                   englishTts={userSettings.english_tts}
                   voiceStyle={userSettings.voice_style}
                 />
