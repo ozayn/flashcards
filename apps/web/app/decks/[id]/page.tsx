@@ -76,6 +76,7 @@ import {
   orderDeckFlashcardsForDisplay,
 } from "@/lib/deck-flashcards-display-order";
 import { cn } from "@/lib/utils";
+import { FlashcardCardImage } from "@/components/flashcard-card-image";
 import {
   coerceDeckStudyStatus,
   DECK_STUDY_STATUSES,
@@ -129,6 +130,7 @@ interface Flashcard {
   answer_short: string;
   answer_example?: string | null;
   answer_detailed?: string | null;
+  image_url?: string | null;
   bookmarked?: boolean;
 }
 
@@ -2167,7 +2169,15 @@ export default function DeckPage({ params }: DeckPageProps) {
                       }
                       className="min-w-0 flex-1 text-start cursor-pointer hover:opacity-90 transition-opacity"
                     >
-                    <div className="flex flex-col gap-1.5">
+                    <div className="flex flex-col gap-1.5 min-w-0">
+                      {card.image_url ? (
+                        <div className="w-full max-w-[7.5rem] sm:max-w-[8.5rem]">
+                          <FlashcardCardImage
+                            imageUrl={card.image_url}
+                            size="sm"
+                          />
+                        </div>
+                      ) : null}
                       <div dir="auto" className="min-w-0 font-semibold text-xl leading-snug max-mobile:text-lg max-mobile:leading-snug">
                         <FormattedText text={card.question} className="text-inherit font-inherit" />
                       </div>
@@ -2261,6 +2271,15 @@ export default function DeckPage({ params }: DeckPageProps) {
                   className="group rounded-xl border border-neutral-200 bg-white dark:bg-neutral-900 dark:border-neutral-700 flex flex-col overflow-hidden"
                 >
                   <div className="flex flex-1 flex-col">
+                    {card.image_url ? (
+                      <div className="w-full border-b border-border/40 bg-muted/10 px-3 pt-3 max-mobile:px-3.5 max-mobile:pt-3">
+                        <FlashcardCardImage
+                          imageUrl={card.image_url}
+                          size="sm"
+                          className="max-h-32"
+                        />
+                      </div>
+                    ) : null}
                     <div
                       dir="auto"
                       className="flex items-start gap-1 px-4 pt-3 max-mobile:px-3.5 max-mobile:pt-3"

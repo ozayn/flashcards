@@ -16,3 +16,5 @@ langdetect>=1.0.9
 json-repair>=0.44.0
 youtube-transcript-api>=1.0.0
 beautifulsoup4>=4.12.0
+# Flashcard image resize/compress (WebP)
+Pillow>=10.0.0

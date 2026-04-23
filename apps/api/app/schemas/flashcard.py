@@ -14,6 +14,8 @@ class FlashcardCreate(BaseModel):
     answer_short: str = Field(..., min_length=1, max_length=1000)
     answer_example: Optional[str] = None
     answer_detailed: Optional[str] = None
+    # Set from upload response, e.g. flashcard-images/{uuid}.png
+    image_url: Optional[str] = Field(None, max_length=512)
     difficulty: Literal["easy", "medium", "hard"] = Field(default="medium")
 
 
@@ -22,6 +24,7 @@ class FlashcardUpdate(BaseModel):
     answer_short: Optional[str] = Field(None, min_length=1, max_length=1000)
     answer_example: Optional[str] = None
     answer_detailed: Optional[str] = None
+    image_url: Optional[str] = Field(None, max_length=512)
     difficulty: Optional[Literal["easy", "medium", "hard"]] = None
 
 
@@ -32,6 +35,7 @@ class FlashcardResponse(BaseModel):
     answer_short: str
     answer_example: Optional[str] = None
     answer_detailed: Optional[str] = None
+    image_url: Optional[str] = None
     difficulty: str
     created_at: datetime
     bookmarked: bool = False
@@ -48,6 +52,7 @@ class FlashcardResponse(BaseModel):
             answer_short=flashcard.answer_short,
             answer_example=flashcard.answer_example,
             answer_detailed=flashcard.answer_detailed,
+            image_url=getattr(flashcard, "image_url", None) or None,
             difficulty=INT_TO_DIFFICULTY.get(flashcard.difficulty, "medium"),
             created_at=flashcard.created_at,
             bookmarked=bookmarked,

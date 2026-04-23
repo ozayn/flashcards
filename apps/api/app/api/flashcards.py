@@ -20,6 +20,7 @@ from app.core.user_tier import (
 )
 from app.models import Deck, Flashcard, FlashcardBookmark, User
 from app.utils.import_answer_split import resolve_import_answer_fields
+from app.api.flashcard_images import validate_image_url_for_write
 from app.schemas.flashcard import (
     DIFFICULTY_TO_INT,
     INT_TO_DIFFICULTY,
@@ -146,6 +147,12 @@ async def update_flashcard(
         flashcard.answer_detailed = data.answer_detailed
     if data.difficulty is not None:
         flashcard.difficulty = DIFFICULTY_TO_INT.get(data.difficulty, 1)
+    if "image_url" in update_payload:
+        v = update_payload.get("image_url")
+        if v is None or (isinstance(v, str) and not v.strip()):
+            flashcard.image_url = None
+        else:
+            flashcard.image_url = validate_image_url_for_write(str(v).strip())
     await db.flush()
     await db.refresh(flashcard)
     bookmarked = (
@@ -194,29 +201,23 @@ async def create_flashcard(
     owner = owner_result.scalar_one_or_none()
     await assert_may_add_flashcards_to_deck(db, payload.deck_id, owner, trusted_id, 1)
 
+    img: str | None = None
+    if payload.image_url:
+        img = validate_image_url_for_write(payload.image_url)
     flashcard = Flashcard(
         deck_id=payload.deck_id,
         question=payload.question,
         answer_short=payload.answer_short,
         answer_example=payload.answer_example,
         answer_detailed=payload.answer_detailed,
+        image_url=img,
         difficulty=DIFFICULTY_TO_INT.get(payload.difficulty, 1),
     )
     db.add(flashcard)
     await db.flush()
     await db.refresh(flashcard)
 
-    return FlashcardResponse(
-        id=flashcard.id,
-        deck_id=flashcard.deck_id,
-        question=flashcard.question,
-        answer_short=flashcard.answer_short,
-        answer_example=flashcard.answer_example,
-        answer_detailed=flashcard.answer_detailed,
-        difficulty=INT_TO_DIFFICULTY.get(flashcard.difficulty, "medium"),
-        created_at=flashcard.created_at,
-        bookmarked=False,
-    )
+    return FlashcardResponse.from_flashcard(flashcard, bookmarked=False)
 
 
 class _ImportCard(BaseModel):

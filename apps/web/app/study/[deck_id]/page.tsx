@@ -38,6 +38,7 @@ import { ReadTabReadAllBar } from "@/components/read-tab-read-all-bar";
 import { ReadTabSpeakButton } from "@/components/read-tab-speak-button";
 import { useReadTabAutoplay } from "@/hooks/use-read-tab-autoplay";
 import { cn } from "@/lib/utils";
+import { FlashcardCardImage } from "@/components/flashcard-card-image";
 
 interface StudyPageProps {
   params: { deck_id: string };
@@ -49,6 +50,7 @@ interface StudyFlashcard {
   answer_short: string;
   answer_example?: string | null;
   answer_detailed?: string | null;
+  image_url?: string | null;
   bookmarked?: boolean;
 }
 
@@ -929,6 +931,11 @@ export default function StudyPage({ params }: StudyPageProps) {
                   />
                 </div>
               ) : null}
+              {card.image_url ? (
+                <div className="w-full max-w-md mx-auto">
+                  <FlashcardCardImage imageUrl={card.image_url} size="md" />
+                </div>
+              ) : null}
               <FormattedText
                 text={card.question}
                 className="text-2xl font-medium leading-snug sm:text-3xl sm:leading-relaxed lg:text-4xl landscape-mobile:text-2xl landscape-mobile:leading-snug"
@@ -1036,10 +1043,17 @@ export default function StudyPage({ params }: StudyPageProps) {
                   cardStyle={userSettings.card_style}
                   reserveBookmarkCorner={Boolean(getStoredUserId())}
                   front={
-                    <div className="min-h-0 w-full flex-1 overflow-y-auto">
+                    <div className="flex min-h-0 w-full flex-1 flex-col items-stretch gap-3 overflow-y-auto">
+                      {card.image_url ? (
+                        <FlashcardCardImage
+                          imageUrl={card.image_url}
+                          size="lg"
+                          className="shrink-0"
+                        />
+                      ) : null}
                       <FormattedText
                         text={card.question}
-                        className="text-2xl font-medium leading-snug sm:text-3xl sm:leading-relaxed lg:text-4xl landscape-mobile:text-2xl landscape-mobile:leading-snug"
+                        className="min-w-0 text-2xl font-medium leading-snug sm:text-3xl sm:leading-relaxed lg:text-4xl landscape-mobile:text-2xl landscape-mobile:leading-snug"
                       />
                     </div>
                   }

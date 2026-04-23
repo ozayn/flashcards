@@ -78,9 +78,10 @@ async function proxy(
     headers.set("X-Memo-Acting-User-Signature", sig);
   }
 
-  let body: string | undefined;
+  let body: BodyInit | undefined;
   if (["POST", "PATCH", "PUT"].includes(request.method)) {
-    body = await request.text();
+    const buf = await request.arrayBuffer();
+    body = buf.byteLength > 0 ? buf : undefined;
   }
 
   const controller = new AbortController();
@@ -96,18 +97,43 @@ async function proxy(
 
     clearTimeout(timeout);
 
-    const resBody = await res.text();
+    if (res.status === 204 || res.status === 304) {
+      const responseHeaders = new Headers();
+      for (const name of [
+        "content-type",
+        "content-disposition",
+        "cache-control",
+        "etag",
+      ] as const) {
+        const v = res.headers.get(name);
+        if (v) responseHeaders.set(name, v);
+      }
+      return new NextResponse(null, {
+        status: res.status,
+        statusText: res.statusText,
+        headers: responseHeaders,
+      });
+    }
+
+    const resBuf = await res.arrayBuffer();
     const responseHeaders = new Headers();
-    const contentType = res.headers.get("content-type");
-    if (contentType) responseHeaders.set("content-type", contentType);
-    const contentDisposition = res.headers.get("content-disposition");
-    if (contentDisposition) responseHeaders.set("content-disposition", contentDisposition);
-    const responseBody = (res.status === 204 || res.status === 304) ? null : resBody;
-    return new NextResponse(responseBody, {
-      status: res.status,
-      statusText: res.statusText,
-      headers: responseHeaders,
-    });
+    for (const name of [
+      "content-type",
+      "content-disposition",
+      "cache-control",
+      "etag",
+    ] as const) {
+      const v = res.headers.get(name);
+      if (v) responseHeaders.set(name, v);
+    }
+    return new NextResponse(
+      resBuf.byteLength > 0 ? resBuf : new ArrayBuffer(0),
+      {
+        status: res.status,
+        statusText: res.statusText,
+        headers: responseHeaders,
+      }
+    );
   } catch (err) {
     clearTimeout(timeout);
 

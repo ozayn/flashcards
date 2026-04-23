@@ -15,6 +15,7 @@ import { createFlashcard } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import PageContainer from "@/components/layout/page-container";
 import { FlashcardMarkdownToolbar } from "@/components/flashcard-markdown-toolbar";
+import { FlashcardImageField } from "@/components/flashcard-image-field";
 
 interface AddCardPageProps {
   params: { id: string };
@@ -27,6 +28,7 @@ export default function AddCardPage({ params }: AddCardPageProps) {
   const [answerExample, setAnswerExample] = useState("");
   const [answerDetailed, setAnswerDetailed] = useState("");
   const [difficulty, setDifficulty] = useState<"easy" | "medium" | "hard">("medium");
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const questionRef = useRef<HTMLTextAreaElement>(null);
@@ -52,6 +54,7 @@ export default function AddCardPage({ params }: AddCardPageProps) {
           answerExample.trim() === "" ? undefined : answerExample.trim(),
         answer_detailed:
           answerDetailed.trim() === "" ? undefined : answerDetailed.trim(),
+        image_url: imageUrl,
         difficulty,
       });
 
@@ -82,6 +85,11 @@ export default function AddCardPage({ params }: AddCardPageProps) {
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
+              <FlashcardImageField
+                value={imageUrl}
+                onChange={setImageUrl}
+                disabled={submitting}
+              />
               <div className="space-y-2">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <label htmlFor="question" className="text-sm font-medium">

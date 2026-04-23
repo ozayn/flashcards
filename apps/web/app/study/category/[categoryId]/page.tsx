@@ -25,6 +25,7 @@ import { getStoredUserId } from "@/components/user-selector";
 import { FlashcardSpeakButton } from "@/components/flashcard-speak-button";
 import { useLocalSpeechVoiceKey } from "@/hooks/use-local-speech-voice-key";
 import { useMigrateAccountSpeechFromSettings } from "@/hooks/use-migrate-account-speech-voice";
+import { FlashcardCardImage } from "@/components/flashcard-card-image";
 
 interface CategoryStudyPageProps {
   params: { categoryId: string };
@@ -42,6 +43,7 @@ interface StudyFlashcard {
   answer_short: string;
   answer_example?: string | null;
   answer_detailed?: string | null;
+  image_url?: string | null;
 }
 
 interface NextCategoryInfo {
@@ -508,10 +510,17 @@ export default function CategoryStudyPage({ params }: CategoryStudyPageProps) {
               <Flashcard
                 cardStyle={userSettings.card_style}
                 front={
-                  <div className="min-h-0 w-full flex-1 overflow-y-auto">
+                  <div className="flex min-h-0 w-full flex-1 flex-col items-stretch gap-3 overflow-y-auto">
+                    {card.image_url ? (
+                      <FlashcardCardImage
+                        imageUrl={card.image_url}
+                        size="lg"
+                        className="shrink-0"
+                      />
+                    ) : null}
                     <FormattedText
                       text={card.question}
-                      className="text-2xl font-medium leading-snug sm:text-3xl sm:leading-relaxed lg:text-4xl"
+                      className="min-w-0 text-2xl font-medium leading-snug sm:text-3xl sm:leading-relaxed lg:text-4xl"
                     />
                   </div>
                 }

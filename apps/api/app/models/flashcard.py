@@ -23,6 +23,8 @@ class Flashcard(Base):
     answer_short: Mapped[str] = mapped_column(String(1000), nullable=False)
     answer_example: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     answer_detailed: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # Public URL path segment for the API, e.g. flashcard-images/{uuid}.png (served by GET /flashcard-images/...)
+    image_url: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
     difficulty: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, nullable=False

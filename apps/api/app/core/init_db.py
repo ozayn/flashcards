@@ -198,6 +198,19 @@ async def init_db() -> None:
         await conn.run_sync(_migrate_flashcards_answer_example)
     logger.info("Applied flashcards answer_example column migration")
 
+    async with engine.begin() as conn:
+        def _migrate_flashcards_image_url(sync_conn):
+            _add_column_if_missing(
+                sync_conn,
+                "flashcards",
+                "image_url",
+                "ALTER TABLE flashcards ADD COLUMN image_url TEXT",
+                pg_if_not_exists="ALTER TABLE flashcards ADD COLUMN IF NOT EXISTS image_url VARCHAR(512)",
+            )
+
+        await conn.run_sync(_migrate_flashcards_image_url)
+    logger.info("Applied flashcards image_url column migration")
+
     # Make source_type nullable for PostgreSQL (allows NULL for existing/legacy rows)
     if not _IS_SQLITE:
         async with engine.begin() as conn:

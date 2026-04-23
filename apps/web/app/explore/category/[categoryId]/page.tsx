@@ -29,6 +29,7 @@ import { useReadTabAutoplay } from "@/hooks/use-read-tab-autoplay";
 import { useLocalSpeechVoiceKey } from "@/hooks/use-local-speech-voice-key";
 import { useMigrateAccountSpeechFromSettings } from "@/hooks/use-migrate-account-speech-voice";
 import { cn } from "@/lib/utils";
+import { FlashcardCardImage } from "@/components/flashcard-card-image";
 
 interface CategoryExplorePageProps {
   params: { categoryId: string };
@@ -46,6 +47,7 @@ interface ExploreFlashcard {
   answer_short: string;
   answer_example?: string | null;
   answer_detailed?: string | null;
+  image_url?: string | null;
   bookmarked?: boolean;
 }
 
@@ -606,6 +608,11 @@ export default function CategoryExplorePage({ params }: CategoryExplorePageProps
                   }
                 />
               </div>
+              {card.image_url ? (
+                <div className="w-full max-w-md mx-auto">
+                  <FlashcardCardImage imageUrl={card.image_url} size="md" />
+                </div>
+              ) : null}
               <FormattedText
                 text={card.question}
                 className="text-2xl sm:text-3xl lg:text-4xl font-medium leading-snug sm:leading-relaxed"
@@ -713,10 +720,17 @@ export default function CategoryExplorePage({ params }: CategoryExplorePageProps
                   cardStyle={userSettings.card_style}
                   reserveBookmarkCorner={Boolean(getStoredUserId())}
                   front={
-                    <div className="min-h-0 w-full flex-1 overflow-y-auto">
+                    <div className="flex min-h-0 w-full flex-1 flex-col items-stretch gap-3 overflow-y-auto">
+                      {card.image_url ? (
+                        <FlashcardCardImage
+                          imageUrl={card.image_url}
+                          size="lg"
+                          className="shrink-0"
+                        />
+                      ) : null}
                       <FormattedText
                         text={card.question}
-                        className="text-2xl font-medium leading-snug sm:text-3xl sm:leading-relaxed lg:text-4xl"
+                        className="min-w-0 text-2xl font-medium leading-snug sm:text-3xl sm:leading-relaxed lg:text-4xl"
                       />
                     </div>
                   }

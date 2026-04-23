@@ -152,6 +152,7 @@ async def duplicate_deck(
             answer_short=card.answer_short,
             answer_example=card.answer_example,
             answer_detailed=card.answer_detailed,
+            image_url=getattr(card, "image_url", None) or None,
             difficulty=card.difficulty,
         ))
         card_count += 1

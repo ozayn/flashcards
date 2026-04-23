@@ -43,3 +43,6 @@ dev.db
 *.db-journal
 *.db-wal
 *.db-shm
+
+# API upload storage (dev / local; created at runtime)
+apps/api/app/data/flashcard_images/

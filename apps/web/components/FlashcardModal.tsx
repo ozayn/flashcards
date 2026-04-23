@@ -16,6 +16,7 @@ import { cancelAllFlashcardSpeech, type EnglishTtsPreference, type VoiceStylePre
 import { FlashcardSpeakButton } from "@/components/flashcard-speak-button";
 import { inferTextDirection } from "@/lib/infer-text-direction";
 import { cn } from "@/lib/utils";
+import { FlashcardCardImage } from "@/components/flashcard-card-image";
 
 export interface FlashcardModalCard {
   id: string;
@@ -23,6 +24,7 @@ export interface FlashcardModalCard {
   answer_short: string;
   answer_example?: string | null;
   answer_detailed?: string | null;
+  image_url?: string | null;
   bookmarked?: boolean;
 }
 
@@ -275,6 +277,11 @@ export function FlashcardModal({
                     <div dir="auto" className="text-base font-medium leading-relaxed text-foreground">
                       <FormattedText text={card.question} className="text-inherit" />
                     </div>
+                    {card.image_url ? (
+                      <div className="pt-3">
+                        <FlashcardCardImage imageUrl={card.image_url} size="md" />
+                      </div>
+                    ) : null}
                   </div>
                   <div>
                     <div className="mb-1.5 flex items-center gap-0.5">
@@ -439,8 +446,17 @@ export function FlashcardModal({
                     key={card.id}
                     reserveBookmarkCorner={Boolean(onBookmarkToggle)}
                     question={
-                      <div className="text-2xl sm:text-3xl lg:text-4xl font-medium leading-snug sm:leading-relaxed text-foreground">
-                        <FormattedText text={card.question} className="text-inherit" />
+                      <div className="flex w-full min-w-0 flex-col items-stretch gap-3">
+                        {card.image_url ? (
+                          <FlashcardCardImage
+                            imageUrl={card.image_url}
+                            size="lg"
+                            className="shrink-0"
+                          />
+                        ) : null}
+                        <div className="text-2xl sm:text-3xl lg:text-4xl font-medium leading-snug sm:leading-relaxed text-foreground min-w-0">
+                          <FormattedText text={card.question} className="text-inherit" />
+                        </div>
                       </div>
                     }
                     answer={

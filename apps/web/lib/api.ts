@@ -9,6 +9,59 @@ export type { EnglishTtsPreference, VoiceStylePreference } from "./flashcard-spe
 
 const API_BASE = "/api/proxy";
 
+/** Max raw upload size before server-side resize/WebP; must match API. */
+export const FLASHCARD_IMAGE_MAX_BYTES = 8 * 1024 * 1024;
+
+/**
+ * Build same-origin URL to load a stored card image through the Next.js proxy.
+ * `stored` is the API value, e.g. `flashcard-images/{uuid}.png`.
+ */
+export function flashcardImageRequestUrl(
+  stored: string | null | undefined
+): string | null {
+  if (stored == null) return null;
+  const t = String(stored).trim();
+  if (!t) return null;
+  if (t.startsWith("http://") || t.startsWith("https://")) return t;
+  return `${API_BASE}/${t.replace(/^\//, "")}`;
+}
+
+export type FlashcardImageUploadMeta = {
+  width: number;
+  height: number;
+  byte_size: number;
+  max_dimension: number;
+  file_format: string;
+  quality: number;
+};
+
+/** POST multipart; server resizes/compresses to WebP. Returns path + processing metadata. */
+export async function uploadFlashcardImage(
+  file: File
+): Promise<{ url: string; meta: FlashcardImageUploadMeta }> {
+  if (file.size > FLASHCARD_IMAGE_MAX_BYTES) {
+    throw new Error("Image is too large. Maximum upload size is 8 MB.");
+  }
+  const ct = (file.type || "").toLowerCase();
+  if (
+    ct &&
+    !/^image\/(jpeg|png|gif|webp)$/.test(ct) &&
+    ct !== "image/jpg"
+  ) {
+    throw new Error("Only JPEG, PNG, GIF, and WebP images are allowed");
+  }
+  const fd = new FormData();
+  fd.append("file", file);
+  const res = await fetch(`${API_BASE}/flashcard-images`, {
+    method: "POST",
+    body: fd,
+  });
+  if (!res.ok) {
+    throw new Error(await readApiErrorMessage(res, "Failed to upload image"));
+  }
+  return res.json() as Promise<{ url: string; meta: FlashcardImageUploadMeta }>;
+}
+
 /** Parse FastAPI `detail` (string or validation list) for user-facing errors. */
 export async function readApiErrorMessage(
   res: Response,
@@ -938,6 +991,7 @@ export async function createFlashcard(data: {
   answer_short: string;
   answer_example?: string;
   answer_detailed?: string;
+  image_url?: string | null;
   difficulty?: string;
 }) {
   const res = await fetch(`${API_BASE}/flashcards`, {
@@ -1001,6 +1055,7 @@ export async function updateFlashcard(
     answer_short?: string;
     answer_example?: string | null;
     answer_detailed?: string;
+    image_url?: string | null;
     difficulty?: string;
   }
 ) {

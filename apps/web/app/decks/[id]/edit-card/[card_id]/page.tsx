@@ -17,6 +17,7 @@ import {
   setFlashcardBookmark,
   updateFlashcard,
 } from "@/lib/api";
+import { FlashcardImageField } from "@/components/flashcard-image-field";
 import {
   getNextEditCardId,
   getPrevEditCardId,
@@ -38,6 +39,7 @@ type DeckCardRow = {
   answer_short: string;
   answer_example?: string | null;
   answer_detailed?: string | null;
+  image_url?: string | null;
   bookmarked?: boolean;
 };
 
@@ -61,6 +63,7 @@ export default function EditCardPage({ params }: EditCardPageProps) {
   const [bookmarkPending, setBookmarkPending] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
 
   const questionRef = useRef<HTMLTextAreaElement>(null);
   const answerRef = useRef<HTMLTextAreaElement>(null);
@@ -123,6 +126,12 @@ export default function EditCardPage({ params }: EditCardPageProps) {
         setAnswerDetailed(data.answer_detailed ?? "");
         setDifficulty((data.difficulty as "easy" | "medium" | "hard") ?? "medium");
         setBookmarked(Boolean((data as { bookmarked?: boolean }).bookmarked));
+        {
+          const u = (data as { image_url?: string | null }).image_url;
+          setImageUrl(
+            typeof u === "string" ? (u.trim() || null) : u ?? null
+          );
+        }
       } catch {
         if (!cancelled) setError("Failed to load card");
       } finally {
@@ -141,6 +150,7 @@ export default function EditCardPage({ params }: EditCardPageProps) {
       answer_short: answerShort,
       answer_example: answerExample.trim() === "" ? null : answerExample.trim(),
       answer_detailed: answerDetailed.trim() || undefined,
+      image_url: imageUrl,
       difficulty,
     });
   };
@@ -313,6 +323,11 @@ export default function EditCardPage({ params }: EditCardPageProps) {
             onSubmit={handleSubmit}
             className="space-y-4"
           >
+            <FlashcardImageField
+              value={imageUrl}
+              onChange={setImageUrl}
+              disabled={submitting || deleting}
+            />
             <div className="space-y-2">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <label htmlFor="question" className="text-sm font-medium">
