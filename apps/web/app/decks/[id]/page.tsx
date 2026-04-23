@@ -44,6 +44,8 @@ import {
   updateDeck,
 } from "@/lib/api";
 import { getStoredUserId, useTierLimits } from "@/components/user-selector";
+import { useLocalSpeechVoiceKey } from "@/hooks/use-local-speech-voice-key";
+import { useMigrateAccountSpeechFromSettings } from "@/hooks/use-migrate-account-speech-voice";
 import { GENERATION_TEXT_MAX_CHARS } from "@/lib/generation-text";
 import {
   peekDeckBackgroundGenerationPending,
@@ -430,6 +432,8 @@ export default function DeckPage({ params }: DeckPageProps) {
     voice_style: "default",
     speech_voice: "",
   });
+  const localSpeechVoiceKey = useLocalSpeechVoiceKey();
+  useMigrateAccountSpeechFromSettings(userSettings);
 
   type SortOption = typeof cardSort;
   const SORT_OPTIONS: { value: SortOption; label: string }[] = [
@@ -2447,7 +2451,7 @@ export default function DeckPage({ params }: DeckPageProps) {
           bookmarkPendingId={bookmarkPendingId}
           englishTts={userSettings.english_tts}
           voiceStyle={userSettings.voice_style}
-          speechVoiceKey={userSettings.speech_voice}
+          speechVoiceKey={localSpeechVoiceKey}
         />
 
         {!isReadOnly && deleteConfirmId && (

@@ -23,6 +23,8 @@ import {
 } from "@/lib/api";
 import { getStoredUserId } from "@/components/user-selector";
 import { FlashcardSpeakButton } from "@/components/flashcard-speak-button";
+import { useLocalSpeechVoiceKey } from "@/hooks/use-local-speech-voice-key";
+import { useMigrateAccountSpeechFromSettings } from "@/hooks/use-migrate-account-speech-voice";
 
 interface CategoryStudyPageProps {
   params: { categoryId: string };
@@ -70,6 +72,8 @@ export default function CategoryStudyPage({ params }: CategoryStudyPageProps) {
     voice_style: "default",
     speech_voice: "",
   });
+  const localSpeechVoiceKey = useLocalSpeechVoiceKey();
+  useMigrateAccountSpeechFromSettings(userSettings);
   const touchStartX = useRef(0);
 
   useEffect(() => {
@@ -497,7 +501,7 @@ export default function CategoryStudyPage({ params }: CategoryStudyPageProps) {
                     aria-label={showAnswer ? "Speak answer" : "Speak question"}
                     englishTts={userSettings.english_tts}
                     voiceStyle={userSettings.voice_style}
-                    speechVoiceKey={userSettings.speech_voice}
+                    speechVoiceKey={localSpeechVoiceKey}
                   />
                 </div>
               </div>

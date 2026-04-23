@@ -23,6 +23,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import PageContainer from "@/components/layout/page-container";
 import { SpeechVoiceSelect } from "@/components/speech-voice-select";
+import { useLocalSpeechVoiceKey } from "@/hooks/use-local-speech-voice-key";
+import { useMigrateAccountSpeechFromSettings } from "@/hooks/use-migrate-account-speech-voice";
+import { setLocalSpeechVoiceKey } from "@/lib/local-speech-voice";
 
 /** Short list for profile; keep in sync with getUserActivity default. */
 const RECENT_ACTIVITY_LIMIT = 10;
@@ -110,6 +113,8 @@ export default function ProfilePage() {
   const [activity, setActivity] = useState<UserActivityEntry[]>([]);
   const [activityLoading, setActivityLoading] = useState(false);
   const [userSettings, setUserSettings] = useState<UserSettings | null>(null);
+  const localSpeechVoiceKey = useLocalSpeechVoiceKey();
+  useMigrateAccountSpeechFromSettings(userSettings);
 
   useEffect(() => {
     if (status === "loading") return;
@@ -283,19 +288,9 @@ export default function ProfilePage() {
     }
   }
 
-  async function handleSpeechVoiceChange(key: string) {
-    if (!userId || !userSettings) return;
-    try {
-      const updated = await updateUserSettings(userId, { speech_voice: key });
-      setUserSettings(updated);
-      window.dispatchEvent(
-        new CustomEvent("flashcard_settings_changed", {
-          detail: { settings: updated },
-        })
-      );
-    } catch {
-      /* ignore */
-    }
+  function handleSpeechVoiceChange(key: string) {
+    if (!userId) return;
+    setLocalSpeechVoiceKey(userId, key);
   }
 
   if (status === "loading" || (loading && userId)) {
@@ -507,12 +502,13 @@ export default function ProfilePage() {
               Speaking voice
             </h2>
             <p className="mb-2 text-xs text-muted-foreground">
-              Voices depend on your browser and device. Choose a specific engine or leave Auto to use
-              English / Farsi preferences above.
+              Accent, language, and voice style (above) follow your account. A specific speaking
+              voice is stored in this browser only, so you can use a different engine on each
+              device. Leave Auto to use your account preferences for automatic selection.
             </p>
             <SpeechVoiceSelect
-              value={userSettings.speech_voice ?? ""}
-              onChange={(k) => void handleSpeechVoiceChange(k)}
+              value={localSpeechVoiceKey}
+              onChange={handleSpeechVoiceChange}
             />
           </div>
         ) : null}

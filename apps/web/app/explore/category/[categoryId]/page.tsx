@@ -26,6 +26,8 @@ import { FlashcardSpeakButton } from "@/components/flashcard-speak-button";
 import { ReadTabReadAllBar } from "@/components/read-tab-read-all-bar";
 import { ReadTabSpeakButton } from "@/components/read-tab-speak-button";
 import { useReadTabAutoplay } from "@/hooks/use-read-tab-autoplay";
+import { useLocalSpeechVoiceKey } from "@/hooks/use-local-speech-voice-key";
+import { useMigrateAccountSpeechFromSettings } from "@/hooks/use-migrate-account-speech-voice";
 import { cn } from "@/lib/utils";
 
 interface CategoryExplorePageProps {
@@ -71,6 +73,8 @@ export default function CategoryExplorePage({ params }: CategoryExplorePageProps
     voice_style: "default",
     speech_voice: "",
   });
+  const localSpeechVoiceKey = useLocalSpeechVoiceKey();
+  useMigrateAccountSpeechFromSettings(userSettings);
   const touchStartX = useRef(0);
   const [bookmarkBusyId, setBookmarkBusyId] = useState<string | null>(null);
 
@@ -96,7 +100,7 @@ export default function CategoryExplorePage({ params }: CategoryExplorePageProps
     setCurrentIndex: setCurrentCardIndex,
     englishTts: userSettings.english_tts,
     voiceStyle: userSettings.voice_style,
-    speechVoiceKey: userSettings.speech_voice,
+    speechVoiceKey: localSpeechVoiceKey,
   });
   const {
     state: readAllState,
@@ -585,7 +589,7 @@ export default function CategoryExplorePage({ params }: CategoryExplorePageProps
                   )}
                   englishTts={userSettings.english_tts}
                   voiceStyle={userSettings.voice_style}
-                  speechVoiceKey={userSettings.speech_voice}
+                  speechVoiceKey={localSpeechVoiceKey}
                 />
                 <ReadTabReadAllBar
                   className="ms-0.5"
@@ -701,7 +705,7 @@ export default function CategoryExplorePage({ params }: CategoryExplorePageProps
                       aria-label={showAnswer ? "Speak answer" : "Speak question"}
                       englishTts={userSettings.english_tts}
                       voiceStyle={userSettings.voice_style}
-                      speechVoiceKey={userSettings.speech_voice}
+                      speechVoiceKey={localSpeechVoiceKey}
                     />
                   </div>
                 </div>

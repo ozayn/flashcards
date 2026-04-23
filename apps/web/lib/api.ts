@@ -1109,7 +1109,11 @@ export interface UserSettings {
   card_style: "paper" | "minimal" | "modern" | "anki";
   english_tts: EnglishTtsPreference;
   voice_style: VoiceStylePreference;
-  /** Empty = automatic voice selection; otherwise `getSpeechVoiceKey` from the browser. */
+  /**
+   * Legacy field from the server. The app no longer writes the device speaking voice to the
+   * account; use `localStorage` per browser (see `lib/local-speech-voice.ts`). If present, it
+   * may be copied once to local storage for migration.
+   */
   speech_voice: string;
 }
 

@@ -31,6 +31,8 @@ import {
   writeDeckStudyResume,
 } from "@/lib/deck-study-resume";
 import { getStoredUserId } from "@/components/user-selector";
+import { useLocalSpeechVoiceKey } from "@/hooks/use-local-speech-voice-key";
+import { useMigrateAccountSpeechFromSettings } from "@/hooks/use-migrate-account-speech-voice";
 import { FlashcardSpeakButton } from "@/components/flashcard-speak-button";
 import { ReadTabReadAllBar } from "@/components/read-tab-read-all-bar";
 import { ReadTabSpeakButton } from "@/components/read-tab-speak-button";
@@ -97,6 +99,8 @@ export default function StudyPage({ params }: StudyPageProps) {
   const [studyMenuOpen, setStudyMenuOpen] = useState(false);
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
   const [resetLoading, setResetLoading] = useState(false);
+  const localSpeechVoiceKey = useLocalSpeechVoiceKey();
+  useMigrateAccountSpeechFromSettings(userSettings);
   const touchStartX = useRef(0);
   const studyMenuRef = useRef<HTMLDivElement>(null);
   const loadGenRef = useRef(0);
@@ -131,7 +135,7 @@ export default function StudyPage({ params }: StudyPageProps) {
     setCurrentIndex: setCurrentCardIndex,
     englishTts: userSettings.english_tts,
     voiceStyle: userSettings.voice_style,
-    speechVoiceKey: userSettings.speech_voice,
+    speechVoiceKey: localSpeechVoiceKey,
   });
   const {
     state: readAllState,
@@ -897,7 +901,7 @@ export default function StudyPage({ params }: StudyPageProps) {
                   )}
                   englishTts={userSettings.english_tts}
                   voiceStyle={userSettings.voice_style}
-                  speechVoiceKey={userSettings.speech_voice}
+                  speechVoiceKey={localSpeechVoiceKey}
                 />
                 <ReadTabReadAllBar
                   className="ms-0.5"
@@ -1024,7 +1028,7 @@ export default function StudyPage({ params }: StudyPageProps) {
                       aria-label={showAnswer ? "Speak answer" : "Speak question"}
                       englishTts={userSettings.english_tts}
                       voiceStyle={userSettings.voice_style}
-                      speechVoiceKey={userSettings.speech_voice}
+                      speechVoiceKey={localSpeechVoiceKey}
                     />
                   </div>
                 </div>

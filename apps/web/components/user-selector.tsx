@@ -13,15 +13,13 @@ import {
   apiUrl,
   getUserSettings,
   updateUserSettings,
-  type EnglishTtsPreference,
   type UserSettings,
   type UserUsageLimits,
-  type VoiceStylePreference,
 } from "@/lib/api";
 import { userIsProductAdmin } from "@/lib/product-admin";
 import { cn } from "@/lib/utils";
 import { AccountAvatar } from "@/components/account-avatar";
-import { SpeechVoiceSelect } from "@/components/speech-voice-select";
+import { FLASHCARD_USER_ID_STORAGE_KEY as STORAGE_KEY, getStoredUserId } from "@/lib/stored-user-id";
 import type { Session } from "next-auth";
 
 /** Caps menu height vs viewport so the panel stays on-screen (mobile-friendly with dvh). */
@@ -62,7 +60,6 @@ function accountMenuInitials(name?: string | null, email?: string | null): strin
   return "?";
 }
 
-const STORAGE_KEY = "flashcard_user_id";
 const ROLE_STORAGE_KEY = "flashcard_user_role";
 const NAME_STORAGE_KEY = "flashcard_user_name";
 const EMAIL_STORAGE_KEY = "flashcard_user_email";
@@ -295,54 +292,6 @@ export function UserSelector() {
     }
   };
 
-  const handleEnglishTtsChange = async (pref: EnglishTtsPreference) => {
-    const userId = getStoredUserId();
-    if (!userId || !cardSettings) return;
-    try {
-      const updated = await updateUserSettings(userId, { english_tts: pref });
-      setCardSettings(updated);
-      window.dispatchEvent(
-        new CustomEvent("flashcard_settings_changed", {
-          detail: { settings: updated },
-        })
-      );
-    } catch {
-      /* ignore */
-    }
-  };
-
-  const handleVoiceStyleChange = async (pref: VoiceStylePreference) => {
-    const userId = getStoredUserId();
-    if (!userId || !cardSettings) return;
-    try {
-      const updated = await updateUserSettings(userId, { voice_style: pref });
-      setCardSettings(updated);
-      window.dispatchEvent(
-        new CustomEvent("flashcard_settings_changed", {
-          detail: { settings: updated },
-        })
-      );
-    } catch {
-      /* ignore */
-    }
-  };
-
-  const handleSpeechVoiceChange = async (key: string) => {
-    const userId = getStoredUserId();
-    if (!userId || !cardSettings) return;
-    try {
-      const updated = await updateUserSettings(userId, { speech_voice: key });
-      setCardSettings(updated);
-      window.dispatchEvent(
-        new CustomEvent("flashcard_settings_changed", {
-          detail: { settings: updated },
-        })
-      );
-    } catch {
-      /* ignore */
-    }
-  };
-
   const handleAddUser = async (e: React.FormEvent) => {
     e.preventDefault();
     setAddError(null);
@@ -414,86 +363,11 @@ export function UserSelector() {
       </div>
     ) : null;
 
-  const menuEnglishTtsSection =
-    cardSettings ? (
-      <div className="border-t border-border px-3 py-1.5">
-        <p className="mb-1.5 text-xs font-medium text-muted-foreground">Read aloud (English)</p>
-        <div className="flex flex-col gap-0.5">
-          {(
-            [
-              { value: "default" as const, label: "Default" },
-              { value: "british" as const, label: "British" },
-              { value: "american" as const, label: "American" },
-            ] as const
-          ).map(({ value, label }) => (
-            <label
-              key={value}
-              className={cn(
-                "flex cursor-pointer items-center gap-2 rounded-md px-2 py-0.5 text-sm",
-                cardSettings.english_tts === value && "bg-accent"
-              )}
-            >
-              <input
-                type="radio"
-                name="english-tts-nav"
-                checked={cardSettings.english_tts === value}
-                onChange={() => void handleEnglishTtsChange(value)}
-                className="rounded-full"
-              />
-              {label}
-            </label>
-          ))}
-        </div>
-      </div>
-    ) : null;
-
-  const menuVoiceStyleSection =
-    cardSettings ? (
-      <div className="border-t border-border px-3 py-1.5">
-        <p className="mb-1.5 text-xs font-medium text-muted-foreground">Preferred voice style</p>
-        <div className="flex flex-col gap-0.5">
-          {(
-            [
-              { value: "default" as const, label: "Default" },
-              { value: "female" as const, label: "Female" },
-              { value: "male" as const, label: "Male" },
-            ] as const
-          ).map(({ value, label }) => (
-            <label
-              key={value}
-              className={cn(
-                "flex cursor-pointer items-center gap-2 rounded-md px-2 py-0.5 text-sm",
-                cardSettings.voice_style === value && "bg-accent"
-              )}
-            >
-              <input
-                type="radio"
-                name="voice-style-nav"
-                checked={cardSettings.voice_style === value}
-                onChange={() => void handleVoiceStyleChange(value)}
-                className="rounded-full"
-              />
-              {label}
-            </label>
-          ))}
-        </div>
-      </div>
-    ) : null;
-
-  const menuSpeechVoiceSection = cardSettings ? (
-    <div className="border-t border-border px-3 py-1.5">
-      <p className="mb-1.5 text-xs font-medium text-muted-foreground">Speaking voice (this device)</p>
-      <SpeechVoiceSelect
-        value={cardSettings.speech_voice ?? ""}
-        onChange={(k) => void handleSpeechVoiceChange(k)}
-      />
-    </div>
-  ) : null;
-
   const menuAccountLinks = (
     <div className="py-1">
       <Link
         href="/profile"
+        title="Profile — includes read-aloud, voice, and other account settings"
         className="flex w-full px-3 py-2 text-left text-sm text-popover-foreground hover:bg-accent hover:text-accent-foreground rounded-sm"
         onClick={closeMenu}
       >
@@ -572,9 +446,6 @@ export function UserSelector() {
             )}
             {menuAccountLinks}
             {menuCardStyleSection}
-            {menuEnglishTtsSection}
-            {menuVoiceStyleSection}
-            {menuSpeechVoiceSection}
             <div className="border-t border-border mt-1 pt-1 px-1">
               {showAddForm ? (
                 <form onSubmit={handleAddUser} className="space-y-2 p-2">
@@ -696,9 +567,6 @@ export function UserSelector() {
             )}
             {menuAccountLinks}
             {menuCardStyleSection}
-            {menuEnglishTtsSection}
-            {menuVoiceStyleSection}
-            {menuSpeechVoiceSection}
           </div>
 
           <div className="mt-1 flex min-h-0 flex-1 flex-col border-t border-border">
@@ -786,10 +654,7 @@ export function UserSelector() {
   );
 }
 
-export function getStoredUserId(): string | null {
-  if (typeof window === "undefined") return null;
-  return localStorage.getItem(STORAGE_KEY);
-}
+export { getStoredUserId } from "@/lib/stored-user-id";
 
 export function isStoredUserAdmin(): boolean {
   if (typeof window === "undefined") return false;
