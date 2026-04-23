@@ -25,13 +25,33 @@ from fastapi import Depends, Form, Request, FastAPI
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import admin, generation, health, decks, users, flashcards, reviews, categories, youtube, webpage, flashcard_images
+from app.api import (
+    admin,
+    generation,
+    health,
+    decks,
+    users,
+    flashcards,
+    reviews,
+    categories,
+    youtube,
+    webpage,
+    flashcard_images,
+    study_ideas,
+)
 from app.core.database import engine, Base
 from app.core.init_db import init_db
 from app.core.auth import require_admin_key
 from app.core.dev_logging import attach_dev_access_log_filter
 from app.llm.direct_outbound import log_llm_outbound_isolation_once
-from app.models import User, Deck, Flashcard, Review, FlashcardBookmark  # noqa: F401 - register models
+from app.models import (  # noqa: F401 - register models
+    User,
+    Deck,
+    Flashcard,
+    Review,
+    FlashcardBookmark,
+    StudyIdea,
+)
 
 _is_production = os.environ.get("ENVIRONMENT", "development").lower() == "production"
 
@@ -142,6 +162,7 @@ app.add_middleware(
 
 app.include_router(health.router)
 app.include_router(categories.router)
+app.include_router(study_ideas.router)
 app.include_router(decks.router)
 app.include_router(users.router)
 app.include_router(admin.router)

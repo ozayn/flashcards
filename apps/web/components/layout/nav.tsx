@@ -14,6 +14,7 @@ type NavLink = { href: string; label: string; primary?: boolean; matchPrefixes?:
 
 const appNavLinks: NavLink[] = [
   { href: "/decks", label: "My Decks", matchPrefixes: ["/decks", "/categories"] },
+  { href: "/study-ideas", label: "Ideas", matchPrefixes: ["/study-ideas"] },
   { href: "/library", label: "Library", matchPrefixes: ["/library"] },
   { href: "/create-deck", label: "Create Deck" },
   { href: "/study", label: "Practice", matchPrefixes: ["/study", "/explore"] },

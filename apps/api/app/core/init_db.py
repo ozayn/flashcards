@@ -11,6 +11,7 @@ from app.models import (  # noqa: F401 - register models
     Review,
     Category,
     GenerationJobMetric,
+    StudyIdea,
 )
 
 logger = logging.getLogger(__name__)

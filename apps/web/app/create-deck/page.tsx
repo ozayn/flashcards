@@ -84,6 +84,10 @@ function CreateDeckForm() {
     const topicParam = searchParams.get("topic");
     const ytParam = searchParams.get("youtube");
     const titleParam = searchParams.get("title");
+    const nameParam = searchParams.get("name");
+    const textParam = searchParams.get("text");
+    const urlParam = searchParams.get("url");
+    const ytUrlRe = /(?:youtube\.com\/|youtu\.be\/)/i;
 
     if (modeParam === "text" && ytParam) {
       setGenerationMode("text");
@@ -94,12 +98,31 @@ function CreateDeckForm() {
         failureCode: null,
       });
       if (titleParam) setName(titleParam);
+    } else if (urlParam?.trim()) {
+      const u = urlParam.trim();
+      if (nameParam) setName(nameParam);
+      if (ytUrlRe.test(u)) {
+        setYoutubeUrl(u);
+        setGenerationMode("youtube");
+        if (topicParam) setTopic(topicParam);
+      } else {
+        setArticleUrl(u);
+        setGenerationMode("url");
+        if (topicParam) setTopic(topicParam);
+      }
+    } else if (textParam != null && String(textParam).trim() !== "") {
+      setText(String(textParam));
+      setGenerationMode("text");
+      if (nameParam) setName(nameParam);
+      if (topicParam) setTopic(topicParam);
     } else if (topicParam) {
       setTopic(topicParam);
       setGenerationMode("topic");
+      if (nameParam) setName(nameParam);
     } else if (ytParam) {
       setYoutubeUrl(ytParam);
       setGenerationMode("youtube");
+      if (nameParam) setName(nameParam);
     }
   }, [searchParams]);
 

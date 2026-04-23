@@ -6,6 +6,7 @@ from app.models.flashcard_bookmark import FlashcardBookmark
 from app.models.review import Review
 from app.models.category import Category
 from app.models.generation_job_metric import GenerationJobMetric
+from app.models.study_idea import StudyIdea
 from app.models.enums import GenerationStatus, UserRole, Plan, SourceType, ReviewRating
 
 __all__ = [
@@ -17,6 +18,7 @@ __all__ = [
     "Review",
     "Category",
     "GenerationJobMetric",
+    "StudyIdea",
     "UserRole",
     "Plan",
     "SourceType",

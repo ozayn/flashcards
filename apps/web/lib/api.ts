@@ -929,6 +929,104 @@ export async function deleteCategory(id: string, userId: string) {
   if (!res.ok) throw new Error("Failed to delete category");
 }
 
+/** Lightweight capture for future deck topics (not a deck). */
+export type StudyIdeaStatus = "idea" | "ready" | "archived";
+
+export type StudyIdea = {
+  id: string;
+  user_id: string;
+  title: string;
+  body: string | null;
+  url: string | null;
+  status: StudyIdeaStatus;
+  created_at: string;
+  updated_at: string;
+};
+
+export async function getStudyIdeas(
+  userId: string,
+  options?: { status?: StudyIdeaStatus }
+): Promise<StudyIdea[]> {
+  const p = new URLSearchParams();
+  p.set("user_id", userId);
+  if (options?.status) p.set("status", options.status);
+  const res = await fetch(`${API_BASE}/study-ideas?${p.toString()}`, { cache: "no-store" });
+  if (!res.ok) {
+    const msg = await readApiErrorMessage(res, "Failed to load study ideas");
+    throw new Error(msg);
+  }
+  return res.json() as Promise<StudyIdea[]>;
+}
+
+export async function createStudyIdea(payload: {
+  user_id: string;
+  title: string;
+  body?: string | null;
+  url?: string | null;
+  status?: StudyIdeaStatus;
+}): Promise<StudyIdea> {
+  const res = await fetch(`${API_BASE}/study-ideas`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const msg = await readApiErrorMessage(res, "Failed to create study idea");
+    throw new Error(msg);
+  }
+  return res.json() as Promise<StudyIdea>;
+}
+
+export async function updateStudyIdea(
+  ideaId: string,
+  userId: string,
+  data: {
+    title?: string;
+    body?: string | null;
+    url?: string | null;
+    status?: StudyIdeaStatus;
+  }
+): Promise<StudyIdea> {
+  const p = new URLSearchParams();
+  p.set("user_id", userId);
+  const res = await fetch(`${API_BASE}/study-ideas/${encodeURIComponent(ideaId)}?${p.toString()}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const msg = await readApiErrorMessage(res, "Failed to update study idea");
+    throw new Error(msg);
+  }
+  return res.json() as Promise<StudyIdea>;
+}
+
+export async function deleteStudyIdea(ideaId: string, userId: string): Promise<void> {
+  const res = await fetch(
+    `${API_BASE}/study-ideas/${encodeURIComponent(ideaId)}?user_id=${encodeURIComponent(userId)}`,
+    { method: "DELETE" }
+  );
+  if (!res.ok) {
+    const msg = await readApiErrorMessage(res, "Failed to delete study idea");
+    throw new Error(msg);
+  }
+}
+
+/**
+ * Build create-deck query for prefilling from a study idea (name, topic, text, url for YouTube vs article).
+ */
+export function buildCreateDeckSearchParamsFromIdea(idea: StudyIdea): string {
+  const p = new URLSearchParams();
+  const t = (idea.title || "").trim();
+  if (t) {
+    p.set("name", t);
+    p.set("topic", t);
+  }
+  if (idea.body?.trim()) p.set("text", idea.body.trim());
+  if (idea.url?.trim()) p.set("url", idea.url.trim());
+  return p.toString();
+}
+
 export async function getFlashcards(
   deckId: string,
   options?: { dueOnly?: boolean; userId?: string; bookmarkedOnly?: boolean }
