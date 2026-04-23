@@ -129,3 +129,23 @@ export function getPrevEditCardId<T extends DeckFlashcardOrderInput>(
   if (index <= 0) return null;
   return ordered[index - 1]!.id;
 }
+
+/**
+ * 1-based position and count in the same ordered list as Save & Next / Save & Previous.
+ * Returns null if the current card is not found (should not happen on a valid edit URL).
+ */
+export function getEditCardPositionInList<T extends DeckFlashcardOrderInput>(
+  flashcards: T[],
+  currentId: string,
+  baseOpts: DeckEditCardQueryState,
+  currentUserId: string | null
+): { position: number; total: number } | null {
+  const { ordered, index } = orderedIndexForSaveNavigation(
+    flashcards,
+    currentId,
+    baseOpts,
+    currentUserId
+  );
+  if (index < 0) return null;
+  return { position: index + 1, total: ordered.length };
+}

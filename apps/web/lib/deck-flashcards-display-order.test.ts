@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildDeckEditCardQuerySuffix,
+  getEditCardPositionInList,
   orderDeckFlashcardsForDisplay,
   parseDeckEditCardQuery,
 } from "./deck-flashcards-display-order";
@@ -29,6 +30,18 @@ describe("orderDeckFlashcardsForDisplay", () => {
       currentUserId: null,
     });
     expect(out.map((c) => c.id)).toEqual(["2", "1"]);
+  });
+});
+
+describe("getEditCardPositionInList", () => {
+  it("matches A–Z order (1-based index)", () => {
+    const pos = getEditCardPositionInList(
+      cards,
+      "1",
+      { cardSort: "az", cardSearch: "", cardBookmarkFilter: "all" },
+      null
+    );
+    expect(pos).toEqual({ position: 2, total: 2 });
   });
 });
 

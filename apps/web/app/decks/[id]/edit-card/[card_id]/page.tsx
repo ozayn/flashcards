@@ -19,6 +19,7 @@ import {
 } from "@/lib/api";
 import { FlashcardImageField } from "@/components/flashcard-image-field";
 import {
+  getEditCardPositionInList,
   getNextEditCardId,
   getPrevEditCardId,
   parseDeckEditCardQuery,
@@ -64,6 +65,9 @@ export default function EditCardPage({ params }: EditCardPageProps) {
   const [deleting, setDeleting] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
+  /** User chose to add content while fields were empty; reset when card changes or text cleared. */
+  const [optionalExampleOpen, setOptionalExampleOpen] = useState(false);
+  const [optionalDetailedOpen, setOptionalDetailedOpen] = useState(false);
 
   const questionRef = useRef<HTMLTextAreaElement>(null);
   const answerRef = useRef<HTMLTextAreaElement>(null);
@@ -107,6 +111,27 @@ export default function EditCardPage({ params }: EditCardPageProps) {
       ),
     [deckCards, params.card_id, queryOpts, actingUserId]
   );
+
+  const cardListPosition = useMemo(
+    () =>
+      getEditCardPositionInList(
+        deckCards,
+        params.card_id,
+        queryOpts,
+        actingUserId
+      ),
+    [deckCards, params.card_id, queryOpts, actingUserId]
+  );
+
+  const showExampleSection =
+    answerExample.trim() !== "" || optionalExampleOpen;
+  const showDetailedSection =
+    answerDetailed.trim() !== "" || optionalDetailedOpen;
+
+  useEffect(() => {
+    setOptionalExampleOpen(false);
+    setOptionalDetailedOpen(false);
+  }, [params.card_id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -302,7 +327,17 @@ export default function EditCardPage({ params }: EditCardPageProps) {
       </div>
       <Card>
         <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0 pb-4">
-          <CardTitle>Edit Card</CardTitle>
+          <div className="min-w-0 space-y-1">
+            <CardTitle>Edit Card</CardTitle>
+            {cardListPosition ? (
+              <p
+                className="text-sm text-muted-foreground tabular-nums"
+                aria-label={`Card ${cardListPosition.position} of ${cardListPosition.total} in this list`}
+              >
+                {cardListPosition.position} / {cardListPosition.total}
+              </p>
+            ) : null}
+          </div>
           {actingUserId ? (
             <div className="flex items-center gap-1.5 shrink-0 pt-0.5">
               <span className="text-xs text-muted-foreground sm:text-sm">
@@ -378,54 +413,110 @@ export default function EditCardPage({ params }: EditCardPageProps) {
               />
             </div>
             <div className="space-y-2">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <label htmlFor="answerExample" className="text-sm font-medium">
-                  Example{" "}
-                  <span className="font-normal text-muted-foreground">
-                    (optional)
+              {showExampleSection ? (
+                <>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <label htmlFor="answerExample" className="text-sm font-medium">
+                      Example{" "}
+                      <span className="font-normal text-muted-foreground">
+                        (optional)
+                      </span>
+                    </label>
+                    <FlashcardMarkdownToolbar
+                      inputRef={answerExampleRef}
+                      value={answerExample}
+                      onChange={setAnswerExample}
+                    />
+                  </div>
+                  <textarea
+                    ref={answerExampleRef}
+                    id="answerExample"
+                    dir="auto"
+                    value={answerExample}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setAnswerExample(v);
+                      if (v.trim() === "") setOptionalExampleOpen(false);
+                    }}
+                    placeholder="Sample sentences, typical usage, or concrete examples."
+                    rows={5}
+                    className={cardTextareaClass}
+                  />
+                </>
+              ) : (
+                <button
+                  type="button"
+                  className="flex w-full min-h-10 items-center justify-between gap-3 rounded-lg border border-dashed border-border/90 bg-muted/15 px-3 py-2 text-left text-sm text-muted-foreground transition-colors hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                  onClick={() => {
+                    setOptionalExampleOpen(true);
+                    window.setTimeout(
+                      () => answerExampleRef.current?.focus(),
+                      0
+                    );
+                  }}
+                >
+                  <span>
+                    <span className="font-medium text-foreground/90">Example</span>{" "}
+                    <span className="text-muted-foreground">(optional)</span>
                   </span>
-                </label>
-                <FlashcardMarkdownToolbar
-                  inputRef={answerExampleRef}
-                  value={answerExample}
-                  onChange={setAnswerExample}
-                />
-              </div>
-              <textarea
-                ref={answerExampleRef}
-                id="answerExample"
-                dir="auto"
-                value={answerExample}
-                onChange={(e) => setAnswerExample(e.target.value)}
-                placeholder="Sample sentences, typical usage, or concrete examples."
-                rows={5}
-                className={cardTextareaClass}
-              />
+                  <span className="shrink-0 text-xs font-medium text-foreground/80">
+                    Add
+                  </span>
+                </button>
+              )}
             </div>
             <div className="space-y-2">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <label htmlFor="answerDetailed" className="text-sm font-medium">
-                  Detailed explanation / notes{" "}
-                  <span className="font-normal text-muted-foreground">
-                    (optional)
+              {showDetailedSection ? (
+                <>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <label htmlFor="answerDetailed" className="text-sm font-medium">
+                      Detailed explanation / notes{" "}
+                      <span className="font-normal text-muted-foreground">
+                        (optional)
+                      </span>
+                    </label>
+                    <FlashcardMarkdownToolbar
+                      inputRef={answerDetailedRef}
+                      value={answerDetailed}
+                      onChange={setAnswerDetailed}
+                    />
+                  </div>
+                  <textarea
+                    ref={answerDetailedRef}
+                    id="answerDetailed"
+                    dir="auto"
+                    value={answerDetailed}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setAnswerDetailed(v);
+                      if (v.trim() === "") setOptionalDetailedOpen(false);
+                    }}
+                    placeholder="Extra context, mnemonics, or longer notes."
+                    rows={6}
+                    className={cardTextareaClass}
+                  />
+                </>
+              ) : (
+                <button
+                  type="button"
+                  className="flex w-full min-h-10 items-center justify-between gap-3 rounded-lg border border-dashed border-border/90 bg-muted/15 px-3 py-2 text-left text-sm text-muted-foreground transition-colors hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                  onClick={() => {
+                    setOptionalDetailedOpen(true);
+                    window.setTimeout(
+                      () => answerDetailedRef.current?.focus(),
+                      0
+                    );
+                  }}
+                >
+                  <span>
+                    <span className="font-medium text-foreground/90">Notes</span>{" "}
+                    <span className="text-muted-foreground">(optional)</span>
                   </span>
-                </label>
-                <FlashcardMarkdownToolbar
-                  inputRef={answerDetailedRef}
-                  value={answerDetailed}
-                  onChange={setAnswerDetailed}
-                />
-              </div>
-              <textarea
-                ref={answerDetailedRef}
-                id="answerDetailed"
-                dir="auto"
-                value={answerDetailed}
-                onChange={(e) => setAnswerDetailed(e.target.value)}
-                placeholder="Extra context, mnemonics, or longer notes."
-                rows={6}
-                className={cardTextareaClass}
-              />
+                  <span className="shrink-0 text-xs font-medium text-foreground/80">
+                    Add
+                  </span>
+                </button>
+              )}
             </div>
             <div className="space-y-2">
               <label htmlFor="difficulty" className="text-sm font-medium">
