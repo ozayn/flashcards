@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { ChevronLeft, ChevronRight, MoreHorizontal } from "lucide-react";
@@ -32,7 +32,9 @@ import {
 } from "@/lib/deck-study-resume";
 import { getStoredUserId } from "@/components/user-selector";
 import { FlashcardSpeakButton } from "@/components/flashcard-speak-button";
+import { ReadTabReadAllBar } from "@/components/read-tab-read-all-bar";
 import { ReadTabSpeakButton } from "@/components/read-tab-speak-button";
+import { useReadTabAutoplay } from "@/hooks/use-read-tab-autoplay";
 import { cn } from "@/lib/utils";
 
 interface StudyPageProps {
@@ -106,6 +108,37 @@ export default function StudyPage({ params }: StudyPageProps) {
   const [resumeHint, setResumeHint] = useState(false);
   const [bookmarkBusyId, setBookmarkBusyId] = useState<string | null>(null);
 
+  const readAutoplayCards = useMemo(
+    () =>
+      flashcards.map((c) => ({
+        id: c.id,
+        question: c.question,
+        answerSpeech: buildAnswerSpeechText(
+          c.answer_short,
+          c.answer_example,
+          c.answer_detailed
+        ),
+      })),
+    [flashcards]
+  );
+
+  const readAllAutoplay = useReadTabAutoplay({
+    readView: deckView === "read",
+    sessionPrefix: `study-deck-${params.deck_id}-readall`,
+    cards: readAutoplayCards,
+    currentIndex: currentCardIndex,
+    setCurrentIndex: setCurrentCardIndex,
+    englishTts: userSettings.english_tts,
+    voiceStyle: userSettings.voice_style,
+  });
+  const {
+    state: readAllState,
+    start: startReadAll,
+    stop: stopReadAll,
+    pause: pauseReadAll,
+    resume: resumeReadAll,
+  } = readAllAutoplay;
+
   const bookmarksOnlyParam = searchParams.get("bookmarks") === "1";
 
   const toggleBookmarksOnly = useCallback(() => {
@@ -138,11 +171,12 @@ export default function StudyPage({ params }: StudyPageProps) {
   );
 
   const startFromBeginning = useCallback(() => {
+    stopReadAll();
     clearDeckStudyResume(params.deck_id);
     setCurrentCardIndex(0);
     setShowAnswer(false);
     setResumeHint(false);
-  }, [params.deck_id]);
+  }, [params.deck_id, stopReadAll]);
 
   const isDev = process.env.NODE_ENV === "development";
 
@@ -151,6 +185,7 @@ export default function StudyPage({ params }: StudyPageProps) {
     if (!userId) return;
     setResetLoading(true);
     try {
+      stopReadAll();
       await deleteDeckReviews(params.deck_id, userId);
       setResetConfirmOpen(false);
       clearDeckStudyResume(params.deck_id);
@@ -391,14 +426,16 @@ export default function StudyPage({ params }: StudyPageProps) {
   }, [loading, flashcards.length, sessionComplete, currentCardIndex, userSettings.think_delay_enabled, userSettings.think_delay_ms]);
 
   const handleNext = useCallback(() => {
+    stopReadAll();
     setShowAnswer(false);
     setCurrentCardIndex((i) => Math.min(i + 1, flashcards.length - 1));
-  }, [flashcards.length]);
+  }, [flashcards.length, stopReadAll]);
 
   const handlePrev = useCallback(() => {
+    stopReadAll();
     setShowAnswer(false);
     setCurrentCardIndex((i) => Math.max(i - 1, 0));
-  }, []);
+  }, [stopReadAll]);
 
   const touchStartY = useRef(0);
   const touchLatestX = useRef(0);
@@ -461,8 +498,8 @@ export default function StudyPage({ params }: StudyPageProps) {
   }, []);
 
   useEffect(() => {
-    cancelAllFlashcardSpeech();
-  }, [currentCardIndex, params.deck_id, deckView]);
+    stopReadAll();
+  }, [params.deck_id, deckView, stopReadAll]);
 
   useEffect(() => {
     if (!studyMenuOpen) return;
@@ -627,6 +664,7 @@ export default function StudyPage({ params }: StudyPageProps) {
               <div className="flex flex-col sm:flex-row gap-3 justify-center">
                 <Button
                   onClick={() => {
+                    stopReadAll();
                     setSessionComplete(false);
                     setCurrentCardIndex(0);
                     setShowAnswer(false);
@@ -649,6 +687,7 @@ export default function StudyPage({ params }: StudyPageProps) {
   }
 
   const rateCard = async (rating: "again" | "hard" | "good" | "easy") => {
+    stopReadAll();
     const userId = getStoredUserId();
     if (userId) {
       try {
@@ -844,7 +883,7 @@ export default function StudyPage({ params }: StudyPageProps) {
                   "pt-1 pe-11 sm:pe-12 landscape-mobile:pt-0.5 landscape-mobile:pe-10"
               )}
             >
-              <div className="mb-0 flex min-h-0 items-center">
+              <div className="mb-0 flex min-h-0 flex-wrap items-center gap-1 sm:gap-1.5">
                 <ReadTabSpeakButton
                   utteranceKey={`study-deck-${params.deck_id}-read-full-${card.id}`}
                   question={card.question}
@@ -855,6 +894,15 @@ export default function StudyPage({ params }: StudyPageProps) {
                   )}
                   englishTts={userSettings.english_tts}
                   voiceStyle={userSettings.voice_style}
+                />
+                <ReadTabReadAllBar
+                  className="ms-0.5"
+                  state={readAllState}
+                  disabled={flashcards.length < 1}
+                  onStart={startReadAll}
+                  onPause={pauseReadAll}
+                  onResume={resumeReadAll}
+                  onStop={stopReadAll}
                 />
               </div>
               {getStoredUserId() ? (

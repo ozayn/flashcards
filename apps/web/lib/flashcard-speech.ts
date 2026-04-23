@@ -619,6 +619,133 @@ export function speakOrToggleReadCard(
   return "started";
 }
 
+/** `playingKey` for sequential Read-tab autoplay (one card at a time, no toggle). */
+export const READ_TAB_AUTOPLAY_KEY = "readTabAutoplay";
+
+/**
+ * Pause (ms) after a card’s answer finishes, before auto-advancing to the next card.
+ * Pair with `READ_CARD_PAUSE_MS` (between Q and A).
+ */
+export const READ_SLIDESHOW_GAP_MS = 1100;
+
+/**
+ * Plays the same sequence as the Read tab full card (Q → short pause → A) once, without
+ * toggle behavior. Resolves when speech finishes, is cancelled, or is superseded by another op.
+ * Cancels any prior TTS. Sets `playingKey` to `READ_TAB_AUTOPLAY_KEY` for the session.
+ */
+export function playReadCardOnceForAutoplay(
+  question: string,
+  answer: string,
+  options?: SpeakOrToggleOptions
+): Promise<"ok" | "aborted"> {
+  if (!isSpeechSynthesisAvailable()) {
+    return Promise.resolve("aborted");
+  }
+  const englishTts = options?.englishTts ?? "default";
+  const voiceStyle = options?.voiceStyle ?? "default";
+  const plainQ = plainTextForSpeech(question);
+  const plainA = plainTextForSpeech(answer);
+  if (!plainQ && !plainA) {
+    return Promise.resolve("ok");
+  }
+
+  return new Promise((resolve) => {
+    const myOp = nextOp();
+    let settled = false;
+    const settle = (r: "ok" | "aborted") => {
+      if (settled) return;
+      settled = true;
+      if (playingKey === READ_TAB_AUTOPLAY_KEY) {
+        playingKey = null;
+        notify();
+      }
+      resolve(r);
+    };
+
+    try {
+      window.speechSynthesis?.cancel();
+    } catch {
+      /* ignore */
+    }
+    playingKey = READ_TAB_AUTOPLAY_KEY;
+    notify();
+
+    getVoicesAsync().then((voiceList) => {
+      if (myOp !== opSeq) {
+        settle("aborted");
+        return;
+      }
+      const synth = window.speechSynthesis!;
+
+      const beginAnswer = () => {
+        if (myOp !== opSeq) {
+          settle("aborted");
+          return;
+        }
+        if (!plainA) {
+          settle("ok");
+          return;
+        }
+        const ut2 = new SpeechSynthesisUtterance(plainA);
+        applyPickedVoiceToUtterance(ut2, plainA, voiceList, { englishTts, voiceStyle });
+        const onUt2Done = () => {
+          if (myOp === opSeq) settle("ok");
+          else settle("aborted");
+        };
+        ut2.onend = onUt2Done;
+        ut2.onerror = onUt2Done;
+        try {
+          synth.speak(ut2);
+        } catch {
+          settle("aborted");
+        }
+      };
+
+      if (!plainQ) {
+        beginAnswer();
+        return;
+      }
+      if (!plainA) {
+        const ut = new SpeechSynthesisUtterance(plainQ);
+        applyPickedVoiceToUtterance(ut, plainQ, voiceList, { englishTts, voiceStyle });
+        const onUtDone = () => {
+          if (myOp === opSeq) settle("ok");
+          else settle("aborted");
+        };
+        ut.onend = onUtDone;
+        ut.onerror = onUtDone;
+        try {
+          synth.speak(ut);
+        } catch {
+          settle("aborted");
+        }
+        return;
+      }
+      const ut1 = new SpeechSynthesisUtterance(plainQ);
+      applyPickedVoiceToUtterance(ut1, plainQ, voiceList, { englishTts, voiceStyle });
+      ut1.onend = () => {
+        if (myOp !== opSeq) {
+          settle("aborted");
+          return;
+        }
+        window.setTimeout(() => {
+          if (myOp !== opSeq) {
+            settle("aborted");
+            return;
+          }
+          beginAnswer();
+        }, READ_CARD_PAUSE_MS);
+      };
+      ut1.onerror = () => settle("aborted");
+      try {
+        synth.speak(ut1);
+      } catch {
+        settle("aborted");
+      }
+    });
+  });
+}
+
 /**
  * useSyncExternalStore for React: subscribe to global "which key is playing".
  */

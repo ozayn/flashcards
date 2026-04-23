@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -23,7 +23,9 @@ import {
 import { FlashcardBookmarkStar } from "@/components/flashcard-bookmark-star";
 import { getStoredUserId } from "@/components/user-selector";
 import { FlashcardSpeakButton } from "@/components/flashcard-speak-button";
+import { ReadTabReadAllBar } from "@/components/read-tab-read-all-bar";
 import { ReadTabSpeakButton } from "@/components/read-tab-speak-button";
+import { useReadTabAutoplay } from "@/hooks/use-read-tab-autoplay";
 import { cn } from "@/lib/utils";
 
 interface CategoryExplorePageProps {
@@ -71,6 +73,37 @@ export default function CategoryExplorePage({ params }: CategoryExplorePageProps
   const touchStartX = useRef(0);
   const [bookmarkBusyId, setBookmarkBusyId] = useState<string | null>(null);
 
+  const readAutoplayCards = useMemo(
+    () =>
+      flashcards.map((c) => ({
+        id: c.id,
+        question: c.question,
+        answerSpeech: buildAnswerSpeechText(
+          c.answer_short,
+          c.answer_example,
+          c.answer_detailed
+        ),
+      })),
+    [flashcards]
+  );
+
+  const readAllAutoplay = useReadTabAutoplay({
+    readView: exploreView === "read",
+    sessionPrefix: `explore-cat-${params.categoryId}-readall-d${decks[currentDeckIndex]?.id ?? "none"}`,
+    cards: readAutoplayCards,
+    currentIndex: currentCardIndex,
+    setCurrentIndex: setCurrentCardIndex,
+    englishTts: userSettings.english_tts,
+    voiceStyle: userSettings.voice_style,
+  });
+  const {
+    state: readAllState,
+    start: startReadAll,
+    stop: stopReadAll,
+    pause: pauseReadAll,
+    resume: resumeReadAll,
+  } = readAllAutoplay;
+
   useEffect(() => {
     const userId = getStoredUserId();
     if (!userId) {
@@ -110,6 +143,7 @@ export default function CategoryExplorePage({ params }: CategoryExplorePageProps
 
   const loadDeckCards = useCallback(
     async (deckId: string) => {
+      stopReadAll();
       setCardsLoading(true);
       setCurrentCardIndex(0);
       setShowAnswer(false);
@@ -123,7 +157,7 @@ export default function CategoryExplorePage({ params }: CategoryExplorePageProps
         setCardsLoading(false);
       }
     },
-    []
+    [stopReadAll]
   );
 
   useEffect(() => {
@@ -156,6 +190,7 @@ export default function CategoryExplorePage({ params }: CategoryExplorePageProps
   );
 
   const handleNext = useCallback(() => {
+    stopReadAll();
     setShowAnswer(false);
     if (currentCardIndex < flashcards.length - 1) {
       setCurrentCardIndex((i) => i + 1);
@@ -163,12 +198,13 @@ export default function CategoryExplorePage({ params }: CategoryExplorePageProps
       setTotalCardsSeen((n) => n + flashcards.length);
       setDeckComplete(true);
     }
-  }, [flashcards.length, currentCardIndex]);
+  }, [flashcards.length, currentCardIndex, stopReadAll]);
 
   const handlePrev = useCallback(() => {
+    stopReadAll();
     setShowAnswer(false);
     setCurrentCardIndex((i) => Math.max(i - 1, 0));
-  }, []);
+  }, [stopReadAll]);
 
   const touchStartY = useRef(0);
   const touchLatestX = useRef(0);
@@ -255,10 +291,11 @@ export default function CategoryExplorePage({ params }: CategoryExplorePageProps
   }, []);
 
   useEffect(() => {
-    cancelAllFlashcardSpeech();
-  }, [currentCardIndex, currentDeckIndex, params.categoryId, exploreView]);
+    stopReadAll();
+  }, [currentDeckIndex, params.categoryId, exploreView, stopReadAll]);
 
   function advanceToNextDeck() {
+    stopReadAll();
     const next = currentDeckIndex + 1;
     if (next >= decks.length) {
       setCategoryComplete(true);
@@ -534,7 +571,7 @@ export default function CategoryExplorePage({ params }: CategoryExplorePageProps
                   />
                 </div>
               ) : null}
-              <div className="mb-0 flex min-h-0 items-center">
+              <div className="mb-0 flex min-h-0 flex-wrap items-center gap-1 sm:gap-1.5">
                 <ReadTabSpeakButton
                   utteranceKey={`explore-cat-${params.categoryId}-read-full-${card.id}`}
                   question={card.question}
@@ -545,6 +582,15 @@ export default function CategoryExplorePage({ params }: CategoryExplorePageProps
                   )}
                   englishTts={userSettings.english_tts}
                   voiceStyle={userSettings.voice_style}
+                />
+                <ReadTabReadAllBar
+                  className="ms-0.5"
+                  state={readAllState}
+                  disabled={flashcards.length < 1}
+                  onStart={startReadAll}
+                  onPause={pauseReadAll}
+                  onResume={resumeReadAll}
+                  onStop={stopReadAll}
                 />
               </div>
               <FormattedText
