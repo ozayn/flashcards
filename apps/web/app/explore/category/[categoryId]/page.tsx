@@ -102,6 +102,7 @@ export default function CategoryExplorePage({ params }: CategoryExplorePageProps
     stop: stopReadAll,
     pause: pauseReadAll,
     resume: resumeReadAll,
+    skipToNext: skipReadAllToNext,
   } = readAllAutoplay;
 
   useEffect(() => {
@@ -591,6 +592,11 @@ export default function CategoryExplorePage({ params }: CategoryExplorePageProps
                   onPause={pauseReadAll}
                   onResume={resumeReadAll}
                   onStop={stopReadAll}
+                  onSkip={skipReadAllToNext}
+                  skipDisabled={
+                    flashcards.length < 2 ||
+                    currentCardIndex >= flashcards.length - 1
+                  }
                 />
               </div>
               <FormattedText

@@ -1,6 +1,6 @@
 "use client";
 
-import { Headphones, Pause, Play, Square } from "lucide-react";
+import { Headphones, Pause, Play, SkipForward, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { isSpeechSynthesisAvailable } from "@/lib/flashcard-speech";
@@ -14,6 +14,9 @@ type ReadTabReadAllBarProps = {
   onPause: () => void;
   onResume: () => void;
   onStop: () => void;
+  onSkip: () => void;
+  /** True on last card or fewer than 2 cards: skip is disabled. */
+  skipDisabled: boolean;
   className?: string;
 };
 
@@ -27,6 +30,8 @@ export function ReadTabReadAllBar({
   onPause,
   onResume,
   onStop,
+  onSkip,
+  skipDisabled,
   className,
 }: ReadTabReadAllBarProps) {
   const [apiOk, setApiOk] = useState(false);
@@ -79,6 +84,18 @@ export function ReadTabReadAllBar({
             title={running ? "Pause" : "Resume"}
           >
             {running ? <Pause className="size-3.5 sm:size-4" aria-hidden /> : <Play className="size-3.5 sm:size-4" aria-hidden />}
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7 sm:h-8 sm:w-8 shrink-0 text-muted-foreground hover:text-foreground"
+            onClick={onSkip}
+            disabled={disabled || skipDisabled}
+            aria-label="Skip to next card"
+            title="Next card"
+          >
+            <SkipForward className="size-3.5 sm:size-4" aria-hidden />
           </Button>
           <Button
             type="button"

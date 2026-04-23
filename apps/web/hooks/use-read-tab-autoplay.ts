@@ -44,9 +44,18 @@ export function useReadTabAutoplay({
   const [state, setState] = useState<ReadAutoplayState>("off");
   const runIdRef = useRef(0);
   const cardsRef = useRef(cards);
+  const stateRef = useRef(state);
+  const currentIndexRef = useRef(currentIndex);
   const pauseForResumeRef = useRef(false);
   const resumeWaiterRef = useRef<(() => void) | null>(null);
   const gapCancelRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
+  useEffect(() => {
+    currentIndexRef.current = currentIndex;
+  }, [currentIndex]);
 
   useEffect(() => {
     cardsRef.current = cards;
@@ -102,6 +111,7 @@ export function useReadTabAutoplay({
         if (runIdRef.current !== myRun) return;
 
         if (r === "aborted") {
+          if (runIdRef.current !== myRun) return;
           if (pauseForResumeRef.current) {
             pauseForResumeRef.current = false;
             setState("paused");
@@ -122,6 +132,7 @@ export function useReadTabAutoplay({
         if (runIdRef.current !== myRun) return;
 
         if (!gapOk) {
+          if (runIdRef.current !== myRun) return;
           if (pauseForResumeRef.current) {
             pauseForResumeRef.current = false;
             setState("paused");
@@ -174,6 +185,41 @@ export function useReadTabAutoplay({
     resumeWaiterRef.current?.();
   }, [state]);
 
+  const skipToNext = useCallback(() => {
+    const n = cardsRef.current.length;
+    const i = currentIndexRef.current;
+    if (n < 2 || i < 0) return;
+    if (i >= n - 1) {
+      runIdRef.current += 1;
+      pauseForResumeRef.current = false;
+      clearGap();
+      cancelAllFlashcardSpeech();
+      resumeWaiterRef.current?.();
+      setState("off");
+      return;
+    }
+
+    const st = stateRef.current;
+    const wasRunning = st === "running";
+    const wasPaused = st === "paused";
+
+    runIdRef.current += 1;
+    pauseForResumeRef.current = false;
+    clearGap();
+    cancelAllFlashcardSpeech();
+    resumeWaiterRef.current?.();
+    const nextI = i + 1;
+    setCurrentIndex(nextI);
+
+    if (wasRunning) {
+      setState("running");
+      const myRun = ++runIdRef.current;
+      void runLoop(nextI, myRun);
+    } else if (wasPaused) {
+      setState("paused");
+    }
+  }, [clearGap, runLoop, setCurrentIndex]);
+
   useEffect(() => {
     if (!readView) {
       stop();
@@ -189,5 +235,5 @@ export function useReadTabAutoplay({
     };
   }, []);
 
-  return { state, start, stop, pause, resume };
+  return { state, start, stop, pause, resume, skipToNext };
 }

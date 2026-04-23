@@ -137,6 +137,7 @@ export default function StudyPage({ params }: StudyPageProps) {
     stop: stopReadAll,
     pause: pauseReadAll,
     resume: resumeReadAll,
+    skipToNext: skipReadAllToNext,
   } = readAllAutoplay;
 
   const bookmarksOnlyParam = searchParams.get("bookmarks") === "1";
@@ -903,6 +904,11 @@ export default function StudyPage({ params }: StudyPageProps) {
                   onPause={pauseReadAll}
                   onResume={resumeReadAll}
                   onStop={stopReadAll}
+                  onSkip={skipReadAllToNext}
+                  skipDisabled={
+                    flashcards.length < 2 ||
+                    currentCardIndex >= flashcards.length - 1
+                  }
                 />
               </div>
               {getStoredUserId() ? (
