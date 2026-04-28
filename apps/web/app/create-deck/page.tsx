@@ -15,6 +15,7 @@ import {
   generateFlashcardsBackground,
   getUsers,
   importFlashcards,
+  invalidateUserRowCache,
   isYouTubePlaylistUrl,
   normalizeYouTubeUrl,
   parseDeckTextImport,
@@ -52,6 +53,29 @@ import {
 } from "@/lib/create-deck-guest-source";
 
 const SIGNIN_CREATE_DECK_HREF = `/signin?callbackUrl=${encodeURIComponent("/create-deck")}`;
+
+/** UI copy for free-tier active deck cap (matches backend LIMITED_MAX_DECKS = 5). */
+const FREE_DECK_LIMIT_HEADLINE = "Free accounts can create up to 5 active decks.";
+const FREE_DECK_LIMIT_DETAIL =
+  "Delete or archive a deck to make room, or upgrade when available.";
+
+/** Matches backend `FREE_TIER_MAX_DECKS_MSG` (403 on POST /decks). */
+function isDeckLimitCreateError(message: string): boolean {
+  const m = message.toLowerCase();
+  return (
+    m.includes("up to 5 decks") ||
+    (m.includes("free plan") &&
+      m.includes("deck") &&
+      (m.includes("archive") || m.includes("delete")))
+  );
+}
+
+function notifyDeckCountsMayHaveChanged(userId: string) {
+  invalidateUserRowCache(userId);
+  window.dispatchEvent(
+    new CustomEvent("flashcard_user_changed", { detail: { userId } })
+  );
+}
 
 function GuestSourceSignInCallout({ kind }: { kind: GuestSourceLockKind }) {
   const copy = guestSourceLockCopy(kind);
@@ -149,8 +173,20 @@ function CreateDeckForm() {
   /** All sources locked with informational panel (guest trial disabled). */
   const signedOutFormLockedPanel =
     signInRequiredNoGuestTrial && !emptyDeckMode;
+  /** True after POST /decks returned 403 deck-cap (usage cache may still be stale). */
+  const [deckLimitHitFromApi, setDeckLimitHitFromApi] = useState(false);
   const { cardCountOptions: tierCardOptions, usage } = useTierLimits();
   const cardCountOptions = isGuestTrial ? [GUEST_TRIAL_MAX_CARDS] : tierCardOptions;
+  const atDeckLimit =
+    usage?.limited_tier === true &&
+    usage.max_active_decks != null &&
+    usage.active_deck_count >= usage.max_active_decks;
+  const showDeckLimitCallout =
+    status === "authenticated" &&
+    !signInRequiredNoGuestTrial &&
+    (atDeckLimit || deckLimitHitFromApi);
+  /** Disable primary action when we know (or just learned) the free deck cap applies. */
+  const primaryBlockedByDeckLimit = showDeckLimitCallout;
   const [loading, setLoading] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
@@ -250,6 +286,16 @@ function CreateDeckForm() {
   useEffect(() => {
     if (isGuestTrial) setCardCount(GUEST_TRIAL_MAX_CARDS);
   }, [isGuestTrial]);
+
+  useEffect(() => {
+    if (
+      usage?.limited_tier &&
+      usage.max_active_decks != null &&
+      usage.active_deck_count < usage.max_active_decks
+    ) {
+      setDeckLimitHitFromApi(false);
+    }
+  }, [usage?.limited_tier, usage?.max_active_decks, usage?.active_deck_count]);
 
   const nameTrimmed = name.trim();
   const topicTrimmed = topic.trim();
@@ -370,6 +416,7 @@ function CreateDeckForm() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
+    if (!atDeckLimit) setDeckLimitHitFromApi(false);
 
     if (signInRequiredNoGuestTrial) {
       return;
@@ -494,6 +541,7 @@ function CreateDeckForm() {
 
       const goToDeck = (deckId: string) => {
         if (isGuestTrial) setStoredGuestTrialDeckId(deckId);
+        else notifyDeckCountsMayHaveChanged(userId);
         router.push(`/decks/${deckId}`);
       };
 
@@ -688,7 +736,15 @@ function CreateDeckForm() {
 
       goToDeck(deckId);
     } catch (e) {
-      setFormError(e instanceof Error ? e.message : "Failed to create deck. Please try again.");
+      const msg = e instanceof Error ? e.message : "Failed to create deck. Please try again.";
+      const signedInFreeFlow = status === "authenticated" && !isGuestTrial;
+      if (signedInFreeFlow && isDeckLimitCreateError(msg)) {
+        setDeckLimitHitFromApi(true);
+        setFormError(null);
+        if (userId) notifyDeckCountsMayHaveChanged(userId);
+      } else {
+        setFormError(msg);
+      }
     } finally {
       setLoading(false);
       setLoadingMessage("");
@@ -707,6 +763,15 @@ function CreateDeckForm() {
       </div>
 
       <h1 className="text-2xl font-semibold tracking-tight">Create deck</h1>
+      {showDeckLimitCallout ? (
+        <div
+          role="status"
+          className="rounded-lg border border-amber-500/40 bg-amber-500/[0.09] px-3 py-2.5 text-sm leading-relaxed dark:border-amber-400/35 dark:bg-amber-400/[0.08]"
+        >
+          <p className="font-medium text-foreground">{FREE_DECK_LIMIT_HEADLINE}</p>
+          <p className="mt-1 text-muted-foreground">{FREE_DECK_LIMIT_DETAIL}</p>
+        </div>
+      ) : null}
       {signInRequiredNoGuestTrial ? (
         <p className="text-sm text-muted-foreground leading-relaxed">
           Sign in to create decks and save them to your account.
@@ -1223,15 +1288,6 @@ function CreateDeckForm() {
           </div>
         )}
 
-        {usage?.limited_tier &&
-          usage.max_active_decks != null &&
-          usage.active_deck_count >= usage.max_active_decks && (
-            <p className="text-sm text-muted-foreground">
-              Free plan: {usage.max_active_decks} active decks max. Archive or delete one to create
-              another.
-            </p>
-          )}
-
         {formError && <p className="text-sm text-destructive">{formError}</p>}
 
         <div className="space-y-2 pt-1">
@@ -1250,13 +1306,7 @@ function CreateDeckForm() {
           ) : (
             <Button
               type="submit"
-              disabled={
-                loading ||
-                status === "loading" ||
-                (usage?.limited_tier === true &&
-                  usage.max_active_decks != null &&
-                  usage.active_deck_count >= usage.max_active_decks)
-              }
+              disabled={loading || status === "loading" || primaryBlockedByDeckLimit}
               size="lg"
               className="w-full font-semibold sm:w-auto sm:min-w-[10rem]"
             >

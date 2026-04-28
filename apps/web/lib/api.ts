@@ -201,6 +201,17 @@ export async function getUser(userId: string): Promise<UserRow> {
   return p;
 }
 
+/**
+ * Drop cached GET /users/:id so the next `getUser()` reflects updated deck counts.
+ * Call after creating/deleting/archiving decks so tier limits stay accurate.
+ */
+export function invalidateUserRowCache(userId: string) {
+  const id = userId.trim();
+  if (!id) return;
+  _userRowTtl.delete(id);
+  _invalidateUsersListTtl();
+}
+
 export type UserActivityEntry = {
   id: string;
   event_type: string;

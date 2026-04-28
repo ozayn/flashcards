@@ -471,7 +471,14 @@ export function useTierLimits(): {
     }
     sync();
     window.addEventListener("flashcard_user_changed", sync);
-    return () => window.removeEventListener("flashcard_user_changed", sync);
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") sync();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("flashcard_user_changed", sync);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
   }, []);
 
   return { cardCountOptions, usage };
