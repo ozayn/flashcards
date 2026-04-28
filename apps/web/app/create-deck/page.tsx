@@ -42,12 +42,16 @@ import {
   type GenerationLangPreference,
 } from "@/lib/source-language";
 import { startYoutubeTranscriptPhaseTimers } from "@/lib/youtube-fetch-status";
+import { cn } from "@/lib/utils";
 import {
   guestSourceLockCopy,
   isSourceModeLockedForGuest,
+  signedOutNoGuestTrialCopy,
   type CreateDeckSourceMode,
   type GuestSourceLockKind,
 } from "@/lib/create-deck-guest-source";
+
+const SIGNIN_CREATE_DECK_HREF = `/signin?callbackUrl=${encodeURIComponent("/create-deck")}`;
 
 function GuestSourceSignInCallout({ kind }: { kind: GuestSourceLockKind }) {
   const copy = guestSourceLockCopy(kind);
@@ -71,12 +75,38 @@ function GuestSourceSignInCallout({ kind }: { kind: GuestSourceLockKind }) {
         <p className="text-sm text-muted-foreground leading-relaxed">
           {copy.subline}{" "}
           <Link
-            href={`/signin?callbackUrl=${encodeURIComponent("/create-deck")}`}
+            href={SIGNIN_CREATE_DECK_HREF}
             className="font-medium text-foreground underline underline-offset-4 hover:no-underline"
           >
             Sign in
           </Link>
         </p>
+      </div>
+    </div>
+  );
+}
+
+function SignInRequiredNoGuestPanel() {
+  const copy = signedOutNoGuestTrialCopy();
+  return (
+    <div
+      id="sign-in-required-no-guest-callout"
+      className="rounded-lg border border-border/60 bg-muted/20 px-4 py-10 text-center shadow-sm sm:px-6 sm:py-11"
+      role="region"
+      aria-labelledby="sign-in-required-no-guest-headline"
+    >
+      <div className="mx-auto flex max-w-md flex-col items-center gap-3">
+        <span className="inline-flex size-10 items-center justify-center rounded-full border border-border/70 bg-background/90">
+          <Lock className="size-5 text-muted-foreground" aria-hidden />
+        </span>
+        <p
+          id="sign-in-required-no-guest-headline"
+          className="text-base font-semibold text-foreground leading-snug"
+        >
+          {copy.headline}
+        </p>
+        <p className="text-sm text-muted-foreground leading-relaxed">{copy.body}</p>
+        <p className="text-xs text-muted-foreground/90 leading-relaxed">{copy.note}</p>
       </div>
     </div>
   );
@@ -110,10 +140,15 @@ function CreateDeckForm() {
   const { status } = useSession();
   const guestTrialUserId = useMemo(() => getGuestTrialUserId(), []);
   const isGuestTrial = status === "unauthenticated" && Boolean(guestTrialUserId);
+  /** Signed out and guest trial env unset: entire source area is sign-in-first (no deck creation). */
+  const signInRequiredNoGuestTrial = status === "unauthenticated" && !guestTrialUserId;
   /** Signed-out guest on YouTube / URL / Import: show sign-in callout instead of the real form. */
   const guestLockedPanel =
     isGuestTrial &&
     (generationMode === "youtube" || generationMode === "url" || generationMode === "import");
+  /** All sources locked with informational panel (guest trial disabled). */
+  const signedOutFormLockedPanel =
+    signInRequiredNoGuestTrial && !emptyDeckMode;
   const { cardCountOptions: tierCardOptions, usage } = useTierLimits();
   const cardCountOptions = isGuestTrial ? [GUEST_TRIAL_MAX_CARDS] : tierCardOptions;
   const [loading, setLoading] = useState(false);
@@ -336,6 +371,10 @@ function CreateDeckForm() {
     e.preventDefault();
     setFormError(null);
 
+    if (signInRequiredNoGuestTrial) {
+      return;
+    }
+
     if (isGuestTrial && !emptyDeckMode && isSourceModeLockedForGuest(generationMode)) {
       return;
     }
@@ -413,9 +452,6 @@ function CreateDeckForm() {
     } else if (status === "unauthenticated") {
       userId = guestTrialUserId;
       if (!userId) {
-        setFormError(
-          "Sign in to create decks and save them to your account. Guest trial is not enabled on this server."
-        );
         return;
       }
     } else {
@@ -671,6 +707,11 @@ function CreateDeckForm() {
       </div>
 
       <h1 className="text-2xl font-semibold tracking-tight">Create deck</h1>
+      {signInRequiredNoGuestTrial ? (
+        <p className="text-sm text-muted-foreground leading-relaxed">
+          Sign in to create decks and save them to your account.
+        </p>
+      ) : null}
 
       <form onSubmit={handleSubmit} className="space-y-5">
         <div className="space-y-2">
@@ -691,11 +732,13 @@ function CreateDeckForm() {
             value={name}
             onChange={(e) => setName(e.target.value)}
             autoComplete="off"
-            disabled={loading}
+            disabled={loading || signInRequiredNoGuestTrial}
           />
         </div>
 
-        <details className="rounded-lg border border-border/50 bg-muted/10 [&_summary::-webkit-details-marker]:hidden">
+        <details
+          className={`rounded-lg border border-border/50 bg-muted/10 [&_summary::-webkit-details-marker]:hidden ${signInRequiredNoGuestTrial ? "pointer-events-none opacity-60" : ""}`}
+        >
           <summary className="cursor-pointer px-3 py-2.5 text-sm text-muted-foreground hover:text-foreground">
             More options
           </summary>
@@ -708,7 +751,7 @@ function CreateDeckForm() {
                   setEmptyDeckMode(e.target.checked);
                 }}
                 className="rounded border-input"
-                disabled={loading}
+                disabled={loading || signInRequiredNoGuestTrial}
               />
               <span className="text-muted-foreground">Empty deck (no cards yet)</span>
             </label>
@@ -719,7 +762,7 @@ function CreateDeckForm() {
                   checked={useNameAsTopic}
                   onChange={(e) => setUseNameAsTopic(e.target.checked)}
                   className="rounded border-input"
-                  disabled={loading}
+                  disabled={loading || signInRequiredNoGuestTrial}
                 />
                 <span className="text-muted-foreground">Use deck name as topic</span>
               </label>
@@ -727,13 +770,31 @@ function CreateDeckForm() {
           </div>
         </details>
 
+        {signInRequiredNoGuestTrial && emptyDeckMode ? (
+          <div
+            className="rounded-lg border border-border/60 bg-muted/15 px-3 py-2.5 text-sm text-muted-foreground leading-relaxed"
+            role="status"
+          >
+            <span className="font-medium text-foreground">Sign in to continue.</span> Empty decks and
+            AI generation require an account. Guest trial is not enabled on this server.
+          </div>
+        ) : null}
+
         {!emptyDeckMode && (
-          <div className="space-y-4 rounded-xl border border-border/60 bg-card/40 p-4 shadow-sm sm:p-5">
+          <div
+            className={`space-y-4 rounded-xl border border-border/60 bg-card/40 p-4 shadow-sm sm:p-5 ${signInRequiredNoGuestTrial ? "opacity-[0.97]" : ""}`}
+          >
             <div
               className="grid grid-cols-3 gap-1 rounded-lg border border-border/50 bg-muted/25 p-1 sm:grid-cols-5"
               role="radiogroup"
               aria-label="Source"
-              aria-describedby={guestLockedPanel ? "guest-source-signin-callout" : undefined}
+              aria-describedby={
+                guestLockedPanel
+                  ? "guest-source-signin-callout"
+                  : signedOutFormLockedPanel
+                    ? "sign-in-required-no-guest-callout"
+                    : undefined
+              }
             >
               {(
                 [
@@ -744,7 +805,9 @@ function CreateDeckForm() {
                   { value: "import" as const, label: "Import" },
                 ] as const
               ).map(({ value, label }) => {
-                const lockedGuest = isGuestTrial && isSourceModeLockedForGuest(value);
+                const lockedGuest =
+                  signInRequiredNoGuestTrial ||
+                  (isGuestTrial && isSourceModeLockedForGuest(value));
                 const selected = generationMode === value;
                 return (
                   <button
@@ -753,13 +816,17 @@ function CreateDeckForm() {
                     role="radio"
                     aria-checked={selected}
                     title={
-                      lockedGuest ? "Available after sign-in — click to see details" : undefined
+                      signInRequiredNoGuestTrial
+                        ? "Sign in to use this source"
+                        : lockedGuest
+                          ? "Available after sign-in — click to see details"
+                          : undefined
                     }
                     onClick={() => {
                       setGenerationMode(value);
                       setFormError(null);
                     }}
-                    disabled={loading}
+                    disabled={loading || signInRequiredNoGuestTrial}
                     className={`rounded-md px-2 py-2 text-center text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:text-sm ${
                       lockedGuest && selected
                         ? "cursor-pointer bg-background text-foreground shadow-sm ring-1 ring-amber-500/45"
@@ -786,6 +853,8 @@ function CreateDeckForm() {
 
             {guestLockedPanel ? (
               <GuestSourceSignInCallout kind={generationMode as GuestSourceLockKind} />
+            ) : signedOutFormLockedPanel ? (
+              <SignInRequiredNoGuestPanel />
             ) : (
               <>
                 {generationMode === "topic" && (
@@ -1166,20 +1235,34 @@ function CreateDeckForm() {
         {formError && <p className="text-sm text-destructive">{formError}</p>}
 
         <div className="space-y-2 pt-1">
-          <Button
-            type="submit"
-            disabled={
-              loading ||
-              status === "loading" ||
-              (usage?.limited_tier === true &&
-                usage.max_active_decks != null &&
-                usage.active_deck_count >= usage.max_active_decks)
-            }
-            size="lg"
-            className="w-full font-semibold sm:w-auto sm:min-w-[10rem]"
-          >
-            {loading ? "Working…" : "Create deck"}
-          </Button>
+          {signInRequiredNoGuestTrial ? (
+            <Link
+              href={SIGNIN_CREATE_DECK_HREF}
+              className={cn(
+                "inline-flex shrink-0 items-center justify-center rounded-md text-sm font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 max-mobile:min-h-[44px]",
+                "h-10 px-4 max-mobile:h-11 max-mobile:text-[15px]",
+                "bg-neutral-900 text-white hover:bg-neutral-800 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200 max-mobile:font-semibold",
+                "w-full sm:w-auto sm:min-w-[10rem]"
+              )}
+            >
+              Sign in to create
+            </Link>
+          ) : (
+            <Button
+              type="submit"
+              disabled={
+                loading ||
+                status === "loading" ||
+                (usage?.limited_tier === true &&
+                  usage.max_active_decks != null &&
+                  usage.active_deck_count >= usage.max_active_decks)
+              }
+              size="lg"
+              className="w-full font-semibold sm:w-auto sm:min-w-[10rem]"
+            >
+              {loading ? "Working…" : "Create deck"}
+            </Button>
+          )}
           {loading && loadingMessage ? (
             <p
               className="text-sm text-muted-foreground leading-snug"

@@ -37,3 +37,16 @@ export function guestSourceLockCopy(kind: GuestSourceLockKind): {
     subline,
   };
 }
+
+/** Signed out and `NEXT_PUBLIC_GUEST_TRIAL_USER_ID` unset: full page is sign-in-first. */
+export function signedOutNoGuestTrialCopy(): {
+  headline: string;
+  body: string;
+  note: string;
+} {
+  return {
+    headline: "Sign in to create decks",
+    body: "Sign in to create decks and save them to your account.",
+    note: "Guest trial is not enabled on this server.",
+  };
+}
