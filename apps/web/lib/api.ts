@@ -71,6 +71,15 @@ export async function readApiErrorMessage(
     const j = (await res.json()) as { detail?: unknown };
     const d = j?.detail;
     if (typeof d === "string") return d;
+    if (
+      d &&
+      typeof d === "object" &&
+      !Array.isArray(d) &&
+      "message" in d &&
+      typeof (d as { message: unknown }).message === "string"
+    ) {
+      return (d as { message: string }).message;
+    }
     if (Array.isArray(d) && d[0] && typeof (d[0] as { msg?: string }).msg === "string") {
       return String((d[0] as { msg: string }).msg);
     }

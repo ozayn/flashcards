@@ -1,27 +1,28 @@
 """
 Free-tier vs elevated usage for monetization-ready limits.
 
-Elevated (no deck-count / per-deck card cap from this module):
-- Product admin (role / name / PRODUCT_ADMIN_EMAILS), or
-- OAuth-linked user whose email is on ALLOWED_LOGIN_EMAILS, acting as self (trusted proxy).
+Who bypasses deck-count and per-deck card caps (`usage` limits):
+- Product admins only (`user_has_product_admin_access`).
 
+ALLOWED_LOGIN_EMAILS controls who may sign in — it does not grant unlimited decks/cards.
 Everyone else is "limited tier": max active decks and max cards per deck.
 """
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Any, Optional
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.guest_trial import GUEST_TRIAL_MAX_CARDS_TOTAL, GUEST_TRIAL_USER_ID
-from app.core.login_email_allowlist import email_is_allowed_for_login
 from app.core.product_admin import user_has_product_admin_access
 from app.models import Deck, Flashcard, User
 
 LIMITED_MAX_DECKS = 5
 LIMITED_MAX_CARDS_PER_DECK = 10
+
+FREE_TIER_MAX_DECKS_CODE = "FREE_TIER_MAX_DECKS"
 
 FREE_TIER_MAX_DECKS_MSG = (
     "Free plan: up to 5 decks. Delete or archive one to create another."
@@ -34,17 +35,19 @@ FREE_TIER_DUPLICATE_DECK_TOO_MANY_CARDS_MSG = (
 )
 
 
-def user_has_elevated_tier(user: User | None, trusted_acting_user_id: Optional[str]) -> bool:
-    """Unlimited deck count / per-deck card cap (still subject to product generation caps)."""
+def user_is_exempt_from_usage_limits(user: User | None) -> bool:
+    """Bypass deck-count and per-deck card caps shown in `UserUsageLimits` / enforced here."""
     if user is None:
         return False
-    if user_has_product_admin_access(user):
-        return True
-    if user.google_sub is None:
-        return False
-    if (trusted_acting_user_id or "").strip() != (user.id or "").strip():
-        return False
-    return email_is_allowed_for_login(user.email)
+    return user_has_product_admin_access(user)
+
+
+def free_tier_max_decks_http_detail() -> dict[str, Any]:
+    """403 body for POST /decks when the active deck cap is reached (machine-readable + message)."""
+    return {
+        "code": FREE_TIER_MAX_DECKS_CODE,
+        "message": FREE_TIER_MAX_DECKS_MSG,
+    }
 
 
 async def count_active_decks_for_user(db: AsyncSession, user_id: str) -> int:
@@ -72,20 +75,21 @@ async def assert_may_create_deck_for_user(
 ) -> None:
     from fastapi import HTTPException
 
-    if user_has_elevated_tier(user, trusted_id):
+    del trusted_id  # Reserved for API symmetry; limits use admin Product rules only.
+    if user_is_exempt_from_usage_limits(user):
         return
     n = await count_active_decks_for_user(db, user.id)
     if n >= LIMITED_MAX_DECKS:
-        raise HTTPException(status_code=403, detail=FREE_TIER_MAX_DECKS_MSG)
+        raise HTTPException(status_code=403, detail=free_tier_max_decks_http_detail())
 
 
 def generation_request_cap_exceeded_detail(max_allowed: int) -> str:
-    """403 detail when `num_cards` exceeds what the deck owner may still add."""
+    """403 detail when `num_cards` exceeds what the deck owner may still add (generation endpoints)."""
     if max_allowed <= 0:
         return FREE_TIER_MAX_CARDS_DECK_MSG
     return (
-        f"Free plan: you can add at most {max_allowed} card(s) in this request "
-        f"({LIMITED_MAX_CARDS_PER_DECK} per deck max)."
+        f"Regular accounts can generate up to {LIMITED_MAX_CARDS_PER_DECK} flashcards at a time. "
+        f"This request can add at most {max_allowed}."
     )
 
 
@@ -101,7 +105,7 @@ async def max_new_cards_allowed_for_deck(
     Max cards the user may add in one generation request (also total headroom for limited tier).
     `base_cap` is the existing product cap (e.g. 25 or 50 for admins).
     """
-    if user_has_elevated_tier(owner, trusted_id):
+    if user_is_exempt_from_usage_limits(owner):
         return base_cap
     current = await count_flashcards_in_deck(db, deck_id)
     remaining = max(0, LIMITED_MAX_CARDS_PER_DECK - current)
@@ -123,7 +127,7 @@ async def assert_may_add_flashcards_to_deck(
 
     if additional_count <= 0:
         return
-    if user_has_elevated_tier(owner, trusted_id):
+    if user_is_exempt_from_usage_limits(owner):
         return
     current = await count_flashcards_in_deck(db, deck_id)
     if owner and (owner.id or "").strip() == GUEST_TRIAL_USER_ID:

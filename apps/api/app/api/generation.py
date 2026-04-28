@@ -32,7 +32,7 @@ from app.core.user_tier import (
     LIMITED_MAX_CARDS_PER_DECK,
     generation_request_cap_exceeded_detail,
     max_new_cards_allowed_for_deck,
-    user_has_elevated_tier,
+    user_is_exempt_from_usage_limits,
 )
 from app.llm.json_truncation import analyze_llm_json_response
 from app.llm.provider_route import apply_provider_routing
@@ -261,7 +261,7 @@ _TEXT_CHUNK_MAX_CARDS = 8
 _TEXT_CHUNK_MERGE_MIN_LEN = 350
 
 MAX_CARDS_ADMIN = 50
-MAX_CARDS_USER = 25
+# Non-admin: align batch request cap with free-tier per-deck limit (see user_tier.LIMITED_MAX_CARDS_PER_DECK).
 
 # TODO: Add rate limiting for generation endpoints (per user/IP, return 429 if exceeded).
 # Placeholder for future integration with shared FastAPI middleware.
@@ -3824,14 +3824,18 @@ async def generate_flashcards_background(
 
     owner_result = await db.execute(select(User).where(User.id == deck.user_id))
     owner = owner_result.scalar_one_or_none()
-    base_cap = MAX_CARDS_ADMIN if user_has_product_admin_access(owner) else MAX_CARDS_USER
+    base_cap = (
+        MAX_CARDS_ADMIN
+        if user_has_product_admin_access(owner)
+        else LIMITED_MAX_CARDS_PER_DECK
+    )
     max_cards = await max_new_cards_allowed_for_deck(
         db, deck_id_str, owner, trusted_id, base_cap=base_cap
     )
     if payload.num_cards > max_cards:
         detail = (
             f"The maximum number of cards for this account is {max_cards}."
-            if user_has_elevated_tier(owner, trusted_id)
+            if user_is_exempt_from_usage_limits(owner)
             else generation_request_cap_exceeded_detail(max_cards)
         )
         raise HTTPException(status_code=403, detail=detail)
@@ -4681,14 +4685,18 @@ async def generate_flashcards(
 
     owner_result = await db.execute(select(User).where(User.id == deck.user_id))
     owner = owner_result.scalar_one_or_none()
-    base_cap = MAX_CARDS_ADMIN if user_has_product_admin_access(owner) else MAX_CARDS_USER
+    base_cap = (
+        MAX_CARDS_ADMIN
+        if user_has_product_admin_access(owner)
+        else LIMITED_MAX_CARDS_PER_DECK
+    )
     max_cards = await max_new_cards_allowed_for_deck(
         db, deck_id_str, owner, trusted_id, base_cap=base_cap
     )
     if payload.num_cards > max_cards:
         detail = (
             f"The maximum number of cards for this account is {max_cards}."
-            if user_has_elevated_tier(owner, trusted_id)
+            if user_is_exempt_from_usage_limits(owner)
             else generation_request_cap_exceeded_detail(max_cards)
         )
         raise HTTPException(status_code=403, detail=detail)
@@ -4801,7 +4809,7 @@ async def generate_flashcards(
         existing_exact = set(existing_questions)
         batch_normalized: set[tuple[str, str]] = set()
 
-        tier_elevated = user_has_elevated_tier(owner, trusted_id)
+        tier_elevated = user_is_exempt_from_usage_limits(owner)
         deck_start_count = len(existing_questions)
 
         skipped_batch_dup = 0

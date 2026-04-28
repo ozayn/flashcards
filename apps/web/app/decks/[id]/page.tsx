@@ -1775,6 +1775,11 @@ export default function DeckPage({ params }: DeckPageProps) {
                         className="sm:ml-1"
                       />
                     </div>
+                    {tierUsage?.limited_tier && genMode === "topic" ? (
+                      <p className="text-xs text-muted-foreground leading-snug">
+                        Regular accounts can generate up to 10 flashcards at a time from a topic.
+                      </p>
+                    ) : null}
                   </div>
                 )}
 

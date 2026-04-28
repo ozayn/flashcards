@@ -28,7 +28,7 @@ from app.core.user_tier import (
     FREE_TIER_DUPLICATE_DECK_TOO_MANY_CARDS_MSG,
     LIMITED_MAX_CARDS_PER_DECK,
     assert_may_create_deck_for_user,
-    user_has_elevated_tier,
+    user_is_exempt_from_usage_limits,
 )
 from app.models import Category, Deck, Flashcard, FlashcardBookmark, Review, User
 from app.models.enums import DeckStudyStatus
@@ -131,7 +131,7 @@ async def duplicate_deck(
         select(Flashcard).where(Flashcard.deck_id == deck_id).order_by(Flashcard.created_at)
     )
     cards = cards_result.scalars().all()
-    if not user_has_elevated_tier(owner, trusted_id) and len(cards) > LIMITED_MAX_CARDS_PER_DECK:
+    if not user_is_exempt_from_usage_limits(owner) and len(cards) > LIMITED_MAX_CARDS_PER_DECK:
         raise HTTPException(status_code=403, detail=FREE_TIER_DUPLICATE_DECK_TOO_MANY_CARDS_MSG)
 
     new_deck = Deck(

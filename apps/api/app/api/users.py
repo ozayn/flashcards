@@ -30,7 +30,7 @@ from app.core.user_tier import (
     LIMITED_MAX_CARDS_PER_DECK,
     LIMITED_MAX_DECKS,
     count_active_decks_for_user,
-    user_has_elevated_tier,
+    user_is_exempt_from_usage_limits,
 )
 from app.models import User
 from app.schemas.user import (
@@ -236,11 +236,11 @@ async def get_user(
     """Get one user by id (for profile and client UIs)."""
     user = await assert_may_act_as_user(db, trusted_id, user_id)
     active = await count_active_decks_for_user(db, user.id)
-    elevated = user_has_elevated_tier(user, trusted_id)
+    exempt = user_is_exempt_from_usage_limits(user)
     usage = UserUsageLimits(
-        limited_tier=not elevated,
-        max_active_decks=None if elevated else LIMITED_MAX_DECKS,
-        max_cards_per_deck=None if elevated else LIMITED_MAX_CARDS_PER_DECK,
+        limited_tier=not exempt,
+        max_active_decks=None if exempt else LIMITED_MAX_DECKS,
+        max_cards_per_deck=None if exempt else LIMITED_MAX_CARDS_PER_DECK,
         active_deck_count=active,
     )
     return UserResponse.model_validate(user).model_copy(update={"usage": usage})

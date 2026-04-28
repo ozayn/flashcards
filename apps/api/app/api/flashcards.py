@@ -16,7 +16,7 @@ from app.core.user_tier import (
     LIMITED_MAX_CARDS_PER_DECK,
     assert_may_add_flashcards_to_deck,
     count_flashcards_in_deck,
-    user_has_elevated_tier,
+    user_is_exempt_from_usage_limits,
 )
 from app.models import Deck, Flashcard, FlashcardBookmark, User
 from app.utils.import_answer_split import resolve_import_answer_fields
@@ -271,7 +271,7 @@ async def import_flashcards(
             norm_to_card[k] = fc
 
     slots_for_new: int | None = None
-    if not user_has_elevated_tier(owner, trusted_id):
+    if not user_is_exempt_from_usage_limits(owner):
         current = await count_flashcards_in_deck(db, payload.deck_id)
         slots_for_new = max(0, LIMITED_MAX_CARDS_PER_DECK - current)
 

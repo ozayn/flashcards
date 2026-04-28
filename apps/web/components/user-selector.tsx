@@ -420,16 +420,23 @@ export function isStoredUserAdmin(): boolean {
 }
 
 export const MAX_CARDS_ADMIN = 50;
-export const MAX_CARDS_USER = 25;
+/** Non-admin generation UI cap; aligns with API `LIMITED_MAX_CARDS_PER_DECK` / GET user usage. */
+export const MAX_CARDS_REGULAR_DEFAULT = 10;
+/** @deprecated Use MAX_CARDS_REGULAR_DEFAULT; kept for older imports. */
+export const MAX_CARDS_USER = MAX_CARDS_REGULAR_DEFAULT;
 
 export function getCardCountOptions(
   admin?: boolean,
   maxCardsPerDeck?: number | null
 ): number[] {
   const isAdmin = admin ?? isStoredUserAdmin();
-  let max = isAdmin ? MAX_CARDS_ADMIN : MAX_CARDS_USER;
-  if (maxCardsPerDeck != null && maxCardsPerDeck > 0) {
-    max = Math.min(max, maxCardsPerDeck);
+  let max: number;
+  if (isAdmin) {
+    max = MAX_CARDS_ADMIN;
+  } else if (maxCardsPerDeck != null && maxCardsPerDeck > 0) {
+    max = maxCardsPerDeck;
+  } else {
+    max = MAX_CARDS_REGULAR_DEFAULT;
   }
   return [5, 10, 15, 20, 25, 30, 40, 50].filter((n) => n <= max);
 }

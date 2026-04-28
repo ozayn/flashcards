@@ -187,6 +187,11 @@ function CreateDeckForm() {
     (atDeckLimit || deckLimitHitFromApi);
   /** Disable primary action when we know (or just learned) the free deck cap applies. */
   const primaryBlockedByDeckLimit = showDeckLimitCallout;
+  const showTopicYoutubeUrlGenCapHint =
+    usage?.limited_tier === true &&
+    (generationMode === "topic" ||
+      generationMode === "youtube" ||
+      generationMode === "url");
   const [loading, setLoading] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
@@ -987,6 +992,12 @@ function CreateDeckForm() {
                     className="sm:ml-1"
                   />
                 </div>
+                {showTopicYoutubeUrlGenCapHint ? (
+                  <p className="text-xs text-muted-foreground leading-snug">
+                    Regular accounts can generate up to 10 flashcards at a time for topic, YouTube, or article
+                    URL.
+                  </p>
+                ) : null}
               </div>
             )}
 
@@ -1146,6 +1157,12 @@ function CreateDeckForm() {
                     className="sm:ml-1"
                   />
                 </div>
+                {showTopicYoutubeUrlGenCapHint ? (
+                  <p className="text-xs text-muted-foreground leading-snug">
+                    Regular accounts can generate up to 10 flashcards at a time for topic, YouTube, or article
+                    URL.
+                  </p>
+                ) : null}
                 {youtubeTranscriptLangRaw ? (
                   <p className="text-xs text-muted-foreground leading-snug">
                     Transcript language: {transcriptLanguageDisplay(youtubeTranscriptLangRaw)}
@@ -1197,6 +1214,12 @@ function CreateDeckForm() {
                     className="sm:ml-1"
                   />
                 </div>
+                {showTopicYoutubeUrlGenCapHint ? (
+                  <p className="text-xs text-muted-foreground leading-snug">
+                    Regular accounts can generate up to 10 flashcards at a time for topic, YouTube, or article
+                    URL.
+                  </p>
+                ) : null}
               </div>
             )}
 
