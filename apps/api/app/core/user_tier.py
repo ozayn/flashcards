@@ -15,6 +15,7 @@ from typing import Optional
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.guest_trial import GUEST_TRIAL_MAX_CARDS_TOTAL, GUEST_TRIAL_USER_ID
 from app.core.login_email_allowlist import email_is_allowed_for_login
 from app.core.product_admin import user_has_product_admin_access
 from app.models import Deck, Flashcard, User
@@ -104,7 +105,11 @@ async def max_new_cards_allowed_for_deck(
         return base_cap
     current = await count_flashcards_in_deck(db, deck_id)
     remaining = max(0, LIMITED_MAX_CARDS_PER_DECK - current)
-    return min(base_cap, remaining)
+    cap = min(base_cap, remaining)
+    if owner and (owner.id or "").strip() == GUEST_TRIAL_USER_ID:
+        remaining_guest = max(0, GUEST_TRIAL_MAX_CARDS_TOTAL - current)
+        cap = min(cap, remaining_guest)
+    return cap
 
 
 async def assert_may_add_flashcards_to_deck(
@@ -121,5 +126,15 @@ async def assert_may_add_flashcards_to_deck(
     if user_has_elevated_tier(owner, trusted_id):
         return
     current = await count_flashcards_in_deck(db, deck_id)
+    if owner and (owner.id or "").strip() == GUEST_TRIAL_USER_ID:
+        if current + additional_count > GUEST_TRIAL_MAX_CARDS_TOTAL:
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    f"Trial deck: at most {GUEST_TRIAL_MAX_CARDS_TOTAL} cards. "
+                    "Sign in to create larger decks."
+                ),
+            )
+        return
     if current + additional_count > LIMITED_MAX_CARDS_PER_DECK:
         raise HTTPException(status_code=403, detail=FREE_TIER_MAX_CARDS_DECK_MSG)

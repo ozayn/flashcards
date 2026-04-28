@@ -11,7 +11,10 @@ function signInErrorMessage(error: string | null): string | null {
   if (!error) return null;
   if (error === "AccessDenied") return null;
   if (error === "Callback") {
-    return "Sign-in couldn’t finish. The account may not be authorized.";
+    return (
+      "Google worked, but linking your account failed. Put the same ALLOWED_LOGIN_EMAILS list in " +
+      "apps/web and apps/api/.env, then restart the API (editing .env does not apply until the backend restarts)."
+    );
   }
   return null;
 }

@@ -8,9 +8,27 @@ import { Menu, X } from "lucide-react";
 import { Logo } from "@/components/Logo";
 import { UserSelector } from "@/components/user-selector";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { MemoNextSupportFooterLink } from "@/components/memonext-support";
+import { getMemoNextSupportUrl } from "@/lib/memonext-support";
 import { Button } from "@/components/ui/button";
 
-type NavLink = { href: string; label: string; primary?: boolean; matchPrefixes?: string[] };
+const supportPaymentUrl = getMemoNextSupportUrl();
+
+type NavLink = {
+  href: string;
+  label: string;
+  primary?: boolean;
+  matchPrefixes?: string[];
+  /** Active only when pathname equals href (avoids "/" matching every route). */
+  exact?: boolean;
+};
+
+/** Signed-in or signed-out visitors on /about: informational routes only (no workflow-heavy app links). */
+const aboutInformationalNavLinks: NavLink[] = [
+  { href: "/", label: "Home", exact: true },
+  { href: "/library", label: "Library", matchPrefixes: ["/library"] },
+  { href: "/about", label: "About", matchPrefixes: ["/about"] },
+];
 
 const appNavLinks: NavLink[] = [
   { href: "/decks", label: "My Decks", matchPrefixes: ["/decks", "/categories"] },
@@ -21,6 +39,7 @@ const appNavLinks: NavLink[] = [
 ];
 
 function isNavActive(link: NavLink, pathname: string): boolean {
+  if (link.exact) return pathname === link.href;
   const prefixes = link.matchPrefixes ?? [link.href];
   return prefixes.some((p) => pathname === p || pathname.startsWith(p + "/"));
 }
@@ -42,12 +61,21 @@ export function Nav() {
   const pathname = usePathname();
   const { status } = useSession();
   const authed = status === "authenticated";
-  const isLanding = pathname === "/";
+  const isAboutPage = pathname === "/about";
   const isStudyOrExplore = (pathname?.startsWith("/study/") || pathname?.startsWith("/explore/")) ?? false;
-  /** Signed-in users on the landing page use the same primary nav as the rest of the app. */
-  const useAppPrimaryNav = !isLanding || authed;
-  const desktopCenterLinks = useAppPrimaryNav ? appNavLinks : landingCenterLinks;
-  const mobileNavLinks = useAppPrimaryNav ? appNavLinks : landingNavLinks;
+  /** Full workflow nav only when signed in. Signed-out users see public Library + About (or informational About nav). */
+  const desktopCenterLinks = isAboutPage
+    ? aboutInformationalNavLinks
+    : authed
+      ? appNavLinks
+      : landingCenterLinks;
+  const mobileNavLinks = isAboutPage
+    ? authed
+      ? aboutInformationalNavLinks
+      : [...aboutInformationalNavLinks, ...landingRightLinks]
+    : authed
+      ? appNavLinks
+      : landingNavLinks;
 
   return (
     <nav
@@ -65,7 +93,7 @@ export function Nav() {
         </Link>
 
         {/* Center: Desktop nav (hidden on mobile) */}
-        <div className="hidden md:flex flex-1 justify-center items-center gap-6 min-w-0">
+        <div className="hidden md:flex flex-1 justify-center items-center gap-5 lg:gap-6 min-w-0">
           {desktopCenterLinks.map((link) => (
             link.primary ? (
               <Link key={link.href} href={link.href}>
@@ -87,12 +115,18 @@ export function Nav() {
               </Link>
             )
           ))}
+          {supportPaymentUrl ? (
+            <MemoNextSupportFooterLink className="text-sm text-muted-foreground hover:text-foreground transition-colors" />
+          ) : null}
         </div>
 
-        {/* Right: one ThemeToggle + UserSelector (authed) / CTAs or Sign in; hamburger on small screens only */}
-        <div className="flex items-center gap-1 sm:gap-2 md:gap-3 shrink-0">
+        {/* Right: ThemeToggle + optional Support (mobile bar) + CTAs / UserSelector + hamburger on small screens */}
+        <div className="flex items-center gap-0.5 sm:gap-1 md:gap-3 shrink-0">
           <ThemeToggle />
-          {isLanding && !authed ? (
+          {supportPaymentUrl ? (
+            <MemoNextSupportFooterLink className="md:hidden text-sm font-medium text-muted-foreground hover:text-foreground px-2 py-1.5 rounded-md shrink-0" />
+          ) : null}
+          {!authed ? (
             <>
               <div className="hidden md:flex items-center gap-3 sm:gap-4">
                 {landingRightLinks.map((link) =>
@@ -120,13 +154,6 @@ export function Nav() {
                 Sign in
               </Link>
             </>
-          ) : !authed ? (
-            <Link
-              href="/signin"
-              className="text-sm text-muted-foreground hover:text-foreground transition-colors px-1 font-medium md:font-normal py-1.5 md:py-0 rounded-md md:rounded-none shrink-0"
-            >
-              Sign in
-            </Link>
           ) : (
             <UserSelector />
           )}
@@ -147,8 +174,8 @@ export function Nav() {
           <div className="max-w-4xl mx-auto px-4 sm:px-6 py-3">
             <div className="flex flex-col gap-1">
               {mobileNavLinks.map((link) => {
-                /* Landing signed out: Sign in is in the top bar */
-                if (isLanding && !authed && link.href === "/signin") {
+                /* Signed out: Sign in is in the top bar on small screens */
+                if (!authed && link.href === "/signin") {
                   return null;
                 }
                 return (

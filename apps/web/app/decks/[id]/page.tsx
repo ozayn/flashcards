@@ -2,7 +2,7 @@
 
 import { useEffect, useLayoutEffect, useMemo, useState, useRef } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   Archive,
   ArchiveRestore,
@@ -59,6 +59,8 @@ import {
   type GenerationLangPreference,
 } from "@/lib/source-language";
 import PageContainer from "@/components/layout/page-container";
+import { GuestTrialDeckBanner } from "@/components/guest-trial-deck-banner";
+import { isGuestTrialDeckForViewer } from "@/lib/guest-trial";
 import { GenerationLanguageToggle } from "@/components/generation-language-toggle";
 import FormattedText from "@/components/FormattedText";
 import {
@@ -377,6 +379,7 @@ function exportDeckAsTxt(
 
 export default function DeckPage({ params }: DeckPageProps) {
   const router = useRouter();
+  const pathname = usePathname();
   const [deck, setDeck] = useState<Deck | null>(null);
   const [flashcards, setFlashcards] = useState<Flashcard[]>([]);
   const [relatedDecks, setRelatedDecks] = useState<RelatedDeck[]>([]);
@@ -1098,9 +1101,13 @@ export default function DeckPage({ params }: DeckPageProps) {
   }
 
   const deckDateShort = formatDeckCreatedCalendarDate(deck.created_at);
+  const showGuestTrialBanner = isGuestTrialDeckForViewer(deck.user_id, sessionStatus);
 
   return (
     <PageContainer>
+        {showGuestTrialBanner ? (
+          <GuestTrialDeckBanner callbackUrl={pathname || `/decks/${params.id}`} />
+        ) : null}
         <div className="flex items-center justify-between gap-2">
           <Link
             href={isReadOnly ? "/library" : "/decks"}

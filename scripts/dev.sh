@@ -20,7 +20,8 @@ echo "Syncing API dependencies (requirements.txt)..."
 python -m pip install -q -r requirements.txt
 # --reload-delay: debounce rapid mtime updates (Dropbox/cloud sync, IDE safe-writes)
 # so WatchFiles does not reload in a tight loop on the same .py files.
-uvicorn main:app --reload --reload-delay 1.25 --port 8080 &
+# Include .env so allowlist/sync-secret changes trigger a reload (Python-only edits alone won't refresh env).
+uvicorn main:app --reload --reload-delay 1.25 --reload-include '.env' --port 8080 &
 BACKEND_PID=$!
 cd "$PROJECT_ROOT"
 

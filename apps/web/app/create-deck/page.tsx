@@ -2,12 +2,14 @@
 
 import { useState, useEffect, useRef, useMemo, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useSession } from "next-auth/react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   buildYoutubeDeckSourceMetadata,
   createDeck,
+  deleteDeck,
   fetchWebpageContent,
   fetchYouTubeTranscript,
   generateFlashcardsBackground,
@@ -19,9 +21,16 @@ import {
   TranscriptFetchError,
 } from "@/lib/api";
 import { getStoredUserId, useTierLimits } from "@/components/user-selector";
+import {
+  clearStoredGuestTrialDeckId,
+  getGuestTrialUserId,
+  getStoredGuestTrialDeckId,
+  GUEST_TRIAL_MAX_CARDS,
+  setStoredGuestTrialDeckId,
+} from "@/lib/guest-trial";
 import { GENERATION_TEXT_MAX_CHARS } from "@/lib/generation-text";
 import { markDeckBackgroundGenerationNavigation } from "@/lib/deck-pending-generation";
-import { Upload } from "lucide-react";
+import { Lock, Upload } from "lucide-react";
 import PageContainer from "@/components/layout/page-container";
 import { LongSourceTextarea } from "@/components/long-source-textarea";
 import { GenerationLanguageToggle } from "@/components/generation-language-toggle";
@@ -33,8 +42,47 @@ import {
   type GenerationLangPreference,
 } from "@/lib/source-language";
 import { startYoutubeTranscriptPhaseTimers } from "@/lib/youtube-fetch-status";
+import {
+  guestSourceLockCopy,
+  isSourceModeLockedForGuest,
+  type CreateDeckSourceMode,
+  type GuestSourceLockKind,
+} from "@/lib/create-deck-guest-source";
 
-type GenerationMode = "topic" | "text" | "youtube" | "url" | "import";
+function GuestSourceSignInCallout({ kind }: { kind: GuestSourceLockKind }) {
+  const copy = guestSourceLockCopy(kind);
+  return (
+    <div
+      id="guest-source-signin-callout"
+      className="rounded-lg border border-amber-500/30 bg-amber-500/[0.07] px-4 py-10 text-center shadow-sm dark:border-amber-500/25 dark:bg-amber-500/[0.09] sm:px-6 sm:py-12"
+      role="region"
+      aria-labelledby="guest-source-signin-headline"
+    >
+      <div className="mx-auto flex max-w-md flex-col items-center gap-3">
+        <span className="inline-flex size-10 items-center justify-center rounded-full border border-amber-500/35 bg-background/80">
+          <Lock className="size-5 text-muted-foreground" aria-hidden />
+        </span>
+        <p
+          id="guest-source-signin-headline"
+          className="text-base font-semibold text-foreground leading-snug"
+        >
+          {copy.headline}
+        </p>
+        <p className="text-sm text-muted-foreground leading-relaxed">
+          {copy.subline}{" "}
+          <Link
+            href={`/signin?callbackUrl=${encodeURIComponent("/create-deck")}`}
+            className="font-medium text-foreground underline underline-offset-4 hover:no-underline"
+          >
+            Sign in
+          </Link>
+        </p>
+      </div>
+    </div>
+  );
+}
+
+type GenerationMode = CreateDeckSourceMode;
 
 const _YT_RE = /(?:youtube\.com\/watch\?.*v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/shorts\/)/i;
 const _WIKI_RE = /^https?:\/\/([a-z]{2,3}\.)?wikipedia\.org\/wiki\//i;
@@ -57,13 +105,21 @@ function CreateDeckForm() {
   const [useNameAsTopic, setUseNameAsTopic] = useState(false);
   const [cardCount, setCardCount] = useState(10);
   const [genLangMode, setGenLangMode] = useState<GenerationLangPreference>("source");
-  const { cardCountOptions, usage } = useTierLimits();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const { status } = useSession();
+  const guestTrialUserId = useMemo(() => getGuestTrialUserId(), []);
+  const isGuestTrial = status === "unauthenticated" && Boolean(guestTrialUserId);
+  /** Signed-out guest on YouTube / URL / Import: show sign-in callout instead of the real form. */
+  const guestLockedPanel =
+    isGuestTrial &&
+    (generationMode === "youtube" || generationMode === "url" || generationMode === "import");
+  const { cardCountOptions: tierCardOptions, usage } = useTierLimits();
+  const cardCountOptions = isGuestTrial ? [GUEST_TRIAL_MAX_CARDS] : tierCardOptions;
   const [loading, setLoading] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
   const [autoSwitchHint, setAutoSwitchHint] = useState<string | null>(null);
-  const router = useRouter();
-  const searchParams = useSearchParams();
 
   const [ytTextFallback, setYtTextFallback] = useState<{
     url: string;
@@ -90,18 +146,27 @@ function CreateDeckForm() {
     const ytUrlRe = /(?:youtube\.com\/|youtu\.be\/)/i;
 
     if (modeParam === "text" && ytParam) {
-      setGenerationMode("text");
-      setYtTextFallback({
-        url: ytParam,
-        watchMetadataOk: false,
-        title: titleParam || null,
-        failureCode: null,
-      });
-      if (titleParam) setName(titleParam);
+      if (isGuestTrial) {
+        setGenerationMode("youtube");
+        setYtTextFallback(null);
+        if (titleParam) setName(titleParam);
+      } else {
+        setGenerationMode("text");
+        setYtTextFallback({
+          url: ytParam,
+          watchMetadataOk: false,
+          title: titleParam || null,
+          failureCode: null,
+        });
+        if (titleParam) setName(titleParam);
+      }
     } else if (urlParam?.trim()) {
       const u = urlParam.trim();
       if (nameParam) setName(nameParam);
-      if (ytUrlRe.test(u)) {
+      if (isGuestTrial) {
+        setGenerationMode(ytUrlRe.test(u) ? "youtube" : "url");
+        if (topicParam) setTopic(topicParam);
+      } else if (ytUrlRe.test(u)) {
         setYoutubeUrl(u);
         setGenerationMode("youtube");
         if (topicParam) setTopic(topicParam);
@@ -120,11 +185,16 @@ function CreateDeckForm() {
       setGenerationMode("topic");
       if (nameParam) setName(nameParam);
     } else if (ytParam) {
-      setYoutubeUrl(ytParam);
-      setGenerationMode("youtube");
-      if (nameParam) setName(nameParam);
+      if (isGuestTrial) {
+        setGenerationMode("youtube");
+        if (nameParam) setName(nameParam);
+      } else {
+        setYoutubeUrl(ytParam);
+        setGenerationMode("youtube");
+        if (nameParam) setName(nameParam);
+      }
     }
-  }, [searchParams]);
+  }, [searchParams, isGuestTrial]);
 
   useEffect(() => {
     if (generationMode !== "text") setTextUploadStatus(null);
@@ -141,6 +211,10 @@ function CreateDeckForm() {
       return c > max ? max : c;
     });
   }, [cardCountOptions]);
+
+  useEffect(() => {
+    if (isGuestTrial) setCardCount(GUEST_TRIAL_MAX_CARDS);
+  }, [isGuestTrial]);
 
   const nameTrimmed = name.trim();
   const topicTrimmed = topic.trim();
@@ -262,6 +336,10 @@ function CreateDeckForm() {
     e.preventDefault();
     setFormError(null);
 
+    if (isGuestTrial && !emptyDeckMode && isSourceModeLockedForGuest(generationMode)) {
+      return;
+    }
+
     if (emptyDeckMode) {
       if (!nameTrimmed) {
         setFormError("Enter a deck name for your empty deck.");
@@ -315,23 +393,74 @@ function CreateDeckForm() {
       }
     }
 
-    let userId: string | null = getStoredUserId();
-    if (!userId) {
-      const users = await getUsers();
-      if (Array.isArray(users) && users.length > 0) {
-        userId = users[0].id;
-      } else {
-        setFormError("No user found. Please refresh the page.");
+    if (status === "loading") {
+      setFormError("Checking session…");
+      return;
+    }
+
+    let userId: string | null = null;
+    if (status === "authenticated") {
+      userId = getStoredUserId();
+      if (!userId) {
+        const users = await getUsers();
+        if (Array.isArray(users) && users.length > 0) {
+          userId = users[0].id;
+        } else {
+          setFormError("Could not resolve your account. Please refresh or sign in again.");
+          return;
+        }
+      }
+    } else if (status === "unauthenticated") {
+      userId = guestTrialUserId;
+      if (!userId) {
+        setFormError(
+          "Sign in to create decks and save them to your account. Guest trial is not enabled on this server."
+        );
         return;
       }
+    } else {
+      setFormError("Sign in to create decks.");
+      return;
     }
+
     if (!userId) return;
+
+    const generationCardTarget = isGuestTrial ? Math.min(GUEST_TRIAL_MAX_CARDS, cardCount) : cardCount;
+
+    if (
+      isGuestTrial &&
+      generationMode === "import" &&
+      importQAPairs &&
+      importQAPairs.length > GUEST_TRIAL_MAX_CARDS
+    ) {
+      setFormError(
+        `Trial mode: import at most ${GUEST_TRIAL_MAX_CARDS} cards. Sign in to import larger decks.`
+      );
+      return;
+    }
 
     setLoading(true);
     setLoadingMessage("");
     setYoutubeTranscriptLangRaw(null);
 
     try {
+      if (isGuestTrial && guestTrialUserId) {
+        const prev = getStoredGuestTrialDeckId();
+        if (prev) {
+          try {
+            await deleteDeck(prev);
+          } catch {
+            /* stale id */
+          }
+        }
+        clearStoredGuestTrialDeckId();
+      }
+
+      const goToDeck = (deckId: string) => {
+        if (isGuestTrial) setStoredGuestTrialDeckId(deckId);
+        router.push(`/decks/${deckId}`);
+      };
+
       if (emptyDeckMode) {
         const deck = await createDeck({
           user_id: userId,
@@ -339,7 +468,7 @@ function CreateDeckForm() {
           source_type: "manual",
         });
         const deckId = (deck as { id: string }).id;
-        router.push(`/decks/${deckId}`);
+        goToDeck(deckId);
         return;
       }
 
@@ -370,7 +499,7 @@ function CreateDeckForm() {
         } catch {
           /* Deck exists; user can import again from the deck page. */
         }
-        router.push(`/decks/${deckId}`);
+        goToDeck(deckId);
         return;
       }
 
@@ -432,13 +561,13 @@ function CreateDeckForm() {
         await generateFlashcardsBackground({
           deck_id: deckId,
           text: transcript.transcript.slice(0, GENERATION_TEXT_MAX_CHARS),
-          num_cards: cardCount,
+          num_cards: generationCardTarget,
           ...generationLanguagePayload(genLangMode, normalizeLangCode(transcript.language)),
           youtube_route_reason: "youtube_transcript",
         }).catch(() => {});
 
         markDeckBackgroundGenerationNavigation(deckId);
-        router.push(`/decks/${deckId}`);
+        goToDeck(deckId);
         return;
       }
 
@@ -471,12 +600,12 @@ function CreateDeckForm() {
         await generateFlashcardsBackground({
           deck_id: deckId,
           text: article.text.slice(0, GENERATION_TEXT_MAX_CHARS),
-          num_cards: cardCount,
+          num_cards: generationCardTarget,
           ...generationLanguagePayload(genLangMode, null),
         }).catch(() => {});
 
         markDeckBackgroundGenerationNavigation(deckId);
-        router.push(`/decks/${deckId}`);
+        goToDeck(deckId);
         return;
       }
 
@@ -507,7 +636,7 @@ function CreateDeckForm() {
         await generateFlashcardsBackground({
           deck_id: deckId,
           text: textTrimmed,
-          num_cards: cardCount,
+          num_cards: generationCardTarget,
           ...generationLanguagePayload(genLangMode, null),
         }).catch(() => {});
         markDeckBackgroundGenerationNavigation(deckId);
@@ -515,13 +644,13 @@ function CreateDeckForm() {
         await generateFlashcardsBackground({
           deck_id: deckId,
           topic: effectiveTopic,
-          num_cards: cardCount,
+          num_cards: generationCardTarget,
           ...generationLanguagePayload(genLangMode, null),
         }).catch(() => {});
         markDeckBackgroundGenerationNavigation(deckId);
       }
 
-      router.push(`/decks/${deckId}`);
+      goToDeck(deckId);
     } catch (e) {
       setFormError(e instanceof Error ? e.message : "Failed to create deck. Please try again.");
     } finally {
@@ -604,6 +733,7 @@ function CreateDeckForm() {
               className="grid grid-cols-3 gap-1 rounded-lg border border-border/50 bg-muted/25 p-1 sm:grid-cols-5"
               role="radiogroup"
               aria-label="Source"
+              aria-describedby={guestLockedPanel ? "guest-source-signin-callout" : undefined}
             >
               {(
                 [
@@ -613,32 +743,52 @@ function CreateDeckForm() {
                   { value: "url" as const, label: "URL" },
                   { value: "import" as const, label: "Import" },
                 ] as const
-              ).map(({ value, label }) => (
-                <button
-                  key={value}
-                  type="button"
-                  role="radio"
-                  aria-checked={generationMode === value}
-                  onClick={() => {
-                    setGenerationMode(value);
-                    setFormError(null);
-                  }}
-                  disabled={loading}
-                  className={`rounded-md px-2 py-2 text-center text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:text-sm ${
-                    generationMode === value
-                      ? "bg-background text-foreground shadow-sm ring-1 ring-border/60"
-                      : "text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
+              ).map(({ value, label }) => {
+                const lockedGuest = isGuestTrial && isSourceModeLockedForGuest(value);
+                const selected = generationMode === value;
+                return (
+                  <button
+                    key={value}
+                    type="button"
+                    role="radio"
+                    aria-checked={selected}
+                    title={
+                      lockedGuest ? "Available after sign-in — click to see details" : undefined
+                    }
+                    onClick={() => {
+                      setGenerationMode(value);
+                      setFormError(null);
+                    }}
+                    disabled={loading}
+                    className={`rounded-md px-2 py-2 text-center text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:text-sm ${
+                      lockedGuest && selected
+                        ? "cursor-pointer bg-background text-foreground shadow-sm ring-1 ring-amber-500/45"
+                        : lockedGuest && !selected
+                          ? "cursor-pointer opacity-60 text-muted-foreground hover:text-foreground"
+                          : selected
+                            ? "bg-background text-foreground shadow-sm ring-1 ring-border/60"
+                            : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    <span className="inline-flex items-center justify-center gap-1">
+                      {lockedGuest ? (
+                        <Lock className="size-3 shrink-0 opacity-70" aria-hidden />
+                      ) : null}
+                      {label}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
             {autoSwitchHint && (
               <p className="text-xs text-muted-foreground">{autoSwitchHint}</p>
             )}
 
-            {generationMode === "topic" && (
+            {guestLockedPanel ? (
+              <GuestSourceSignInCallout kind={generationMode as GuestSourceLockKind} />
+            ) : (
+              <>
+                {generationMode === "topic" && (
               <div className="space-y-3">
                 <div className="space-y-2">
                   <label htmlFor="topic" className="text-sm font-medium">
@@ -652,6 +802,12 @@ function CreateDeckForm() {
                       const v = e.target.value;
                       const detected = _detectUrlMode(v);
                       if (detected) {
+                        if (isGuestTrial) {
+                          setTopic("");
+                          setFormError(null);
+                          setGenerationMode(detected === "youtube" ? "youtube" : "url");
+                          return;
+                        }
                         setTopic("");
                         setFormError(null);
                         if (detected === "youtube") {
@@ -993,6 +1149,8 @@ function CreateDeckForm() {
                 {importError && <p className="text-xs text-destructive">{importError}</p>}
               </div>
             )}
+              </>
+            )}
           </div>
         )}
 
@@ -1012,6 +1170,7 @@ function CreateDeckForm() {
             type="submit"
             disabled={
               loading ||
+              status === "loading" ||
               (usage?.limited_tier === true &&
                 usage.max_active_decks != null &&
                 usage.active_deck_count >= usage.max_active_decks)

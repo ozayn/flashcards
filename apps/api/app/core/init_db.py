@@ -385,7 +385,35 @@ async def init_db() -> None:
             await conn.run_sync(_migrate_sourcetype_enum)
         logger.info("Applied sourcetype enum migration")
 
+    await _ensure_guest_trial_user_row()
+
     logger.info("Database tables created successfully")
+
+
+async def _ensure_guest_trial_user_row() -> None:
+    """Legacy user used only for signed-out trial decks (see app.core.guest_trial)."""
+    from sqlalchemy import select
+
+    from app.core.database import AsyncSessionLocal
+    from app.core.guest_trial import GUEST_TRIAL_EMAIL, GUEST_TRIAL_USER_ID
+    from app.models.enums import Plan, UserRole
+
+    async with AsyncSessionLocal() as session:
+        r = await session.execute(select(User.id).where(User.id == GUEST_TRIAL_USER_ID))
+        if r.scalar_one_or_none() is not None:
+            return
+        session.add(
+            User(
+                id=GUEST_TRIAL_USER_ID,
+                google_sub=None,
+                email=GUEST_TRIAL_EMAIL,
+                name="Guest trial",
+                role=UserRole.user,
+                plan=Plan.free,
+            )
+        )
+        await session.commit()
+        logger.info("Ensured guest trial user %s", GUEST_TRIAL_USER_ID)
 
 
 async def drop_db() -> None:

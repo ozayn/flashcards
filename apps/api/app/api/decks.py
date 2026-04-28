@@ -15,6 +15,7 @@ from app.core.category_deck_order import (
     renormalize_category_positions,
 )
 from app.core.database import get_db
+from app.core.guest_trial import is_guest_trial_user_id
 from app.core.user_activity import record_user_activity
 from app.core.platform_admin import assert_acting_user_is_platform_admin
 from app.core.user_access import (
@@ -502,6 +503,11 @@ async def create_deck(
 ):
     """Create a new deck."""
     await assert_may_act_as_user(db, trusted_id, payload.user_id)
+    # Signed-out trials share one sandbox user: keep a single active deck (best-effort).
+    if is_guest_trial_user_id(payload.user_id):
+        await db.execute(delete(Deck).where(Deck.user_id == payload.user_id))
+        await db.flush()
+
     owner_result = await db.execute(select(User).where(User.id == payload.user_id))
     owner = owner_result.scalar_one_or_none()
     if not owner:

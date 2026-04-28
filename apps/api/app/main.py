@@ -17,6 +17,14 @@ try:
 except ImportError:
     pass
 
+# Allowlist is LRU-cached; ensure first read sees env loaded above (fresh workers clear cache anyway).
+try:
+    from app.core.login_email_allowlist import clear_login_email_allowlist_cache
+
+    clear_login_email_allowlist_cache()
+except Exception:
+    pass
+
 import hashlib
 import hmac
 import os
