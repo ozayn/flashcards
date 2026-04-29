@@ -88,7 +88,7 @@ function escapeRegExpLiteral(token: string): string {
  * Curated token → spoken phrase for DS/ML-style Python (TTS only).
  * Longest tokens first so `iloc` wins over `loc`, `train_test_split` stays one phrase, etc.
  */
-const PYTHON_TOKEN_SPEECH: readonly [string, string][] = [
+const PYTHON_TOKEN_SPEECH_PAIRS: [string, string][] = [
   ["RandomForestClassifier", "random forest classifier"],
   ["classification_report", "classification report"],
   ["LogisticRegression", "logistic regression"],
@@ -107,7 +107,9 @@ const PYTHON_TOKEN_SPEECH: readonly [string, string][] = [
   ["__name__", "dunder name"],
   ["len", "length"],
   ["loc", "lock"],
-].sort((a, b) => b[0].length - a[0].length);
+];
+PYTHON_TOKEN_SPEECH_PAIRS.sort((a, b) => b[0].length - a[0].length);
+const PYTHON_TOKEN_SPEECH: readonly [string, string][] = PYTHON_TOKEN_SPEECH_PAIRS;
 
 /** Must run before `**` / `*` operator rules. */
 const PYTHON_PRONUNCIATION_PREFIX: readonly [RegExp, string][] = [
