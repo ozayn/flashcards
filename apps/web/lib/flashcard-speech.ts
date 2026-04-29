@@ -4,6 +4,10 @@
  */
 
 import { splitImportAnswerOnExampleMarker } from "@/lib/import-answer-split";
+import {
+  replaceInlinePythonBackticksForSpeech,
+  replacePythonFencedBlocksForSpeech,
+} from "@/lib/python-speakable-for-tts";
 
 const RTL_SCRIPT_RE = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/;
 const CJK_RE = /[\u3040-\u30ff\u31f0-\u31ff\u4e00-\u9fff\uac00-\ud7af]/;
@@ -252,7 +256,10 @@ function removeBlockDollarDisplayMath(s: string): string {
 /** Strips light markdown/whitespace; `$$...$$` block math is removed (not spoken). */
 export function plainTextForSpeech(s: string): string {
   const noBlockMath = removeBlockDollarDisplayMath(s);
-  return noBlockMath
+  const withPythonSpeakable = replaceInlinePythonBackticksForSpeech(
+    replacePythonFencedBlocksForSpeech(noBlockMath)
+  );
+  return withPythonSpeakable
     .replace(/\r\n/g, "\n")
     .replace(/\n{2,}/g, "\n")
     .replace(/\*+/g, "")
