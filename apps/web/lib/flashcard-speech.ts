@@ -260,6 +260,7 @@ export function plainTextForSpeech(s: string): string {
     replacePythonFencedBlocksForSpeech(noBlockMath)
   );
   return withPythonSpeakable
+    .replace(/\u2192/g, " to ")
     .replace(/\r\n/g, "\n")
     .replace(/\n{2,}/g, "\n")
     .replace(/\*+/g, "")

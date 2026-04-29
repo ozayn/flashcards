@@ -105,6 +105,13 @@ describe("pickVoiceForText (Farsi / RTL script)", () => {
   });
 });
 
+describe("plainTextForSpeech / Unicode arrow", () => {
+  it("reads right arrow as 'to' for natural TTS", () => {
+    expect(plainTextForSpeech("USD \u2192 toman")).toBe("USD to toman");
+    expect(plainTextForSpeech("input \u2192 output")).toBe("input to output");
+  });
+});
+
 describe("plainTextForSpeech / block math", () => {
   it("strips block $$...$$ and keeps surrounding prose", () => {
     expect(plainTextForSpeech("A is x. $$\\frac{1}{2}$$ B is y.")).toBe("A is x. B is y.");
