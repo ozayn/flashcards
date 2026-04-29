@@ -80,6 +80,66 @@ function floatToSpeech(raw: string): string {
   return `${neg}${intSp} point ${fracSp}`.trim();
 }
 
+function escapeRegExpLiteral(token: string): string {
+  return token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Curated token → spoken phrase for DS/ML-style Python (TTS only).
+ * Longest tokens first so `iloc` wins over `loc`, `train_test_split` stays one phrase, etc.
+ */
+const PYTHON_TOKEN_SPEECH: readonly [string, string][] = [
+  ["RandomForestClassifier", "random forest classifier"],
+  ["classification_report", "classification report"],
+  ["LogisticRegression", "logistic regression"],
+  ["confusion_matrix", "confusion matrix"],
+  ["train_test_split", "train test split"],
+  ["cross_val_score", "cross val score"],
+  ["StandardScaler", "standard scaler"],
+  ["predict_proba", "predict probability"],
+  ["fillna", "fill N A"],
+  ["dropna", "drop N A"],
+  ["groupby", "group by"],
+  ["iloc", "eye lock"],
+  ["sklearn", "scikit learn"],
+  ["kwargs", "keyword args"],
+  ["__init__", "dunder init"],
+  ["__name__", "dunder name"],
+  ["len", "length"],
+  ["loc", "lock"],
+].sort((a, b) => b[0].length - a[0].length);
+
+/** Must run before `**` / `*` operator rules. */
+const PYTHON_PRONUNCIATION_PREFIX: readonly [RegExp, string][] = [
+  [/\*\*kwargs\b/g, " keyword args "],
+  [/\*args\b/g, " positional args "],
+  /** Conventional aliases: spell letters so we do not say “pandas” twice after “import pandas”. */
+  [/\bas\s+pd\b/gi, " as P D "],
+  [/\bas\s+np\b/gi, " as N P "],
+  [/\bas\s+plt\b/gi, " as P L T "],
+  [/\bas\s+df\b/gi, " as D F "],
+  [/\bpd(?=\.)/g, "pandas"],
+  [/\bnp(?=\.)/g, "numpy"],
+  [/\bplt(?=\.)/g, "pyplot"],
+  [/\bdf(?=\.)/g, "data frame"],
+];
+
+/**
+ * Replace common Python / DS / ML identifiers with friendlier spoken phrases.
+ * Applied only on the Python TTS preprocessing path.
+ */
+export function applyPythonPronunciationDictionary(s: string): string {
+  let out = s;
+  for (const [rx, rep] of PYTHON_PRONUNCIATION_PREFIX) {
+    out = out.replace(rx, rep);
+  }
+  for (const [token, spoken] of PYTHON_TOKEN_SPEECH) {
+    const rx = new RegExp(`\\b${escapeRegExpLiteral(token)}\\b`, "g");
+    out = out.replace(rx, ` ${spoken} `);
+  }
+  return out;
+}
+
 /**
  * Replace ```python / ```py fenced regions with speakable prose (no backticks).
  * Unknown fence languages are left unchanged for existing stripping behavior.
@@ -119,6 +179,7 @@ function expandAttributeDots(s: string): string {
   while (prev !== s) {
     prev = s;
     s = s.replace(/(\w)\.(\w)/g, "$1 dot $2");
+    s = s.replace(/(\w)\s*\.\s*(\w)/g, "$1 dot $2");
   }
   return s;
 }
@@ -132,6 +193,8 @@ export function pythonSourceToSpeakableText(code: string): string {
   s = s.replace(/^\s*#.*$/gm, " ");
   s = s.replace(/\/\/[^\n]*/g, " ");
   s = s.replace(/\n+/g, " ");
+
+  s = applyPythonPronunciationDictionary(s);
 
   s = s.replace(/\b-?\d+\.\d+\b/g, (m) => floatToSpeech(m));
 

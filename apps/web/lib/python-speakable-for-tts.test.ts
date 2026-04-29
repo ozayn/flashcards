@@ -1,10 +1,19 @@
 import { describe, expect, it } from "vitest";
 import { plainTextForSpeech } from "./flashcard-speech";
 import {
+  applyPythonPronunciationDictionary,
   pythonSourceToSpeakableText,
   replaceInlinePythonBackticksForSpeech,
   replacePythonFencedBlocksForSpeech,
 } from "./python-speakable-for-tts";
+
+describe("applyPythonPronunciationDictionary", () => {
+  it("spells import aliases and expands dotted abbreviations", () => {
+    expect(applyPythonPronunciationDictionary("import pandas as pd")).toMatch(/P D/);
+    expect(applyPythonPronunciationDictionary("pd.read_csv()")).toMatch(/pandas/);
+    expect(applyPythonPronunciationDictionary("np.zeros(3)")).toMatch(/numpy/);
+  });
+});
 
 describe("pythonSourceToSpeakableText", () => {
   it("turns snake_case into spaced words", () => {
@@ -22,8 +31,36 @@ describe("pythonSourceToSpeakableText", () => {
     expect(pythonSourceToSpeakableText("a != b")).toContain("not equal to");
   });
 
-  it("uses dot between attribute access", () => {
-    expect(pythonSourceToSpeakableText("sklearn.model_selection")).toContain("dot");
+  it("uses dot between attribute access and expands sklearn", () => {
+    const out = pythonSourceToSpeakableText("sklearn.model_selection");
+    expect(out).toContain("dot");
+    expect(out.toLowerCase()).toContain("scikit learn");
+  });
+
+  it("speaks sklearn imports and ML helpers naturally", () => {
+    const line = "from sklearn.model_selection import train_test_split";
+    const out = pythonSourceToSpeakableText(line).toLowerCase();
+    expect(out).toContain("scikit learn");
+    expect(out).toContain("train test split");
+  });
+
+  it("handles df.groupby and predict_proba", () => {
+    const g = pythonSourceToSpeakableText("df.groupby('x')").toLowerCase();
+    expect(g).toContain("data frame");
+    expect(g).toContain("group by");
+    const p = pythonSourceToSpeakableText("model.predict_proba(X)").toLowerCase();
+    expect(p).toContain("predict probability");
+  });
+
+  it("expands len and iloc before loc", () => {
+    expect(pythonSourceToSpeakableText("len(x)")).toContain("length");
+    expect(pythonSourceToSpeakableText("df.iloc[0]")).toMatch(/eye lock/i);
+    expect(pythonSourceToSpeakableText("df.loc[0]")).toMatch(/\block\b/i);
+  });
+
+  it("reads **kwargs without star-star noise", () => {
+    const out = pythonSourceToSpeakableText("def f(**kwargs): pass").toLowerCase();
+    expect(out).toContain("keyword args");
   });
 });
 
