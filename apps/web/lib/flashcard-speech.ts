@@ -18,6 +18,40 @@ const PERSIAN_SPECIFIC_RE = /[\u06A9\u06AF\u067E\u0686\u0698\u06A4\u06B5\u06B7]/
 const _DEV =
   typeof process !== "undefined" && process.env && process.env.NODE_ENV === "development";
 
+/**
+ * Dev only: `localStorage` key. When set to `"1"`, Speaking Voice **Auto** skips assigning
+ * `SpeechSynthesisUtterance.voice` on English cards so the browser/OS default engine runs;
+ * optional `utterance.lang` hint from accent (`en-GB` / `en-US`) only.
+ */
+export const DEV_TTS_AUTO_NO_EXPLICIT_VOICE_LS = "flashcard_dev_tts_auto_no_explicit_voice";
+
+function readDevTtsAutoNoExplicitVoice(): boolean {
+  if (!_DEV || typeof window === "undefined") return false;
+  try {
+    return window.localStorage.getItem(DEV_TTS_AUTO_NO_EXPLICIT_VOICE_LS) === "1";
+  } catch {
+    return false;
+  }
+}
+
+/** Same gating as `pickVoiceForText` before RTL/Farsi branches: Latin English, not RTL script. */
+function isPlainEnglishPreferencePath(plain: string): boolean {
+  const t = (plain || "").trim();
+  if (CJK_RE.test(t) || /[\u0400-\u04FF]/.test(t) || /[\u0590-\u05FF]/.test(t)) return false;
+  if (RTL_SCRIPT_RE.test(t)) return false;
+  return /[a-zA-Z]{2,}/.test(t);
+}
+
+/** When not binding `utterance.voice`, weak locale hint for accent (default = leave unset). */
+function langHintForAutoEnglishWithoutVoice(
+  englishTts: "default" | "british" | "american" | undefined
+): string | undefined {
+  const m = englishTts ?? "default";
+  if (m === "british") return "en-GB";
+  if (m === "american") return "en-US";
+  return undefined;
+}
+
 function voiceKey(v: SpeechSynthesisVoice): string {
   return `${v.voiceURI}|${v.name}|${v.lang || ""}`;
 }
@@ -453,7 +487,12 @@ export function pickVoiceForText(
   return null;
 }
 
-type VoiceResolution = "user_picker" | "preference" | "user_picker_unavailable" | "browser_default";
+type VoiceResolution =
+  | "user_picker"
+  | "preference"
+  | "preference_dev_no_explicit_voice"
+  | "user_picker_unavailable"
+  | "browser_default";
 
 export function resolveFlashcardVoice(
   plain: string,
@@ -481,7 +520,12 @@ export function resolveFlashcardVoice(
 }
 
 /** Logs TTS voice resolution in development only (no user-facing UI). */
-function logTtsSelection(plain: string, voice: SpeechSynthesisVoice | null, resolution: VoiceResolution) {
+function logTtsSelection(
+  plain: string,
+  voice: SpeechSynthesisVoice | null,
+  resolution: VoiceResolution,
+  devSkippedVoice?: SpeechSynthesisVoice | null
+) {
   const detectedTextLanguage = detectTextLanguageForTts(plain);
   const voiceName = voice?.name?.trim() || "";
   const voiceLang = (voice?.lang && voice.lang.trim()) || "";
@@ -492,7 +536,9 @@ function logTtsSelection(plain: string, voice: SpeechSynthesisVoice | null, reso
         ? "fallback (saved voice not on this device; preference-based)"
         : resolution === "preference"
           ? "preference (accent / language heuristics)"
-          : "browser_default (no matching engine voice; utterance may use system default)";
+          : resolution === "preference_dev_no_explicit_voice"
+            ? "dev experiment: Auto — utterance.voice unset; optional lang hint only"
+            : "browser_default (no matching engine voice; utterance may use system default)";
 
   if (_DEV && typeof console !== "undefined" && console.info) {
     console.info("[flashcard TTS] selection", {
@@ -500,6 +546,9 @@ function logTtsSelection(plain: string, voice: SpeechSynthesisVoice | null, reso
       voiceName: voiceName || "(default)",
       voiceLang: voiceLang || "(default)",
       resolution: resLabel,
+      ...(resolution === "preference_dev_no_explicit_voice" && devSkippedVoice
+        ? { devWouldHaveUsed: `${devSkippedVoice.name} (${devSkippedVoice.lang || ""})` }
+        : {}),
     });
   }
 }
@@ -510,7 +559,23 @@ function applyPickedVoiceToUtterance(
   voiceList: ReadonlyArray<SpeechSynthesisVoice>,
   options: PickVoiceForTextOptions
 ): SpeechSynthesisVoice | null {
+  const userKey = normalizeSpeechVoiceKey(options.speechVoiceKey);
   const { voice, resolution } = resolveFlashcardVoice(plain, voiceList, options);
+
+  const devAutoUnbound =
+    readDevTtsAutoNoExplicitVoice() &&
+    !userKey &&
+    voice &&
+    resolution === "preference" &&
+    isPlainEnglishPreferencePath(plain);
+
+  if (devAutoUnbound) {
+    const hint = langHintForAutoEnglishWithoutVoice(options.englishTts);
+    if (hint) ut.lang = hint;
+    logTtsSelection(plain, null, "preference_dev_no_explicit_voice", voice);
+    return null;
+  }
+
   if (voice) {
     ut.voice = voice;
     ut.lang = voice.lang;
