@@ -266,6 +266,8 @@ export function plainTextForSpeech(s: string): string {
     .replace(/\*+/g, "")
     .replace(/`+/g, "")
     .replace(/\n+/g, " ")
+    /** Web Speech often reads `_` as “underscore”; treat runs as word separators for natural read-aloud. */
+    .replace(/_+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 }

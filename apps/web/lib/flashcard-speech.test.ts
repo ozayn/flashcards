@@ -112,6 +112,18 @@ describe("plainTextForSpeech / Unicode arrow", () => {
   });
 });
 
+describe("plainTextForSpeech / underscores for TTS", () => {
+  it("replaces underscore-separated tokens with spaces (avoids TTS reading _ as underscore)", () => {
+    expect(plainTextForSpeech("Use train_test_split here.")).toBe("Use train test split here.");
+    expect(plainTextForSpeech("Status: not_started")).toBe("Status: not started");
+    expect(plainTextForSpeech("cross_val_score")).toBe("cross val score");
+  });
+
+  it("collapses runs of underscores to a single space gap", () => {
+    expect(plainTextForSpeech("a__b")).toBe("a b");
+  });
+});
+
 describe("plainTextForSpeech / block math", () => {
   it("strips block $$...$$ and keeps surrounding prose", () => {
     expect(plainTextForSpeech("A is x. $$\\frac{1}{2}$$ B is y.")).toBe("A is x. B is y.");
