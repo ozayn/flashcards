@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  getSpeechVoiceKey,
   isLikelyFarsiCardText,
+  isNoveltyOrCharacterSpeechVoice,
+  isStudyPickerEligibleSpeechVoice,
   pickVoiceForText,
   plainTextForSpeech,
+  resolveFlashcardVoice,
   buildReadCardAnswerPlainSegments,
   READ_CARD_PAUSE_MS,
   READ_ANSWER_EXAMPLE_PAUSE_MS,
@@ -11,6 +15,35 @@ import {
 function v(name: string, lang: string): SpeechSynthesisVoice {
   return { name, lang, default: false, localService: false, voiceURI: name } as SpeechSynthesisVoice;
 }
+
+describe("study picker voice eligibility", () => {
+  it("flags novelty names and keeps normal English", () => {
+    expect(isNoveltyOrCharacterSpeechVoice(v("Grandma (English (United Kingdom))", "en-GB"))).toBe(true);
+    expect(isNoveltyOrCharacterSpeechVoice(v("Grandpa", "en-GB"))).toBe(true);
+    expect(isNoveltyOrCharacterSpeechVoice(v("Eddy (English (United Kingdom))", "en-GB"))).toBe(true);
+    expect(isNoveltyOrCharacterSpeechVoice(v("Rocko", "en-GB"))).toBe(true);
+    expect(isNoveltyOrCharacterSpeechVoice(v("Daniel", "en-GB"))).toBe(false);
+    expect(isNoveltyOrCharacterSpeechVoice(v("Samantha", "en-US"))).toBe(false);
+  });
+
+  it("isStudyPickerEligibleSpeechVoice requires English and not novelty", () => {
+    expect(isStudyPickerEligibleSpeechVoice(v("Daniel", "en-GB"))).toBe(true);
+    expect(isStudyPickerEligibleSpeechVoice(v("Grandma", "en-GB"))).toBe(false);
+    expect(isStudyPickerEligibleSpeechVoice(v("Marie", "fr-FR"))).toBe(false);
+  });
+
+  it("resolveFlashcardVoice ignores saved key when it matches a novelty voice", () => {
+    const grandma = v("Grandma", "en-GB");
+    const daniel = v("Daniel", "en-GB");
+    const r = resolveFlashcardVoice("Hello there.", [grandma, daniel], {
+      speechVoiceKey: getSpeechVoiceKey(grandma),
+      englishTts: "british",
+      voiceStyle: "default",
+    });
+    expect(r.resolution).toBe("user_picker_unavailable");
+    expect(r.voice?.name).toBe("Daniel");
+  });
+});
 
 describe("pickVoiceForText (English)", () => {
   it("default mode prefers the first en-* voice in order (engine order)", () => {

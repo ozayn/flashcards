@@ -154,8 +154,11 @@ function isAmericanByVoiceName(name: string): boolean {
   return false;
 }
 
-/** True for typical English speech engines (en, en-*, and empty with English-ish names). */
-function isEnglishLanguageVoice(v: SpeechSynthesisVoice): boolean {
+/**
+ * True for typical English speech engines (en, en-*, and empty with English-ish names).
+ * Exported for the English-only speech picker; same rules as TTS English ranking.
+ */
+export function isEnglishSpeechSynthesisVoice(v: Pick<SpeechSynthesisVoice, "name" | "lang">): boolean {
   const l = normalizeLang(v.lang);
   if (l === "en" || l.startsWith("en-")) return true;
   if (!l) {
@@ -166,6 +169,28 @@ function isEnglishLanguageVoice(v: SpeechSynthesisVoice): boolean {
     );
   }
   return false;
+}
+
+/**
+ * Persona / novelty engines (e.g. Apple character voices) — excluded from the study picker
+ * and from automatic English ranking when other English voices exist.
+ */
+export function isNoveltyOrCharacterSpeechVoice(v: Pick<SpeechSynthesisVoice, "name">): boolean {
+  const n = (v.name || "").trim().toLowerCase();
+  if (/\bgrandma\b/.test(n) || /\bgrandpa\b/.test(n)) return true;
+  if (/\beddy\b/.test(n) || /\brocko\b/.test(n)) return true;
+  return false;
+}
+
+/** English voices shown in the speaking-voice picker and preferred for Auto English TTS. */
+export function isStudyPickerEligibleSpeechVoice(v: SpeechSynthesisVoice): boolean {
+  return isEnglishSpeechSynthesisVoice(v) && !isNoveltyOrCharacterSpeechVoice(v);
+}
+
+function englishVoicesForStudyOrAuto(voices: ReadonlyArray<SpeechSynthesisVoice>): SpeechSynthesisVoice[] {
+  const allEn = voices.filter(isEnglishSpeechSynthesisVoice);
+  const study = allEn.filter((v) => !isNoveltyOrCharacterSpeechVoice(v));
+  return study.length > 0 ? study : allEn;
 }
 
 /**
@@ -355,7 +380,7 @@ function pickEnglishByPreference(
   style: VoiceStylePreference
 ): SpeechSynthesisVoice | null {
   if (!voices.length) return null;
-  const enVoices = voices.filter(isEnglishLanguageVoice);
+  const enVoices = englishVoicesForStudyOrAuto(voices);
   if (enVoices.length === 0) {
     const fallback = voices.filter((v) => {
       if (!v.lang) return false;
@@ -430,7 +455,7 @@ export function pickVoiceForText(
 
 type VoiceResolution = "user_picker" | "preference" | "user_picker_unavailable" | "browser_default";
 
-function resolveFlashcardVoice(
+export function resolveFlashcardVoice(
   plain: string,
   voiceList: ReadonlyArray<SpeechSynthesisVoice>,
   options: PickVoiceForTextOptions
@@ -438,7 +463,7 @@ function resolveFlashcardVoice(
   const userKey = normalizeSpeechVoiceKey(options.speechVoiceKey);
   if (userKey) {
     const v = voiceList.find((x) => voiceKey(x) === userKey) ?? null;
-    if (v) {
+    if (v && isStudyPickerEligibleSpeechVoice(v)) {
       return { voice: v, resolution: "user_picker", hadUserKey: true };
     }
   }

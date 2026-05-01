@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Fragment,
   useCallback,
   useEffect,
   useId,
@@ -13,7 +14,11 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { ChevronDown, Square, Volume2 } from "lucide-react";
-import { getSpeechVoiceKey, isSpeechSynthesisAvailable } from "@/lib/flashcard-speech";
+import {
+  getSpeechVoiceKey,
+  isSpeechSynthesisAvailable,
+  isStudyPickerEligibleSpeechVoice,
+} from "@/lib/flashcard-speech";
 import { useSpeechSynthesisVoices } from "@/hooks/use-speech-synthesis-voices";
 import { cn } from "@/lib/utils";
 import {
@@ -196,7 +201,7 @@ function PickerVoiceRow({
  */
 export function SpeechVoiceSelect({ value, onChange, className, id, disabled }: SpeechVoiceSelectProps) {
   const list = useSpeechSynthesisVoices();
-  const { recommended, other } = useMemo(() => partitionPickerVoices(list), [list]);
+  const { recommended, other, sections } = useMemo(() => partitionPickerVoices(list), [list]);
   const allOrdered = useMemo(() => [...recommended, ...other], [recommended, other]);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -212,20 +217,40 @@ export function SpeechVoiceSelect({ value, onChange, className, id, disabled }: 
     setApiOk(isSpeechSynthesisAvailable());
   }, []);
 
+  /** Saved key points at a real device voice that we no longer offer in the picker (non-English / novelty): clear to Auto. */
+  useEffect(() => {
+    const trimmed = (value || "").trim();
+    if (!trimmed) return;
+    const match = list.find((v) => getSpeechVoiceKey(v) === trimmed);
+    if (!match) return;
+    if (isStudyPickerEligibleSpeechVoice(match)) return;
+    onChange("");
+  }, [list, value, onChange]);
+
   const voiceByKey = useMemo(() => new Map(allOrdered.map((v) => [getSpeechVoiceKey(v), v] as const)), [allOrdered]);
+  const rawSavedVoice = useMemo(() => {
+    const t = (value || "").trim();
+    if (!t) return null;
+    return list.find((v) => getSpeechVoiceKey(v) === t) ?? null;
+  }, [value, list]);
+
   const hasSavedOnDevice = useMemo(() => {
-    if (!value.trim()) return true;
-    return allOrdered.some((v) => getSpeechVoiceKey(v) === value);
+    const t = (value || "").trim();
+    if (!t) return true;
+    return allOrdered.some((v) => getSpeechVoiceKey(v) === t);
   }, [value, allOrdered]);
 
   const currentLabel = useMemo(() => {
-    if (!value?.trim()) {
+    if (!(value || "").trim()) {
       return "Auto (use accent and language preferences)";
     }
     const v = voiceByKey.get(value);
     if (v) return labelForPickerVoice(v);
+    if (rawSavedVoice && !isStudyPickerEligibleSpeechVoice(rawSavedVoice)) {
+      return "Auto (use accent and language preferences)";
+    }
     return "Saved voice not available on this device";
-  }, [value, voiceByKey]);
+  }, [value, voiceByKey, rawSavedVoice]);
 
   const autoSelected = !value?.trim() || !hasSavedOnDevice;
   const normalizedValue = (value || "").trim();
@@ -278,8 +303,6 @@ export function SpeechVoiceSelect({ value, onChange, className, id, disabled }: 
     );
   }
 
-  const showRecommended = recommended.length > 0;
-  const showOther = other.length > 0;
   const panel = open ? (
     <div
       ref={panelRef}
@@ -308,30 +331,40 @@ export function SpeechVoiceSelect({ value, onChange, className, id, disabled }: 
             <span className="text-[13px]">Auto (use accent and language preferences)</span>
           </button>
         </li>
-        {showRecommended ? (
-          <li className="bg-muted/30 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground" role="presentation">
-            Recommended
-          </li>
-        ) : null}
-        {recommended.map((v, i) => {
-          const k = getSpeechVoiceKey(v);
-          const isSel = hasSavedOnDevice && k === normalizedValue;
-          return (
-            <PickerVoiceRow
-              key={k}
-              voice={v}
-              voiceKey={k}
-              optionId={`${optionIdPrefix}-r${i}`}
-              label={labelForPickerVoice(v)}
-              isSelected={isSel}
-              previewingKey={previewingKey}
-              onSelect={select}
-              onTogglePreview={togglePreview}
-              disabled={disabled}
-            />
-          );
-        })}
-        {showOther ? (
+        {sections.map((section, si) => (
+          <Fragment key={`${section.title ?? "section"}-${si}`}>
+            {section.title ? (
+              <li
+                className={cn(
+                  "bg-muted/30 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground",
+                  si > 0 && "mt-0.5"
+                )}
+                role="presentation"
+              >
+                {section.title}
+              </li>
+            ) : null}
+            {section.voices.map((v, i) => {
+              const k = getSpeechVoiceKey(v);
+              const isSel = hasSavedOnDevice && k === normalizedValue;
+              return (
+                <PickerVoiceRow
+                  key={k}
+                  voice={v}
+                  voiceKey={k}
+                  optionId={`${optionIdPrefix}-s${si}-${i}`}
+                  label={labelForPickerVoice(v)}
+                  isSelected={isSel}
+                  previewingKey={previewingKey}
+                  onSelect={select}
+                  onTogglePreview={togglePreview}
+                  disabled={disabled}
+                />
+              );
+            })}
+          </Fragment>
+        ))}
+        {other.length > 0 ? (
           <li className="mt-0.5 bg-muted/20 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground" role="presentation">
             Other voices
           </li>
@@ -382,7 +415,7 @@ export function SpeechVoiceSelect({ value, onChange, className, id, disabled }: 
         </Button>
       </div>
       {typeof document !== "undefined" && open ? createPortal(panel, document.body) : null}
-      {value && !hasSavedOnDevice ? (
+      {value && !hasSavedOnDevice && !(rawSavedVoice && !isStudyPickerEligibleSpeechVoice(rawSavedVoice)) ? (
         <p className="text-[11px] leading-snug text-amber-700/90 dark:text-amber-400/90">
           Your saved voice is not available in this browser. Automatic selection is used until you pick a
           voice above.

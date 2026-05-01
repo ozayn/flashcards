@@ -10,13 +10,7 @@ function v(name: string, lang: string) {
 }
 
 describe("voicePickerBucket", () => {
-  it("classifies farsi and Persian names", () => {
-    expect(voicePickerBucket(v("Test", "fa-IR"))).toBe("farsi");
-    expect(voicePickerBucket(v("Dari", "fa-AF"))).toBe("farsi");
-    expect(voicePickerBucket(v("Persian Voice", "en-US"))).toBe("farsi");
-  });
-
-  it("classifies English regional variants for recommended groups", () => {
+  it("classifies English regional variants (BCP-47)", () => {
     expect(voicePickerBucket(v("A", "en-GB"))).toBe("en-gb");
     expect(voicePickerBucket(v("B", "en-GB-foo"))).toBe("en-gb");
     expect(voicePickerBucket(v("C", "en"))).toBe("en-us");
@@ -24,24 +18,40 @@ describe("voicePickerBucket", () => {
     expect(voicePickerBucket(v("E", "en-AU"))).toBe("en-au");
   });
 
-  it("puts other English (e.g. en-IN) in other", () => {
-    expect(voicePickerBucket(v("A", "en-IN"))).toBe("other");
-    expect(voicePickerBucket(v("B", "en-IE"))).toBe("other");
+  it("puts en-IN and en-IE in en-other", () => {
+    expect(voicePickerBucket(v("A", "en-IN"))).toBe("en-other");
+    expect(voicePickerBucket(v("B", "en-IE"))).toBe("en-other");
+  });
+
+  it("returns en-other for non-English lang tags (picker only applies this after English filter)", () => {
+    expect(voicePickerBucket(v("Test", "fa-IR"))).toBe("en-other");
+    expect(voicePickerBucket(v("Dari", "fa-AF"))).toBe("en-other");
   });
 });
 
 describe("partitionPickerVoices", () => {
-  it("orders farsi, then en-gb, en-us, en-au, and puts remaining in other", () => {
+  it("lists only study-eligible English voices and omits novelty / non-English", () => {
     const voices = [
       v("z-OtherLang", "de-DE"),
+      v("Grandma", "en-GB"),
+      v("Flo", "en-GB"),
       v("A-US", "en-US"),
+      v("Daniel", "en-GB"),
+      v("Grandpa", "en-GB"),
+      v("Rocko", "en-GB"),
       v("C-AU", "en-AU"),
-      v("B-GB", "en-GB"),
+      v("Shelley", "en-GB"),
+      v("Eddy", "en-GB"),
+      v("Sandy", "en-GB"),
+      v("Reed", "en-GB"),
       v("Fa", "fa-IR"),
     ] as SpeechSynthesisVoice[];
-    const { recommended, other } = partitionPickerVoices(voices);
-    expect(recommended.map((x) => x.name)).toEqual(["Fa", "B-GB", "A-US", "C-AU"]);
-    expect(other.map((x) => x.name)).toEqual(["z-OtherLang"]);
+    const { recommended, other, sections } = partitionPickerVoices(voices);
+    expect(other).toEqual([]);
+    expect(recommended.map((x) => x.name)).toEqual(["Flo", "Shelley", "Sandy", "Daniel", "Reed", "A-US", "C-AU"]);
+    expect(sections.map((s) => s.title)).toEqual(["Recommended", "British English", "American English", "Australian English"]);
+    expect(sections[0].voices.map((x) => x.name)).toEqual(["Flo", "Shelley", "Sandy"]);
+    expect(sections[1].voices.map((x) => x.name)).toEqual(["Daniel", "Reed"]);
   });
 });
 
