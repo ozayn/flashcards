@@ -1,11 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useSpeechSynthesisVoices } from "@/hooks/use-speech-synthesis-voices";
 import { Button } from "@/components/ui/button";
-
-/** Must match `DEV_TTS_AUTO_NO_EXPLICIT_VOICE_LS` in `lib/flashcard-speech.ts` (avoid importing that module here). */
-const DEV_TTS_AUTO_NO_EXPLICIT_VOICE_LS = "flashcard_dev_tts_auto_no_explicit_voice";
 
 type VoiceRow = {
   name: string;
@@ -45,28 +42,6 @@ export function SpeechSynthesisRawVoicesDev() {
   const [open, setOpen] = useState(false);
   const [onlyGb, setOnlyGb] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
-  const [autoNoExplicitVoice, setAutoNoExplicitVoice] = useState(false);
-
-  useEffect(() => {
-    try {
-      setAutoNoExplicitVoice(window.localStorage.getItem(DEV_TTS_AUTO_NO_EXPLICIT_VOICE_LS) === "1");
-    } catch {
-      setAutoNoExplicitVoice(false);
-    }
-  }, []);
-
-  const setAutoNoExplicitVoiceExperiment = useCallback((on: boolean) => {
-    try {
-      if (on) {
-        window.localStorage.setItem(DEV_TTS_AUTO_NO_EXPLICIT_VOICE_LS, "1");
-      } else {
-        window.localStorage.removeItem(DEV_TTS_AUTO_NO_EXPLICIT_VOICE_LS);
-      }
-    } catch {
-      /* private mode */
-    }
-    setAutoNoExplicitVoice(on);
-  }, []);
 
   const sorted = useMemo(() => {
     const list = onlyGb ? voices.filter((v) => /^en-gb$/i.test((v.lang || "").trim()) || /^en-gb-/i.test((v.lang || "").trim())) : [...voices];
@@ -150,22 +125,6 @@ export function SpeechSynthesisRawVoicesDev() {
           <p className="shrink-0 border-b border-border/60 px-2 py-1 font-sans text-[10px] text-muted-foreground break-all">
             Compare this list across Chrome / Safari / OS versions. If counts differ here, the limitation is outside the app picker.
           </p>
-          <div className="shrink-0 border-b border-border/60 px-2 py-1.5 font-sans text-[10px] leading-snug text-foreground">
-            <label className="flex cursor-pointer items-start gap-2">
-              <input
-                type="checkbox"
-                className="mt-0.5 size-3 shrink-0"
-                checked={autoNoExplicitVoice}
-                onChange={(e) => setAutoNoExplicitVoiceExperiment(e.target.checked)}
-              />
-              <span>
-                <span className="font-medium">TTS experiment (Auto):</span> do not set{" "}
-                <code className="rounded bg-muted px-0.5">utterance.voice</code> on English cards — only optional{" "}
-                <code className="rounded bg-muted px-0.5">lang</code> from accent (British/American). Lets Chrome/macOS pick
-                the default engine. Compare read-aloud sound with this off (normal explicit voice).
-              </span>
-            </label>
-          </div>
           <div className="min-h-0 flex-1 overflow-auto">
             <table className="w-full border-collapse text-left">
               <thead className="sticky top-0 bg-muted/90 backdrop-blur-sm">
