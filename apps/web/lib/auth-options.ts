@@ -93,29 +93,83 @@ export const authOptions: NextAuthOptions = {
       if (account?.provider === "google" && account.providerAccountId) {
         const syncSecret = process.env.MEMO_OAUTH_SYNC_SECRET?.trim();
         if (!syncSecret) {
-          console.error("[auth] MEMO_OAUTH_SYNC_SECRET is not set");
+          console.error("[auth] oauth/google sync skipped: MEMO_OAUTH_SYNC_SECRET is not set");
           throw new Error("Server configuration error");
         }
-        const res = await fetch(`${getBackendUrl()}/users/oauth/google`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-Memo-OAuth-Secret": syncSecret,
-          },
-          body: JSON.stringify({
-            google_sub: account.providerAccountId,
-            email: prof?.email ?? token.email ?? undefined,
-            name: (prof?.name ?? token.name ?? "Google user").trim() || "Google user",
-            picture: nextPicture || undefined,
-          }),
-        });
+
+        const u = user as { email?: string | null } | undefined;
+        const oauthEmail =
+          (typeof u?.email === "string" && u.email.trim()) ||
+          (typeof prof?.email === "string" && prof.email.trim()) ||
+          (typeof token.email === "string" && token.email.trim()) ||
+          undefined;
+
+        if (!oauthEmail) {
+          console.error(
+            "[auth] oauth/google sync aborted: no email on user/profile/token (first jwt after Google). user.email=%s profile.email=%s token.email=%s",
+            u?.email ?? "(absent)",
+            prof?.email ?? "(absent)",
+            token.email ?? "(absent)"
+          );
+          throw new Error("OAUTH_SYNC_MISSING_EMAIL");
+        }
+
+        const backendUrl = getBackendUrl();
+        let res: Response;
+        try {
+          res = await fetch(`${backendUrl}/users/oauth/google`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "X-Memo-OAuth-Secret": syncSecret,
+            },
+            body: JSON.stringify({
+              google_sub: account.providerAccountId,
+              email: oauthEmail,
+              name: (prof?.name ?? token.name ?? "Google user").trim() || "Google user",
+              picture: nextPicture || undefined,
+            }),
+          });
+        } catch (e) {
+          console.error(
+            "[auth] oauth/google sync network error",
+            { backendUrl, message: e instanceof Error ? e.message : String(e) }
+          );
+          throw new Error("OAUTH_SYNC_NETWORK");
+        }
+
         if (!res.ok) {
-          const detail = await res.text();
-          console.error("[auth] Google user sync failed", res.status, detail);
+          const raw = await res.text();
+          let detailSnippet = raw.slice(0, 500);
+          try {
+            const j = JSON.parse(raw) as { detail?: unknown };
+            if (typeof j.detail === "string") detailSnippet = j.detail;
+          } catch {
+            /* keep raw */
+          }
           if (res.status === 403) {
+            console.error("[auth] oauth/google sync denied (403 allowlist or policy)", {
+              detailSnippet,
+              comparedEmail: oauthEmail,
+            });
             throw new Error("LOGIN_NOT_ALLOWED");
           }
-          throw new Error("Could not link your Google account to the app.");
+          if (res.status === 401) {
+            console.error("[auth] oauth/google sync unauthorized (401)", {
+              detailSnippet,
+              hint: "MEMO_OAUTH_SYNC_SECRET mismatch between Next.js server and API, or secret unset on API",
+            });
+            throw new Error("OAUTH_SYNC_SECRET_MISMATCH");
+          }
+          if (res.status === 400) {
+            console.error("[auth] oauth/google sync rejected (400)", { detailSnippet });
+            throw new Error("OAUTH_SYNC_BAD_REQUEST");
+          }
+          console.error("[auth] oauth/google sync failed", {
+            status: res.status,
+            detailSnippet,
+          });
+          throw new Error("OAUTH_SYNC_SERVER_ERROR");
         }
         const row = (await res.json()) as { id: string };
         token.backendUserId = row.id;

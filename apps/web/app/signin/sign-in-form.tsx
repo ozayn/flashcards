@@ -7,13 +7,56 @@ import { signIn } from "next-auth/react";
 import { Logo } from "@/components/Logo";
 import { Button } from "@/components/ui/button";
 
-function signInErrorMessage(error: string | null): string | null {
+function decodeOAuthErrorDescription(raw: string | null): string {
+  if (!raw) return "";
+  try {
+    return decodeURIComponent(raw.replace(/\+/g, " "));
+  } catch {
+    return raw;
+  }
+}
+
+/**
+ * NextAuth uses `error=Callback` for many post-OAuth failures (JWT callback throws),
+ * not only allowlist mismatch — do not assume env drift from that code alone.
+ */
+function signInErrorMessage(error: string | null, errorDescription: string | null): string | null {
   if (!error) return null;
   if (error === "AccessDenied") return null;
   if (error === "Callback") {
+    const d = decodeOAuthErrorDescription(errorDescription);
+    if (/OAUTH_SYNC_MISSING_EMAIL/i.test(d) || /missing email/i.test(d)) {
+      return (
+        "Google sign-in completed, but your email was not passed through to account linking. " +
+        "Try signing in again. If it keeps happening, contact support."
+      );
+    }
+    if (/LOGIN_NOT_ALLOWED|not authorized to sign in/i.test(d)) {
+      return (
+        "Google worked, but the API rejected account linking for this email. " +
+        "Usually the address is missing from ALLOWED_LOGIN_EMAILS on the API, or web and API lists differ. " +
+        "Align ALLOWED_LOGIN_EMAILS in apps/web and apps/api, then restart the API and Next.js."
+      );
+    }
+    if (/OAUTH_SYNC_SECRET_MISMATCH|401|Unauthorized|Invalid or missing OAuth sync secret/i.test(d)) {
+      return (
+        "Google worked, but the secure server link failed (check MEMO_OAUTH_SYNC_SECRET matches " +
+        "between apps/web and apps/api .env, then restart both)."
+      );
+    }
+    if (/OAUTH_SYNC_BAD_REQUEST|400/i.test(d)) {
+      return "Google worked, but the account link request was rejected by the server. Try again, or contact support.";
+    }
+    if (/OAUTH_SYNC_NETWORK|fetch failed|network/i.test(d)) {
+      return (
+        "Google worked, but this app could not reach the API to finish sign-in. " +
+        "Confirm the API is running and NEXT_PUBLIC_API_URL (or your web→API URL) is correct, then try again."
+      );
+    }
     return (
-      "Google worked, but linking your account failed. Put the same ALLOWED_LOGIN_EMAILS list in " +
-      "apps/web and apps/api/.env, then restart the API (editing .env does not apply until the backend restarts)."
+      "Google sign-in did not finish linking your MemoNext account. Try again in a moment. " +
+      "If it keeps failing: confirm the API is running, MEMO_OAUTH_SYNC_SECRET matches web and API, " +
+      "and ALLOWED_LOGIN_EMAILS matches on both—then restart the API and Next.js."
     );
   }
   return null;
@@ -49,7 +92,8 @@ function SignInFormInner({
 }) {
   const params = useSearchParams();
   const oauthError = params.get("error");
-  const oauthMessage = signInErrorMessage(oauthError);
+  const oauthErrorDescription = params.get("error_description");
+  const oauthMessage = signInErrorMessage(oauthError, oauthErrorDescription);
   const [busy, setBusy] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
 

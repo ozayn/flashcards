@@ -134,8 +134,20 @@ async def sync_google_oauth_user(
         or not hmac.compare_digest(x_memo_oauth_secret, expected)
     ):
         raise HTTPException(status_code=401, detail="Invalid or missing OAuth sync secret")
-    if not email_is_allowed_for_login(payload.email):
-        compared = (payload.email or "").strip().lower() or None
+    raw_email = (payload.email or "").strip()
+    if not raw_email:
+        logger.warning(
+            "oauth/google 400: missing or empty email in sync payload (NextAuth must send "
+            "Google email). google_sub_prefix=%s",
+            (payload.google_sub or "")[:12],
+        )
+        raise HTTPException(
+            status_code=400,
+            detail="OAuth sync is missing email. The web server must forward the Google account email.",
+        )
+
+    if not email_is_allowed_for_login(raw_email):
+        compared = raw_email.lower()
         logger.warning(
             "oauth/google 403: email not in ALLOWED_LOGIN_EMAILS (same trim+lowercase "
             "rules as NextAuth signIn). compared=%s allowlist_entry_count=%s",

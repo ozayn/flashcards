@@ -508,7 +508,16 @@ type TtsSelectionLogMeta = {
   referenceHeuristicVoice?: SpeechSynthesisVoice | null;
   /** `utterance.lang` applied for accent (undefined = left unset). */
   utteranceLangHint?: string | undefined;
+  /** Auto + explicit Female/Male: engine name did not match style heuristics (tier fallback to first voice). */
+  voiceStyleHeuristicMiss?: boolean;
+  voiceStyleRequested?: VoiceStylePreference;
 };
+
+function voiceNameMatchesStylePreference(name: string, style: VoiceStylePreference): boolean {
+  if (style === "default") return true;
+  if (style === "female") return isLikelyFemaleByVoiceName(name);
+  return isLikelyMaleByVoiceName(name);
+}
 
 /** Logs TTS voice resolution in development only (no user-facing UI). */
 function logTtsSelection(
@@ -549,6 +558,12 @@ function logTtsSelection(
       payload.boundVoice = voice ? `${voice.name} (${voice.lang || ""})` : null;
       payload.voiceName = voiceName || "(default)";
       payload.voiceLang = voiceLang || "(default)";
+      if (meta?.voiceStyleHeuristicMiss) {
+        payload.voiceStyleHeuristicMiss = true;
+        payload.voiceStyleRequested = meta.voiceStyleRequested;
+        payload.voiceStyleNote =
+          "No engine name matched Female/Male in the accent tier; first voice in tier was used.";
+      }
     }
     console.info("[flashcard TTS] selection", payload);
   }
@@ -563,8 +578,13 @@ function applyPickedVoiceToUtterance(
   const userKey = normalizeSpeechVoiceKey(options.speechVoiceKey);
   const { voice, resolution } = resolveFlashcardVoice(plain, voiceList, options);
 
+  const voiceStyle = options.voiceStyle ?? "default";
   const autoEnglishLangOnly =
-    !userKey && voice && resolution === "preference" && isPlainEnglishPreferencePath(plain);
+    !userKey &&
+    voice &&
+    resolution === "preference" &&
+    voiceStyle === "default" &&
+    isPlainEnglishPreferencePath(plain);
 
   if (autoEnglishLangOnly) {
     const hint = langHintForAutoEnglishWithoutVoice(options.englishTts);
@@ -582,7 +602,21 @@ function applyPickedVoiceToUtterance(
   } else if (RTL_SCRIPT_RE.test(plain) && !CJK_RE.test(plain) && !/[\u0400-\u04FF]/.test(plain) && !/[\u0590-\u05FF]/.test(plain)) {
     ut.lang = isLikelyFarsiCardText(plain) ? "fa-IR" : "ar";
   }
-  logTtsSelection(plain, voice, resolution);
+
+  let logMeta: TtsSelectionLogMeta | undefined;
+  if (
+    _DEV &&
+    !userKey &&
+    voice &&
+    resolution === "preference" &&
+    isPlainEnglishPreferencePath(plain) &&
+    (voiceStyle === "female" || voiceStyle === "male") &&
+    !voiceNameMatchesStylePreference(voice.name, voiceStyle)
+  ) {
+    logMeta = { voiceStyleHeuristicMiss: true, voiceStyleRequested: voiceStyle };
+  }
+
+  logTtsSelection(plain, voice, resolution, logMeta);
   return voice;
 }
 
