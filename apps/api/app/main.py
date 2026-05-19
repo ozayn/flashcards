@@ -42,6 +42,7 @@ from app.api import (
     flashcards,
     reviews,
     categories,
+    library_collections,
     youtube,
     webpage,
     flashcard_images,
@@ -170,6 +171,7 @@ app.add_middleware(
 
 app.include_router(health.router)
 app.include_router(categories.router)
+app.include_router(library_collections.router)
 app.include_router(study_ideas.router)
 app.include_router(decks.router)
 app.include_router(users.router)

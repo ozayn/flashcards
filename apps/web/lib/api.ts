@@ -593,6 +593,174 @@ export async function getLibraryDecks() {
   return res.json();
 }
 
+/* ------------------------------------------------------------------------------------ */
+/* Library collections (curated public groupings of decks; distinct from personal       */
+/* categories). Public reads = anonymous; admin writes flow through /api/proxy which    */
+/* attaches the signed acting-user header for platform-admin gating on the backend.     */
+/* ------------------------------------------------------------------------------------ */
+
+export interface LibraryCollectionSummary {
+  id: string;
+  title: string;
+  description: string | null;
+  is_published: boolean;
+  position: number | null;
+  created_at: string;
+  updated_at: string;
+  deck_count: number;
+  total_card_count: number;
+}
+
+export interface LibraryCollectionDetail extends LibraryCollectionSummary {
+  decks: Array<{
+    id: string;
+    name: string;
+    description: string | null;
+    source_type: string | null;
+    source_topic: string | null;
+    is_public: boolean;
+    archived: boolean;
+    card_count: number;
+    created_at: string;
+  }>;
+}
+
+export type LibraryCollectionReorderDirection = "up" | "down" | "top" | "bottom";
+
+export async function getPublishedLibraryCollections(): Promise<LibraryCollectionSummary[]> {
+  const res = await fetch(`${API_BASE}/library-collections`, { cache: "no-store" });
+  if (!res.ok) throw new Error("Failed to fetch library collections");
+  return res.json();
+}
+
+export async function getLibraryCollectionDetail(
+  collectionId: string,
+): Promise<LibraryCollectionDetail> {
+  const res = await fetch(
+    `${API_BASE}/library-collections/${encodeURIComponent(collectionId)}`,
+    { cache: "no-store" },
+  );
+  if (!res.ok) {
+    throw new Error(await readApiErrorMessage(res, "Failed to load collection"));
+  }
+  return res.json();
+}
+
+export async function adminListAllLibraryCollections(): Promise<LibraryCollectionSummary[]> {
+  const res = await fetch(`${API_BASE}/library-collections/admin/all`, { cache: "no-store" });
+  if (!res.ok) {
+    throw new Error(await readApiErrorMessage(res, "Failed to load collections"));
+  }
+  return res.json();
+}
+
+export async function adminGetLibraryCollection(
+  collectionId: string,
+): Promise<LibraryCollectionDetail> {
+  const res = await fetch(
+    `${API_BASE}/library-collections/admin/${encodeURIComponent(collectionId)}`,
+    { cache: "no-store" },
+  );
+  if (!res.ok) {
+    throw new Error(await readApiErrorMessage(res, "Failed to load collection"));
+  }
+  return res.json();
+}
+
+export async function adminCreateLibraryCollection(payload: {
+  title: string;
+  description?: string;
+  is_published?: boolean;
+}): Promise<LibraryCollectionSummary> {
+  const res = await fetch(`${API_BASE}/library-collections`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    throw new Error(await readApiErrorMessage(res, "Failed to create collection"));
+  }
+  return res.json();
+}
+
+export async function adminUpdateLibraryCollection(
+  collectionId: string,
+  payload: { title?: string; description?: string; is_published?: boolean },
+): Promise<LibraryCollectionSummary> {
+  const res = await fetch(
+    `${API_BASE}/library-collections/${encodeURIComponent(collectionId)}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    },
+  );
+  if (!res.ok) {
+    throw new Error(await readApiErrorMessage(res, "Failed to update collection"));
+  }
+  return res.json();
+}
+
+export async function adminDeleteLibraryCollection(collectionId: string): Promise<void> {
+  const res = await fetch(
+    `${API_BASE}/library-collections/${encodeURIComponent(collectionId)}`,
+    { method: "DELETE" },
+  );
+  if (!res.ok && res.status !== 204) {
+    throw new Error(await readApiErrorMessage(res, "Failed to delete collection"));
+  }
+}
+
+export async function adminAddDeckToLibraryCollection(
+  collectionId: string,
+  deckId: string,
+): Promise<LibraryCollectionDetail> {
+  const res = await fetch(
+    `${API_BASE}/library-collections/${encodeURIComponent(collectionId)}/decks`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ deck_id: deckId }),
+    },
+  );
+  if (!res.ok) {
+    throw new Error(await readApiErrorMessage(res, "Failed to add deck to collection"));
+  }
+  return res.json();
+}
+
+export async function adminRemoveDeckFromLibraryCollection(
+  collectionId: string,
+  deckId: string,
+): Promise<void> {
+  const res = await fetch(
+    `${API_BASE}/library-collections/${encodeURIComponent(collectionId)}/decks/${encodeURIComponent(deckId)}`,
+    { method: "DELETE" },
+  );
+  if (!res.ok && res.status !== 204) {
+    throw new Error(await readApiErrorMessage(res, "Failed to remove deck"));
+  }
+}
+
+export async function adminReorderDeckInLibraryCollection(
+  collectionId: string,
+  deckId: string,
+  direction: LibraryCollectionReorderDirection,
+): Promise<LibraryCollectionDetail> {
+  const res = await fetch(
+    `${API_BASE}/library-collections/${encodeURIComponent(collectionId)}/decks/${encodeURIComponent(deckId)}/reorder`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ direction }),
+    },
+  );
+  if (!res.ok) {
+    throw new Error(await readApiErrorMessage(res, "Failed to reorder deck"));
+  }
+  return res.json();
+}
+
 export async function duplicateDeck(deckId: string, userId: string) {
   const res = await fetch(`${API_BASE}/decks/${deckId}/duplicate?user_id=${userId}`, {
     method: "POST",

@@ -3,12 +3,14 @@ import Link from "next/link";
 /**
  * Persistent admin area navigation so Generation analytics is not buried.
  */
+export type AdminSection = "users" | "generation" | "library-collections";
+
 export function AdminSubnav({
   active,
 }: {
-  active: "users" | "generation";
+  active: AdminSection;
 }) {
-  const item = (key: typeof active, href: string, label: string) => {
+  const item = (key: AdminSection, href: string, label: string) => {
     const on = active === key;
     return (
       <Link
@@ -33,6 +35,7 @@ export function AdminSubnav({
         </span>
         <nav className="flex flex-wrap items-center gap-1" aria-label="Admin sections">
           {item("users", "/admin", "Users")}
+          {item("library-collections", "/admin/library-collections", "Library collections")}
           {item("generation", "/admin/generation-analytics", "Generation analytics")}
         </nav>
       </div>

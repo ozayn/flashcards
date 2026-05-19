@@ -7,6 +7,7 @@ from app.models.review import Review
 from app.models.category import Category
 from app.models.generation_job_metric import GenerationJobMetric
 from app.models.study_idea import StudyIdea
+from app.models.library_collection import LibraryCollection, LibraryCollectionDeck
 from app.models.enums import GenerationStatus, UserRole, Plan, SourceType, ReviewRating
 
 __all__ = [
@@ -19,6 +20,8 @@ __all__ = [
     "Category",
     "GenerationJobMetric",
     "StudyIdea",
+    "LibraryCollection",
+    "LibraryCollectionDeck",
     "UserRole",
     "Plan",
     "SourceType",

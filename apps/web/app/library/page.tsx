@@ -2,8 +2,12 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { BookOpen, Search } from "lucide-react";
-import { getLibraryDecks } from "@/lib/api";
+import { BookOpen, FolderOpen, Search } from "lucide-react";
+import {
+  getLibraryDecks,
+  getPublishedLibraryCollections,
+  type LibraryCollectionSummary,
+} from "@/lib/api";
 import PageContainer from "@/components/layout/page-container";
 
 interface LibraryDeck {
@@ -27,16 +31,29 @@ const _SOURCE_LABELS: Record<string, string> = {
 
 export default function LibraryPage() {
   const [decks, setDecks] = useState<LibraryDeck[]>([]);
+  const [collections, setCollections] = useState<LibraryCollectionSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
 
   useEffect(() => {
     async function load() {
       try {
-        const data = await getLibraryDecks();
-        setDecks(Array.isArray(data) ? data : []);
-      } catch {
-        setDecks([]);
+        /**
+         * Run both fetches concurrently. Collections is independent from decks; we
+         * intentionally do not block deck rendering on a slow collections response.
+         */
+        const [deckData, collectionData] = await Promise.allSettled([
+          getLibraryDecks(),
+          getPublishedLibraryCollections(),
+        ]);
+        if (deckData.status === "fulfilled") {
+          setDecks(Array.isArray(deckData.value) ? deckData.value : []);
+        }
+        if (collectionData.status === "fulfilled") {
+          setCollections(
+            Array.isArray(collectionData.value) ? collectionData.value : [],
+          );
+        }
       } finally {
         setLoading(false);
       }
@@ -65,7 +82,7 @@ export default function LibraryPage() {
 
       {loading ? (
         <p className="text-muted-foreground">Loading library…</p>
-      ) : decks.length === 0 ? (
+      ) : decks.length === 0 && collections.length === 0 ? (
         <div className="text-center py-16 space-y-3">
           <BookOpen className="size-10 mx-auto text-muted-foreground/50" />
           <p className="text-muted-foreground">
@@ -73,7 +90,58 @@ export default function LibraryPage() {
           </p>
         </div>
       ) : (
-        <div className="space-y-4">
+        <div className="space-y-8">
+          {collections.length > 0 ? (
+            <section className="space-y-3">
+              <div className="flex items-baseline justify-between gap-2">
+                <h2 className="text-lg font-semibold tracking-tight">Collections</h2>
+                <span className="text-xs text-muted-foreground">
+                  {collections.length} curated
+                </span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {collections.map((collection) => (
+                  <Link
+                    key={collection.id}
+                    href={`/library/collections/${collection.id}`}
+                    className="group rounded-xl border border-neutral-200 bg-white dark:bg-neutral-900 dark:border-neutral-700 p-4 flex flex-col gap-2 hover:bg-muted/30 transition-colors"
+                  >
+                    <div className="flex items-start gap-2">
+                      <FolderOpen
+                        className="size-4 mt-0.5 shrink-0 text-muted-foreground/80"
+                        aria-hidden
+                      />
+                      <h3 className="font-semibold text-base leading-snug line-clamp-2">
+                        {collection.title}
+                      </h3>
+                    </div>
+                    {collection.description ? (
+                      <p className="text-sm text-muted-foreground leading-relaxed line-clamp-3">
+                        {collection.description}
+                      </p>
+                    ) : null}
+                    <div className="flex items-center gap-3 mt-auto pt-1 text-xs text-muted-foreground">
+                      <span>
+                        {collection.deck_count} deck
+                        {collection.deck_count === 1 ? "" : "s"}
+                      </span>
+                      {collection.total_card_count > 0 ? (
+                        <span>
+                          {collection.total_card_count} card
+                          {collection.total_card_count === 1 ? "" : "s"}
+                        </span>
+                      ) : null}
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            </section>
+          ) : null}
+
+          <section className="space-y-4">
+            {collections.length > 0 ? (
+              <h2 className="text-lg font-semibold tracking-tight">All public decks</h2>
+            ) : null}
           {decks.length > 4 && (
             <div className="relative max-w-sm">
               <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
@@ -120,6 +188,7 @@ export default function LibraryPage() {
               ))}
             </div>
           )}
+          </section>
         </div>
       )}
     </PageContainer>
