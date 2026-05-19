@@ -59,6 +59,7 @@ import {
   type GenerationLangPreference,
 } from "@/lib/source-language";
 import PageContainer from "@/components/layout/page-container";
+import { DeckShareButton } from "@/components/deck-share-button";
 import { GuestTrialDeckBanner } from "@/components/guest-trial-deck-banner";
 import { isGuestTrialDeckForViewer } from "@/lib/guest-trial";
 import { GenerationLanguageToggle } from "@/components/generation-language-toggle";
@@ -1671,6 +1672,14 @@ export default function DeckPage({ params }: DeckPageProps) {
                 >
                   {duplicating ? "Saving…" : "Save copy"}
                 </Button>
+              ) : null}
+              {/**
+               * Share is offered only for public decks so the link recipient can actually
+               * open the deck. Private/guest-trial decks would 404/403 for recipients, so
+               * surfacing Share there would be misleading.
+               */}
+              {deck.is_public ? (
+                <DeckShareButton deckId={deck.id} deckTitle={deck.name} />
               ) : null}
             </div>
             {dupError ? (
