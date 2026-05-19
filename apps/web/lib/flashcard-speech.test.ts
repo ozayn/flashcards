@@ -130,11 +130,32 @@ describe("pickVoiceForText (Farsi / RTL script)", () => {
     expect(picked?.name).toBe("B");
   });
 
-  it("uses Arabic (ar) only if no fa / Persian voice is available", () => {
+  it("returns null for clearly-Farsi text when only Arabic voices exist (caller uses fa-IR lang)", () => {
     const voices = [v("Khalid", "ar-SA")];
+    /** "می‌رود" — has Persian-specific letter چ... actually گ + ZWNJ; either is a Farsi signal. */
     const picked = pickVoiceForText("\u06A9", voices, {});
-    expect(picked).not.toBeNull();
+    expect(picked).toBeNull();
+  });
+
+  it("falls back to Arabic for ambiguous RTL (no Persian-specific letters / digits / ZWNJ)", () => {
+    const voices = [v("Khalid", "ar-SA")];
+    /** "مرحبا" — Arabic-only letters, no Persian signal. */
+    const picked = pickVoiceForText("\u0645\u0631\u062D\u0628\u0627", voices, {});
     expect(picked?.lang.toLowerCase().startsWith("ar")).toBe(true);
+  });
+
+  it("prefers Persian voice when text uses Persian digits even without Persian-specific letters", () => {
+    const voices = [v("Khalid", "ar-SA"), v("Dorsa", "fa-IR")];
+    /** "۱۲۳" — Persian digits only. */
+    const picked = pickVoiceForText("\u06F1\u06F2\u06F3", voices, {});
+    expect(picked?.lang.toLowerCase().startsWith("fa")).toBe(true);
+  });
+
+  it("prefers Persian voice when text uses ZWNJ in RTL script", () => {
+    const voices = [v("Khalid", "ar-SA"), v("Dorsa", "fa-IR")];
+    /** "می‌رود" using ی (shared) + ZWNJ + ر و د (shared). */
+    const picked = pickVoiceForText("\u0645\u06CC\u200C\u0631\u0648\u062F", voices, {});
+    expect(picked?.lang.toLowerCase().startsWith("fa")).toBe(true);
   });
 });
 
@@ -142,6 +163,28 @@ describe("plainTextForSpeech / Unicode arrow", () => {
   it("reads right arrow as 'to' for natural TTS", () => {
     expect(plainTextForSpeech("USD \u2192 toman")).toBe("USD to toman");
     expect(plainTextForSpeech("input \u2192 output")).toBe("input to output");
+  });
+});
+
+describe("plainTextForSpeech / Persian pronunciation cleanup", () => {
+  it("strips tatweel / kashida (U+0640) used purely for decoration", () => {
+    /** "ســـلام" → "سلام": the engine should pronounce salām, not stretched runs. */
+    expect(plainTextForSpeech("\u0633\u0640\u0640\u0640\u0644\u0627\u0645")).toBe("\u0633\u0644\u0627\u0645");
+  });
+  it("strips invisible bidi format controls (LRM/RLM/ALM/isolates)", () => {
+    /** RLM (U+200F) and LRM (U+200E) between Persian letters: should vanish, keep letters intact. */
+    const input = "\u200Fسلام\u200E، خوش آمدید";
+    expect(plainTextForSpeech(input)).toBe("سلام، خوش آمدید");
+  });
+  it("collapses runs of ZWNJ but keeps a single ZWNJ for morphology", () => {
+    /** می‌‌‌رود (3× ZWNJ) → می‌رود (1× ZWNJ). */
+    const input = "\u0645\u06CC\u200C\u200C\u200C\u0631\u0648\u062F";
+    const out = plainTextForSpeech(input);
+    expect(out).toBe("\u0645\u06CC\u200C\u0631\u0648\u062F");
+  });
+  it("preserves Persian punctuation that carries prosody (، ؛ ؟)", () => {
+    /** Comma, semicolon, question mark are kept so the engine pauses correctly. */
+    expect(plainTextForSpeech("سلام، حال شما چطور است؟")).toBe("سلام، حال شما چطور است؟");
   });
 });
 
@@ -196,7 +239,18 @@ describe("isLikelyFarsiCardText", () => {
     expect(isLikelyFarsiCardText("x\u06A9")).toBe(true);
     expect(isLikelyFarsiCardText("x\u067E")).toBe(true);
   });
-  it("is false for unmarked Arabic that omits those letters (ambiguous)", () => {
+  it("is true for Persian digits (۰–۹)", () => {
+    expect(isLikelyFarsiCardText("\u06F1\u06F2\u06F3")).toBe(true);
+    expect(isLikelyFarsiCardText("\u06F0")).toBe(true);
+  });
+  it("is true for ZWNJ embedded in RTL Arabic-script text (Persian morphology)", () => {
+    /** "می‌رود": ZWNJ between می and رود is a strong Persian signal. */
+    expect(isLikelyFarsiCardText("\u0645\u06CC\u200C\u0631\u0648\u062F")).toBe(true);
+  });
+  it("is false for unmarked Arabic that omits those letters / digits / ZWNJ (ambiguous)", () => {
     expect(isLikelyFarsiCardText("\u0645\u0631\u062D\u0628\u0627")).toBe(false);
+  });
+  it("ignores ZWNJ when no RTL script is present (Latin text with stray U+200C is not Farsi)", () => {
+    expect(isLikelyFarsiCardText("foo\u200Cbar")).toBe(false);
   });
 });

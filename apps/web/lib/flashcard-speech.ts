@@ -15,6 +15,15 @@ const CJK_RE = /[\u3040-\u30ff\u31f0-\u31ff\u4e00-\u9fff\uac00-\ud7af]/;
 /** Letters used in Persian (Farsi) that standard Arabic does not use — strong signal the card is Farsi, not Arabic. */
 const PERSIAN_SPECIFIC_RE = /[\u06A9\u06AF\u067E\u0686\u0698\u06A4\u06B5\u06B7]/;
 
+/** Extended-Arabic-Indic digits used by Persian (۰–۹). Strong Persian signal vs. Arabic-Indic (٠–٩). */
+const PERSIAN_DIGITS_RE = /[\u06F0-\u06F9]/;
+
+/** ZERO WIDTH NON-JOINER. Pervasive in Persian word composition (می‌رود, خانه‌ها), virtually unused in modern Arabic text. */
+const ZWNJ_RE = /\u200C/;
+
+/** Canonical BCP-47 tag for Persian utterances on the Web Speech API. */
+const FARSI_LANG_TAG = "fa-IR";
+
 const _DEV =
   typeof process !== "undefined" && process.env && process.env.NODE_ENV === "development";
 
@@ -112,16 +121,29 @@ function orderPersianVoicesForFarsi(
 }
 
 /**
- * Picks a voice for Farsi/RTL: Persian (`fa*`) and Persian-labelled voices first; Arabic
- * only if no suitable Persian voice is available. Applies `voiceStyle` on each tier.
+ * Picks a voice for Farsi/RTL.
+ *
+ * - For clearly-Farsi text: Persian voices only. If no Persian voice exists we return
+ *   `null` so the utterance can speak with `lang = "fa-IR"` and the browser's system
+ *   default voice, rather than being explicitly bound to an Arabic engine (which would
+ *   ignore the lang hint and sound Arabic).
+ * - For other RTL text (could be Arabic): Persian voices first, then Arabic as a fallback.
+ *   This is the prior behaviour and is appropriate when we cannot prove the text is Farsi.
+ *
+ * `voiceStyle` is applied within each chosen tier.
  */
 function pickFarsiOrRtlSpeechVoice(
   voices: ReadonlyArray<SpeechSynthesisVoice>,
-  voiceStyle: VoiceStylePreference
+  voiceStyle: VoiceStylePreference,
+  isFarsi: boolean
 ): SpeechSynthesisVoice | null {
   const persian = orderPersianVoicesForFarsi(voices.filter(isPersianSpeechVoice));
   if (persian.length > 0) {
     return applyVoiceStylePreference(persian, voiceStyle) ?? persian[0] ?? null;
+  }
+  if (isFarsi) {
+    /** Intentional: prefer system default with fa-IR over a misleading Arabic voice. */
+    return null;
   }
   const arOnly = voices.filter((v) => v.lang && isArVoiceLanguage(v.lang));
   if (arOnly.length > 0) {
@@ -131,10 +153,23 @@ function pickFarsiOrRtlSpeechVoice(
 }
 
 /**
- * true when the card text is likely Farsi (contains Persian-only letters in the shared Arabic script).
+ * True when the card text is likely Farsi rather than Arabic.
+ *
+ * Signals (any one is sufficient):
+ * - Persian-only consonants: گ چ پ ژ ڤ ڵ ڷ ک
+ * - Persian / Extended-Arabic-Indic digits: ۰۱۲۳۴۵۶۷۸۹
+ * - ZWNJ (U+200C): pervasive in Persian morphology, rare in modern Arabic
+ *
+ * False negatives are still possible for very short or shared-letter text (e.g. "سلام"),
+ * but additions of digits + ZWNJ catch the bulk of real flashcard sentences that used to
+ * fall through to the generic-Arabic branch.
  */
 export function isLikelyFarsiCardText(text: string): boolean {
-  return PERSIAN_SPECIFIC_RE.test(text);
+  if (!text) return false;
+  if (PERSIAN_SPECIFIC_RE.test(text)) return true;
+  if (PERSIAN_DIGITS_RE.test(text)) return true;
+  if (ZWNJ_RE.test(text) && RTL_SCRIPT_RE.test(text)) return true;
+  return false;
 }
 
 function isEnGbLikeLang(lang: string | undefined): boolean {
@@ -296,13 +331,35 @@ function removeBlockDollarDisplayMath(s: string): string {
   return s.replace(/\$\$[\s\S]*?\$\$/g, " ");
 }
 
+/**
+ * Strip Persian/Arabic noise that browsers sometimes mispronounce or render audibly:
+ * - Tatweel / Kashida (U+0640): purely decorative letter-stretcher; no phonetic value.
+ * - Bidi format controls: LRM/RLM/ALM (U+200E, U+200F, U+061C) and explicit embedding/isolate
+ *   controls (U+202A–U+202E, U+2066–U+2069). These are invisible but some engines audibly skip
+ *   or mispause around them.
+ * - Collapses runs of ZWNJ (U+200C) into a single ZWNJ so Persian morphology is preserved while
+ *   accidental multiplications (often from paste) do not create odd word boundaries.
+ *
+ * Punctuation that carries prosody is intentionally NOT stripped:
+ * - Persian/Arabic comma (،), semicolon (؛), question mark (؟), full stop (۔) — used by the
+ *   engine for pause and intonation cues.
+ * - Persian digits (۰–۹) — spoken as numbers by Persian engines.
+ * - ZWNJ (U+200C) — required for correct Persian word formation.
+ */
+function stripPersianPronunciationNoise(s: string): string {
+  return s
+    .replace(/[\u0640]/g, "")
+    .replace(/[\u200E\u200F\u061C\u202A-\u202E\u2066-\u2069]/g, "")
+    .replace(/\u200C{2,}/g, "\u200C");
+}
+
 /** Strips light markdown/whitespace; `$$...$$` block math is removed (not spoken). */
 export function plainTextForSpeech(s: string): string {
   const noBlockMath = removeBlockDollarDisplayMath(s);
   const withPythonSpeakable = replaceInlinePythonBackticksForSpeech(
     replacePythonFencedBlocksForSpeech(noBlockMath)
   );
-  return withPythonSpeakable
+  return stripPersianPronunciationNoise(withPythonSpeakable)
     .replace(/\u2192/g, " to ")
     .replace(/\r\n/g, "\n")
     .replace(/\n{2,}/g, "\n")
@@ -435,10 +492,10 @@ export function detectTextLanguageForTts(plain: string): string {
     return "Hebrew (no local voice pick)";
   }
   if (isLikelyFarsiCardText(t) && RTL_SCRIPT_RE.test(t)) {
-    return "Farsi (likely)";
+    return "Farsi (likely; utterance.lang forced to fa-IR)";
   }
   if (RTL_SCRIPT_RE.test(t)) {
-    return "RTL Arabic script (shared block)";
+    return "RTL Arabic script (shared block; Persian preferred, Arabic fallback)";
   }
   if (/[a-zA-Z]{2,}/.test(t)) {
     return "Latin/English (heuristics apply)";
@@ -463,7 +520,7 @@ export function pickVoiceForText(
     return null;
   }
   if (RTL_SCRIPT_RE.test(t)) {
-    return pickFarsiOrRtlSpeechVoice(voices, voiceStyle);
+    return pickFarsiOrRtlSpeechVoice(voices, voiceStyle, isLikelyFarsiCardText(t));
   }
   if (/[a-zA-Z]{2,}/.test(t)) {
     return pickEnglishByPreference(voices, englishTts, voiceStyle);
@@ -596,11 +653,28 @@ function applyPickedVoiceToUtterance(
     return null;
   }
 
+  const isFarsiText =
+    RTL_SCRIPT_RE.test(plain) &&
+    !CJK_RE.test(plain) &&
+    !/[\u0400-\u04FF]/.test(plain) &&
+    !/[\u0590-\u05FF]/.test(plain) &&
+    isLikelyFarsiCardText(plain);
+
   if (voice) {
     ut.voice = voice;
     ut.lang = voice.lang;
   } else if (RTL_SCRIPT_RE.test(plain) && !CJK_RE.test(plain) && !/[\u0400-\u04FF]/.test(plain) && !/[\u0590-\u05FF]/.test(plain)) {
-    ut.lang = isLikelyFarsiCardText(plain) ? "fa-IR" : "ar";
+    ut.lang = isFarsiText ? FARSI_LANG_TAG : "ar";
+  }
+
+  /**
+   * For Farsi-detected text, force the canonical `fa-IR` tag on the utterance regardless of
+   * what the bound voice reports (e.g. `fa`, or the rare case where only Arabic voices were
+   * available and the picker returned null — handled above). This keeps the engine in
+   * Persian pronunciation mode even when the voice metadata is less specific.
+   */
+  if (isFarsiText) {
+    ut.lang = FARSI_LANG_TAG;
   }
 
   let logMeta: TtsSelectionLogMeta | undefined;
