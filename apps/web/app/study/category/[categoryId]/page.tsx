@@ -26,6 +26,7 @@ import { FlashcardSpeakButton } from "@/components/flashcard-speak-button";
 import { useLocalSpeechVoiceKey } from "@/hooks/use-local-speech-voice-key";
 import { useMigrateAccountSpeechFromSettings } from "@/hooks/use-migrate-account-speech-voice";
 import { FlashcardCardImage } from "@/components/flashcard-card-image";
+import { SignedInOnly } from "@/components/auth/signed-in-only";
 
 interface CategoryStudyPageProps {
   params: { categoryId: string };
@@ -51,7 +52,18 @@ interface NextCategoryInfo {
   name: string;
 }
 
-export default function CategoryStudyPage({ params }: CategoryStudyPageProps) {
+export default function CategoryStudyPage(props: CategoryStudyPageProps) {
+  return (
+    <SignedInOnly
+      title="Sign in to quiz categories"
+      reason="Quizzing all decks in a category requires a signed-in account."
+    >
+      <CategoryStudyPageInner {...props} />
+    </SignedInOnly>
+  );
+}
+
+function CategoryStudyPageInner({ params }: CategoryStudyPageProps) {
   const [categoryName, setCategoryName] = useState<string | null>(null);
   const [nextCategory, setNextCategory] = useState<NextCategoryInfo | null>(null);
   const [decks, setDecks] = useState<StudyDeck[]>([]);

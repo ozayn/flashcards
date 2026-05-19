@@ -15,6 +15,7 @@ import {
 import { getCategoryDecks, getCategories, reorderCategoryDeck, updateDeck } from "@/lib/api";
 import { getStoredUserId } from "@/components/user-selector";
 import PageContainer from "@/components/layout/page-container";
+import { SignedInOnly } from "@/components/auth/signed-in-only";
 import { DeckGenerationBadge } from "@/components/DeckGenerationBadge";
 import { DeckStudyStatusPillMenu } from "@/components/DeckStudyStatusPillMenu";
 import { Button } from "@/components/ui/button";
@@ -95,7 +96,18 @@ function moveDeckToListEdge<T extends { id: string }>(
   return next;
 }
 
-export default function CategoryPage({ params }: CategoryPageProps) {
+export default function CategoryPage(props: CategoryPageProps) {
+  return (
+    <SignedInOnly
+      title="Sign in to view categories"
+      reason="Categories organize your personal decks and are only available when you’re signed in."
+    >
+      <CategoryPageInner {...props} />
+    </SignedInOnly>
+  );
+}
+
+function CategoryPageInner({ params }: CategoryPageProps) {
   const [categoryName, setCategoryName] = useState<string | null>(null);
   const [decks, setDecks] = useState<CategoryDeck[]>([]);
   const [loading, setLoading] = useState(true);

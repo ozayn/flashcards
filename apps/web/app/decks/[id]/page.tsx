@@ -452,6 +452,12 @@ export default function DeckPage({ params }: DeckPageProps) {
 
   const currentUserId = getStoredUserId();
   const isReadOnly = Boolean(deck?.is_public && deck?.user_id && deck.user_id !== currentUserId);
+  /**
+   * Personal workspace meta (categories, study status pill, Public/Private toggle) belongs to a
+   * signed-in account. Hide for signed-out viewers even when they happen to be the deck owner
+   * (e.g. guest-trial decks under `NEXT_PUBLIC_GUEST_TRIAL_USER_ID`).
+   */
+  const showPersonalWorkspaceMeta = sessionStatus === "authenticated" && !isReadOnly;
   const canOfferAdminTransfer =
     sessionStatus === "authenticated" &&
     isPlatformAdmin &&
@@ -1110,12 +1116,18 @@ export default function DeckPage({ params }: DeckPageProps) {
         ) : null}
         <div className="flex items-center justify-between gap-2">
           <Link
-            href={isReadOnly ? "/library" : "/decks"}
+            href={
+              isReadOnly
+                ? "/library"
+                : showPersonalWorkspaceMeta
+                  ? "/decks"
+                  : "/"
+            }
             className="inline-flex h-8 items-center justify-center rounded-lg px-2 text-sm text-muted-foreground hover:text-foreground hover:bg-muted/80 -ml-2"
           >
             ← Back
           </Link>
-          {!isReadOnly && (
+          {showPersonalWorkspaceMeta && (
             <Button
               variant="ghost"
               size="icon"
@@ -1300,7 +1312,7 @@ export default function DeckPage({ params }: DeckPageProps) {
                       </>
                     )}
                   </>
-                ) : (
+                ) : showPersonalWorkspaceMeta ? (
                   <>
                     <span className="font-medium text-foreground">
                       {deck.category_id
@@ -1323,7 +1335,7 @@ export default function DeckPage({ params }: DeckPageProps) {
                     <span className="text-muted-foreground/40" aria-hidden>
                       ·
                     </span>
-                    {sessionStatus === "authenticated" && isPlatformAdmin ? (
+                    {isPlatformAdmin ? (
                       <button
                         type="button"
                         onClick={async () => {
@@ -1366,38 +1378,47 @@ export default function DeckPage({ params }: DeckPageProps) {
                       </>
                     )}
                   </>
-                )}
-              </div>
-              <div className="flex flex-wrap items-center gap-2 pt-1.5 text-xs text-muted-foreground">
-                <span className="sr-only">Study status</span>
-                {isReadOnly ? (
-                  <span className="inline-flex items-center gap-1.5 text-foreground/90">
-                    <StudyStatusIcon
-                      status={coerceDeckStudyStatus(deck.study_status)}
-                      className="size-4"
-                    />
-                    {DECK_STUDY_STATUS_LABELS[coerceDeckStudyStatus(deck.study_status)]}
-                  </span>
                 ) : (
-                  <DeckStudyStatusPillMenu
-                    studyStatus={coerceDeckStudyStatus(deck.study_status)}
-                    density="grid"
-                    onSelect={async (study_status) => {
-                      if (!DECK_STUDY_STATUSES.includes(study_status)) return;
-                      if (!deck || study_status === coerceDeckStudyStatus(deck.study_status)) {
-                        return;
-                      }
-                      try {
-                        await updateDeck(deck.id, { study_status });
-                        const data = await getDeck(params.id);
-                        setDeck(data as Deck);
-                      } catch {
-                        /* ignore */
-                      }
-                    }}
-                  />
+                  /** Signed-out viewer of their own (e.g. guest-trial) deck: no category / no organization meta. */
+                  <>
+                    {deckDateShort ? (
+                      <span className="tabular-nums text-xs sm:text-sm">{deckDateShort}</span>
+                    ) : null}
+                  </>
                 )}
               </div>
+              {showPersonalWorkspaceMeta || isReadOnly ? (
+                <div className="flex flex-wrap items-center gap-2 pt-1.5 text-xs text-muted-foreground">
+                  <span className="sr-only">Study status</span>
+                  {showPersonalWorkspaceMeta ? (
+                    <DeckStudyStatusPillMenu
+                      studyStatus={coerceDeckStudyStatus(deck.study_status)}
+                      density="grid"
+                      onSelect={async (study_status) => {
+                        if (!DECK_STUDY_STATUSES.includes(study_status)) return;
+                        if (!deck || study_status === coerceDeckStudyStatus(deck.study_status)) {
+                          return;
+                        }
+                        try {
+                          await updateDeck(deck.id, { study_status });
+                          const data = await getDeck(params.id);
+                          setDeck(data as Deck);
+                        } catch {
+                          /* ignore */
+                        }
+                      }}
+                    />
+                  ) : (
+                    <span className="inline-flex items-center gap-1.5 text-foreground/90">
+                      <StudyStatusIcon
+                        status={coerceDeckStudyStatus(deck.study_status)}
+                        className="size-4"
+                      />
+                      {DECK_STUDY_STATUS_LABELS[coerceDeckStudyStatus(deck.study_status)]}
+                    </span>
+                  )}
+                </div>
+              ) : null}
 
               {deck.source_type === "youtube" && deck.source_url ? (
                 <div className="space-y-1.5 pt-1 border-t border-border/50">
@@ -1515,7 +1536,7 @@ export default function DeckPage({ params }: DeckPageProps) {
                 </details>
               ) : null}
             </div>
-            {!isReadOnly && categoryModalOpen && (
+            {showPersonalWorkspaceMeta && categoryModalOpen && (
               <div
                 className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
                 onClick={() => !categorySaving && setCategoryModalOpen(false)}

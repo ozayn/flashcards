@@ -30,6 +30,7 @@ import { useLocalSpeechVoiceKey } from "@/hooks/use-local-speech-voice-key";
 import { useMigrateAccountSpeechFromSettings } from "@/hooks/use-migrate-account-speech-voice";
 import { cn } from "@/lib/utils";
 import { FlashcardCardImage } from "@/components/flashcard-card-image";
+import { SignedInOnly } from "@/components/auth/signed-in-only";
 
 interface CategoryExplorePageProps {
   params: { categoryId: string };
@@ -53,7 +54,18 @@ interface ExploreFlashcard {
 
 type ExploreView = "read" | "cards";
 
-export default function CategoryExplorePage({ params }: CategoryExplorePageProps) {
+export default function CategoryExplorePage(props: CategoryExplorePageProps) {
+  return (
+    <SignedInOnly
+      title="Sign in to explore categories"
+      reason="Category Explore reads cards across your personal decks and requires a signed-in account."
+    >
+      <CategoryExplorePageInner {...props} />
+    </SignedInOnly>
+  );
+}
+
+function CategoryExplorePageInner({ params }: CategoryExplorePageProps) {
   const [categoryName, setCategoryName] = useState<string | null>(null);
   const [decks, setDecks] = useState<ExploreDeck[]>([]);
   const [currentDeckIndex, setCurrentDeckIndex] = useState(0);
