@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { ArrowLeft, FolderOpen } from "lucide-react";
 import PageContainer from "@/components/layout/page-container";
+import { CollectionShareButton } from "@/components/collection-share-button";
 import {
   getLibraryCollectionDetail,
   type LibraryCollectionDetail,
@@ -90,7 +91,22 @@ export default function LibraryCollectionPage({ params }: CollectionPageProps) {
       ) : (
         <>
           <div className="space-y-2">
-            <h1 className="text-2xl font-semibold tracking-tight">{collection.title}</h1>
+            <div className="flex items-start justify-between gap-3">
+              <h1 className="text-2xl font-semibold tracking-tight">{collection.title}</h1>
+              {/*
+               * Share button: only shown for published collections — the public detail endpoint
+               * 404s on drafts so this should always be true here, but the explicit check keeps
+               * the rule local to the render path.
+               */}
+              {collection.is_published ? (
+                <div className="shrink-0">
+                  <CollectionShareButton
+                    collectionId={collection.id}
+                    collectionTitle={collection.title}
+                  />
+                </div>
+              ) : null}
+            </div>
             {collection.description ? (
               <p className="text-sm text-muted-foreground leading-relaxed max-w-2xl">
                 {collection.description}
