@@ -8,6 +8,17 @@ import {
   replaceInlinePythonBackticksForSpeech,
   replacePythonFencedBlocksForSpeech,
 } from "@/lib/python-speakable-for-tts";
+import {
+  fetchOpenAiSpeechAudio,
+  OpenAiSpeechClientError,
+  playAudioBlob,
+} from "@/lib/openai-tts-client";
+import {
+  normalizeOpenAiTtsVoice,
+  normalizeReadAloudProvider,
+  type OpenAiTtsVoiceId,
+  type ReadAloudProvider,
+} from "@/lib/openai-tts-config";
 
 const RTL_SCRIPT_RE = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/;
 const CJK_RE = /[\u3040-\u30ff\u31f0-\u31ff\u4e00-\u9fff\uac00-\ud7af]/;
@@ -301,6 +312,10 @@ export function normalizeSpeechVoiceKey(raw: string | null | undefined): string 
 let playingKey: string | null = null;
 const listeners = new Set<() => void>();
 let opSeq = 0;
+/** Aborts in-flight OpenAI fetch + HTMLAudioElement playback when a new op starts or cancelAll runs. */
+let openaiAbort: AbortController | null = null;
+/** Last OpenAI / speech error message for a small UI toast; cleared on successful start or cancel. */
+let lastSpeechError: string | null = null;
 
 function notify() {
   listeners.forEach((cb) => cb());
@@ -308,13 +323,57 @@ function notify() {
 
 function nextOp() {
   opSeq += 1;
+  if (openaiAbort) {
+    try {
+      openaiAbort.abort();
+    } catch {
+      /* ignore */
+    }
+    openaiAbort = null;
+  }
   return opSeq;
+}
+
+function setSpeechError(msg: string | null) {
+  lastSpeechError = msg;
+  notify();
+}
+
+export function getFlashcardSpeechLastError(): string | null {
+  return lastSpeechError;
+}
+
+export function clearFlashcardSpeechLastError(): void {
+  if (lastSpeechError != null) {
+    lastSpeechError = null;
+    notify();
+  }
+}
+
+/**
+ * BCP-47-ish language hint for OpenAI TTS instructions.
+ * Farsi is sent as `fa` so the server adds Persian-preserving instructions and
+ * never routes through the browser Arabic SpeechSynthesis fallback.
+ */
+export function languageHintForOpenAiTts(plain: string): string {
+  const t = (plain || "").trim();
+  if (isLikelyFarsiCardText(t)) return "fa";
+  if (RTL_SCRIPT_RE.test(t)) return "ar";
+  if (CJK_RE.test(t)) return "zh";
+  if (/[a-zA-Z]{2,}/.test(t)) return "en";
+  return "en";
 }
 
 export function isSpeechSynthesisAvailable(): boolean {
   return (
     typeof window !== "undefined" && typeof window.speechSynthesis !== "undefined" && "SpeechSynthesisUtterance" in window
   );
+}
+
+/** True when the user can start read-aloud (browser API and/or OpenAI provider). */
+export function isFlashcardSpeechAvailable(provider?: ReadAloudProvider): boolean {
+  if (provider === "openai") return typeof window !== "undefined" && typeof Audio !== "undefined";
+  return isSpeechSynthesisAvailable();
 }
 
 export function getFlashcardSpeechPlayingKey(): string | null {
@@ -723,6 +782,7 @@ export function cancelAllFlashcardSpeech(): void {
     }
   }
   playingKey = null;
+  if (lastSpeechError != null) lastSpeechError = null;
   notify();
 }
 
@@ -738,7 +798,80 @@ export type SpeakOrToggleOptions = {
    * on the device, it overrides accent/style heuristics for that utterance.
    */
   speechVoiceKey?: string;
+  /** Read-aloud provider: browser (default) or openai. */
+  provider?: ReadAloudProvider;
+  /** OpenAI voice id when provider is openai (separate from browser SpeechSynthesisVoice). */
+  openaiVoice?: string;
+  /** Optional playback rate for OpenAI (0.25–4). Defaults to 1. */
+  openaiSpeed?: number;
 };
+
+function usesOpenAiProvider(options?: SpeakOrToggleOptions): boolean {
+  return normalizeReadAloudProvider(options?.provider) === "openai";
+}
+
+function resolvedOpenAiVoice(options?: SpeakOrToggleOptions): OpenAiTtsVoiceId {
+  return normalizeOpenAiTtsVoice(options?.openaiVoice);
+}
+
+async function sleepMs(ms: number, myOp: number, signal: AbortSignal): Promise<boolean> {
+  if (ms <= 0) return myOp === opSeq && !signal.aborted;
+  await new Promise<void>((r) => {
+    const tid = window.setTimeout(r, ms);
+    const onAbort = () => {
+      window.clearTimeout(tid);
+      r();
+    };
+    if (signal.aborted) {
+      window.clearTimeout(tid);
+      r();
+      return;
+    }
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+  return myOp === opSeq && !signal.aborted;
+}
+
+async function playOpenAiPlainSegments(
+  segments: string[],
+  gapsBeforeMs: number[],
+  options: SpeakOrToggleOptions | undefined,
+  myOp: number,
+  signal: AbortSignal,
+): Promise<"ok" | "aborted" | "error"> {
+  const voice = resolvedOpenAiVoice(options);
+  const speed = options?.openaiSpeed ?? 1.0;
+  for (let i = 0; i < segments.length; i++) {
+    if (myOp !== opSeq || signal.aborted) return "aborted";
+    const gap = gapsBeforeMs[i] ?? 0;
+    if (!(await sleepMs(gap, myOp, signal))) return "aborted";
+    const plain = segments[i]!;
+    try {
+      const blob = await fetchOpenAiSpeechAudio({
+        text: plain,
+        voice,
+        speed,
+        language: languageHintForOpenAiTts(plain),
+        signal,
+      });
+      if (myOp !== opSeq || signal.aborted) return "aborted";
+      const r = await playAudioBlob(blob, signal);
+      if (r === "aborted" || myOp !== opSeq) return "aborted";
+    } catch (err) {
+      if (signal.aborted || myOp !== opSeq) return "aborted";
+      if (err instanceof DOMException && err.name === "AbortError") return "aborted";
+      const msg =
+        err instanceof OpenAiSpeechClientError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : "OpenAI voice failed.";
+      setSpeechError(msg);
+      return "error";
+    }
+  }
+  return "ok";
+}
 
 /**
  * If the same `utteranceKey` is already playing, stops. Otherwise cancels the queue and
@@ -752,14 +885,16 @@ export function speakOrToggle(
   const englishTts = options?.englishTts ?? "default";
   const voiceStyle = options?.voiceStyle ?? "default";
   const speechVoiceKey = options?.speechVoiceKey;
-  if (!isSpeechSynthesisAvailable()) return "skipped";
+  const openai = usesOpenAiProvider(options);
+  if (!openai && !isSpeechSynthesisAvailable()) return "skipped";
+  if (openai && typeof window === "undefined") return "skipped";
   const plain = plainTextForSpeech(text);
   if (!plain) return "skipped";
 
   if (playingKey === utteranceKey) {
     nextOp();
     try {
-      window.speechSynthesis!.cancel();
+      window.speechSynthesis?.cancel();
     } catch {
       /* ignore */
     }
@@ -770,12 +905,29 @@ export function speakOrToggle(
 
   const myOp = nextOp();
   try {
-    window.speechSynthesis!.cancel();
+    window.speechSynthesis?.cancel();
   } catch {
     /* ignore */
   }
   playingKey = utteranceKey;
+  setSpeechError(null);
   notify();
+
+  if (openai) {
+    const ac = new AbortController();
+    openaiAbort = ac;
+    void (async () => {
+      const r = await playOpenAiPlainSegments([plain], [0], options, myOp, ac.signal);
+      if (myOp === opSeq) {
+        playingKey = null;
+        notify();
+      }
+      if (r === "error") {
+        /* error already set; leave idle so the user can retry */
+      }
+    })();
+    return "started";
+  }
 
   getVoicesAsync().then((voiceList) => {
     if (myOp !== opSeq) return;
@@ -834,7 +986,9 @@ export function speakOrToggleReadCard(
   const englishTts = options?.englishTts ?? "default";
   const voiceStyle = options?.voiceStyle ?? "default";
   const speechVoiceKey = options?.speechVoiceKey;
-  if (!isSpeechSynthesisAvailable()) return "skipped";
+  const openai = usesOpenAiProvider(options);
+  if (!openai && !isSpeechSynthesisAvailable()) return "skipped";
+  if (openai && typeof window === "undefined") return "skipped";
   const plainQ = plainTextForSpeech(question);
   const answerParts = buildReadCardAnswerPlainSegments(answer);
   if (!plainQ && answerParts.length === 0) return "skipped";
@@ -858,7 +1012,33 @@ export function speakOrToggleReadCard(
     /* ignore */
   }
   playingKey = utteranceKey;
+  setSpeechError(null);
   notify();
+
+  if (openai) {
+    const ac = new AbortController();
+    openaiAbort = ac;
+    const segments: string[] = [];
+    const gaps: number[] = [];
+    if (plainQ) {
+      segments.push(plainQ);
+      gaps.push(0);
+    }
+    answerParts.forEach((part, idx) => {
+      segments.push(part);
+      if (plainQ && idx === 0) gaps.push(READ_CARD_PAUSE_MS);
+      else if (idx > 0) gaps.push(READ_ANSWER_EXAMPLE_PAUSE_MS);
+      else gaps.push(0);
+    });
+    void (async () => {
+      await playOpenAiPlainSegments(segments, gaps, options, myOp, ac.signal);
+      if (myOp === opSeq) {
+        playingKey = null;
+        notify();
+      }
+    })();
+    return "started";
+  }
 
   getVoicesAsync().then((voiceList) => {
     if (myOp !== opSeq) return;
@@ -971,7 +1151,11 @@ export function playReadCardOnceForAutoplay(
   answer: string,
   options?: SpeakOrToggleOptions
 ): Promise<"ok" | "aborted"> {
-  if (!isSpeechSynthesisAvailable()) {
+  const openai = usesOpenAiProvider(options);
+  if (!openai && !isSpeechSynthesisAvailable()) {
+    return Promise.resolve("aborted");
+  }
+  if (openai && typeof window === "undefined") {
     return Promise.resolve("aborted");
   }
   const englishTts = options?.englishTts ?? "default";
@@ -1002,7 +1186,31 @@ export function playReadCardOnceForAutoplay(
       /* ignore */
     }
     playingKey = READ_TAB_AUTOPLAY_KEY;
+    setSpeechError(null);
     notify();
+
+    if (openai) {
+      const ac = new AbortController();
+      openaiAbort = ac;
+      const segments: string[] = [];
+      const gaps: number[] = [];
+      if (plainQ) {
+        segments.push(plainQ);
+        gaps.push(0);
+      }
+      answerParts.forEach((part, idx) => {
+        segments.push(part);
+        if (plainQ && idx === 0) gaps.push(READ_CARD_PAUSE_MS);
+        else if (idx > 0) gaps.push(READ_ANSWER_EXAMPLE_PAUSE_MS);
+        else gaps.push(0);
+      });
+      void (async () => {
+        const r = await playOpenAiPlainSegments(segments, gaps, options, myOp, ac.signal);
+        if (r === "ok" && myOp === opSeq) settle("ok");
+        else settle("aborted");
+      })();
+      return;
+    }
 
     getVoicesAsync().then((voiceList) => {
       if (myOp !== opSeq) {

@@ -69,6 +69,7 @@ import {
   shouldShowAnswerDetailed,
 } from "@/lib/format-flashcard-answer-display";
 import { FlashcardModal } from "@/components/FlashcardModal";
+import { FlashcardSpeechErrorBanner } from "@/components/flashcard-speech-error-banner";
 import { FlashcardBookmarkStar } from "@/components/flashcard-bookmark-star";
 import { DeckGenerationBadge, isDeckGeneratingLike } from "@/components/DeckGenerationBadge";
 import { AdminTransferDeckConfirmModal } from "@/components/AdminTransferDeckConfirmModal";
@@ -440,6 +441,9 @@ export default function DeckPage({ params }: DeckPageProps) {
     english_tts: "default",
     voice_style: "default",
     speech_voice: "",
+    read_aloud_provider: "browser",
+    openai_tts_voice: "fable",
+    openai_tts_speed: 1.0,
   });
   const localSpeechVoiceKey = useLocalSpeechVoiceKey();
   useMigrateAccountSpeechFromSettings(userSettings);
@@ -1112,6 +1116,7 @@ export default function DeckPage({ params }: DeckPageProps) {
 
   return (
     <PageContainer>
+        <FlashcardSpeechErrorBanner />
         {showGuestTrialBanner ? (
           <GuestTrialDeckBanner callbackUrl={pathname || `/decks/${params.id}`} />
         ) : null}
@@ -2513,6 +2518,9 @@ export default function DeckPage({ params }: DeckPageProps) {
           englishTts={userSettings.english_tts}
           voiceStyle={userSettings.voice_style}
           speechVoiceKey={localSpeechVoiceKey}
+          readAloudProvider={userSettings.read_aloud_provider}
+          openaiVoice={userSettings.openai_tts_voice}
+          openaiSpeed={userSettings.openai_tts_speed}
         />
 
         {!isReadOnly && deleteConfirmId && (

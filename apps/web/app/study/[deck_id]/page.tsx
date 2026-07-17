@@ -14,6 +14,7 @@ import {
   shouldShowAnswerDetailed,
 } from "@/lib/format-flashcard-answer-display";
 import { cancelAllFlashcardSpeech } from "@/lib/flashcard-speech";
+import { FlashcardSpeechErrorBanner } from "@/components/flashcard-speech-error-banner";
 import {
   getFlashcards,
   getUserSettings,
@@ -96,6 +97,9 @@ export default function StudyPage({ params }: StudyPageProps) {
     english_tts: "default",
     voice_style: "default",
     speech_voice: "",
+    read_aloud_provider: "browser",
+    openai_tts_voice: "fable",
+    openai_tts_speed: 1.0,
   });
   const [canFlip, setCanFlip] = useState(false);
   const [studyMenuOpen, setStudyMenuOpen] = useState(false);
@@ -138,6 +142,9 @@ export default function StudyPage({ params }: StudyPageProps) {
     englishTts: userSettings.english_tts,
     voiceStyle: userSettings.voice_style,
     speechVoiceKey: localSpeechVoiceKey,
+    provider: userSettings.read_aloud_provider,
+    openaiVoice: userSettings.openai_tts_voice,
+    openaiSpeed: userSettings.openai_tts_speed,
   });
   const {
     state: readAllState,
@@ -718,6 +725,7 @@ export default function StudyPage({ params }: StudyPageProps) {
 
   return (
     <main className="h-full min-h-0 flex flex-col items-center overflow-hidden relative landscape-mobile:h-[100dvh] landscape-mobile:max-h-[100dvh]" data-study>
+      <FlashcardSpeechErrorBanner />
       {resetConfirmOpen && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
@@ -904,6 +912,9 @@ export default function StudyPage({ params }: StudyPageProps) {
                   englishTts={userSettings.english_tts}
                   voiceStyle={userSettings.voice_style}
                   speechVoiceKey={localSpeechVoiceKey}
+                  provider={userSettings.read_aloud_provider}
+                  openaiVoice={userSettings.openai_tts_voice}
+                  openaiSpeed={userSettings.openai_tts_speed}
                 />
                 <ReadTabReadAllBar
                   className="ms-0.5"
@@ -1036,6 +1047,9 @@ export default function StudyPage({ params }: StudyPageProps) {
                       englishTts={userSettings.english_tts}
                       voiceStyle={userSettings.voice_style}
                       speechVoiceKey={localSpeechVoiceKey}
+                      provider={userSettings.read_aloud_provider}
+                      openaiVoice={userSettings.openai_tts_voice}
+                      openaiSpeed={userSettings.openai_tts_speed}
                     />
                   </div>
                 </div>

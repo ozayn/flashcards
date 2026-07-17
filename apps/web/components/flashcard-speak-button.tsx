@@ -6,11 +6,12 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
   flashcardSpeechStore,
-  isSpeechSynthesisAvailable,
+  isFlashcardSpeechAvailable,
   type EnglishTtsPreference,
   type VoiceStylePreference,
   speakOrToggle,
 } from "@/lib/flashcard-speech";
+import type { ReadAloudProvider } from "@/lib/openai-tts-config";
 
 export function FlashcardSpeakButton({
   utteranceKey,
@@ -20,6 +21,9 @@ export function FlashcardSpeakButton({
   englishTts = "default",
   voiceStyle = "default",
   speechVoiceKey,
+  provider = "browser",
+  openaiVoice,
+  openaiSpeed,
 }: {
   utteranceKey: string;
   text: string;
@@ -31,6 +35,9 @@ export function FlashcardSpeakButton({
   voiceStyle?: VoiceStylePreference;
   /** If set, overrides heuristics when the voice is available on this device. */
   speechVoiceKey?: string;
+  provider?: ReadAloudProvider;
+  openaiVoice?: string;
+  openaiSpeed?: number;
 }) {
   const [apiOk, setApiOk] = useState(false);
   const playingKey = useSyncExternalStore(
@@ -41,8 +48,8 @@ export function FlashcardSpeakButton({
   const isPlaying = playingKey === utteranceKey;
 
   useEffect(() => {
-    setApiOk(isSpeechSynthesisAvailable());
-  }, []);
+    setApiOk(isFlashcardSpeechAvailable(provider));
+  }, [provider]);
 
   const onClick = useCallback(
     (e: React.MouseEvent) => {
@@ -52,9 +59,12 @@ export function FlashcardSpeakButton({
         englishTts,
         voiceStyle,
         speechVoiceKey: speechVoiceKey?.trim() || undefined,
+        provider,
+        openaiVoice,
+        openaiSpeed,
       });
     },
-    [englishTts, voiceStyle, speechVoiceKey, utteranceKey, text]
+    [englishTts, voiceStyle, speechVoiceKey, utteranceKey, text, provider, openaiVoice, openaiSpeed]
   );
 
   if (!apiOk) return null;

@@ -301,6 +301,36 @@ async def init_db() -> None:
     logger.info("Applied speech_voice column migration")
 
     async with engine.begin() as conn:
+        def _migrate_read_aloud_provider(sync_conn):
+            _add_column_if_missing(
+                sync_conn, "users", "read_aloud_provider",
+                "ALTER TABLE users ADD COLUMN read_aloud_provider TEXT DEFAULT 'browser'",
+                pg_if_not_exists="ALTER TABLE users ADD COLUMN IF NOT EXISTS read_aloud_provider VARCHAR(16) DEFAULT 'browser'",
+            )
+        await conn.run_sync(_migrate_read_aloud_provider)
+    logger.info("Applied read_aloud_provider column migration")
+
+    async with engine.begin() as conn:
+        def _migrate_openai_tts_voice(sync_conn):
+            _add_column_if_missing(
+                sync_conn, "users", "openai_tts_voice",
+                "ALTER TABLE users ADD COLUMN openai_tts_voice TEXT DEFAULT 'fable'",
+                pg_if_not_exists="ALTER TABLE users ADD COLUMN IF NOT EXISTS openai_tts_voice VARCHAR(32) DEFAULT 'fable'",
+            )
+        await conn.run_sync(_migrate_openai_tts_voice)
+    logger.info("Applied openai_tts_voice column migration")
+
+    async with engine.begin() as conn:
+        def _migrate_openai_tts_speed(sync_conn):
+            _add_column_if_missing(
+                sync_conn, "users", "openai_tts_speed",
+                "ALTER TABLE users ADD COLUMN openai_tts_speed REAL DEFAULT 1.0",
+                pg_if_not_exists="ALTER TABLE users ADD COLUMN IF NOT EXISTS openai_tts_speed DOUBLE PRECISION DEFAULT 1.0",
+            )
+        await conn.run_sync(_migrate_openai_tts_speed)
+    logger.info("Applied openai_tts_speed column migration")
+
+    async with engine.begin() as conn:
         def _migrate_google_sub(sync_conn):
             # SQLite rejects "ADD COLUMN ... UNIQUE" (OperationalError: Cannot add a UNIQUE column).
             # Add the column plain, then enforce uniqueness with a unique index (multiple NULLs allowed).

@@ -288,6 +288,9 @@ async def get_user_settings(
         english_tts=getattr(user, "english_tts", "default"),
         voice_style=getattr(user, "voice_style", "default"),
         speech_voice=getattr(user, "speech_voice", "") or "",
+        read_aloud_provider=getattr(user, "read_aloud_provider", "browser") or "browser",
+        openai_tts_voice=getattr(user, "openai_tts_voice", "fable") or "fable",
+        openai_tts_speed=float(getattr(user, "openai_tts_speed", 1.0) or 1.0),
     )
 
 
@@ -312,6 +315,12 @@ async def update_user_settings(
         user.voice_style = payload.voice_style
     if payload.speech_voice is not None:
         user.speech_voice = payload.speech_voice
+    if payload.read_aloud_provider is not None:
+        user.read_aloud_provider = payload.read_aloud_provider
+    if payload.openai_tts_voice is not None:
+        user.openai_tts_voice = payload.openai_tts_voice
+    if payload.openai_tts_speed is not None:
+        user.openai_tts_speed = float(payload.openai_tts_speed)
     await db.flush()
     await db.refresh(user)
     return UserSettingsResponse(
@@ -321,4 +330,7 @@ async def update_user_settings(
         english_tts=getattr(user, "english_tts", "default"),
         voice_style=getattr(user, "voice_style", "default"),
         speech_voice=getattr(user, "speech_voice", "") or "",
+        read_aloud_provider=getattr(user, "read_aloud_provider", "browser") or "browser",
+        openai_tts_voice=getattr(user, "openai_tts_voice", "fable") or "fable",
+        openai_tts_speed=float(getattr(user, "openai_tts_speed", 1.0) or 1.0),
     )

@@ -85,6 +85,9 @@ function CategoryStudyPageInner({ params }: CategoryStudyPageProps) {
     english_tts: "default",
     voice_style: "default",
     speech_voice: "",
+    read_aloud_provider: "browser",
+    openai_tts_voice: "fable",
+    openai_tts_speed: 1.0,
   });
   const localSpeechVoiceKey = useLocalSpeechVoiceKey();
   useMigrateAccountSpeechFromSettings(userSettings);
@@ -516,6 +519,9 @@ function CategoryStudyPageInner({ params }: CategoryStudyPageProps) {
                     englishTts={userSettings.english_tts}
                     voiceStyle={userSettings.voice_style}
                     speechVoiceKey={localSpeechVoiceKey}
+                    provider={userSettings.read_aloud_provider}
+                    openaiVoice={userSettings.openai_tts_voice}
+                    openaiSpeed={userSettings.openai_tts_speed}
                   />
                 </div>
               </div>

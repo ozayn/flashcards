@@ -13,6 +13,7 @@ import {
   shouldShowAnswerDetailed,
 } from "@/lib/format-flashcard-answer-display";
 import { cancelAllFlashcardSpeech, type EnglishTtsPreference, type VoiceStylePreference } from "@/lib/flashcard-speech";
+import type { ReadAloudProvider } from "@/lib/openai-tts-config";
 import { FlashcardSpeakButton } from "@/components/flashcard-speak-button";
 import { inferTextDirection } from "@/lib/infer-text-direction";
 import { cn } from "@/lib/utils";
@@ -46,6 +47,10 @@ export interface FlashcardModalProps {
   voiceStyle?: VoiceStylePreference;
   /** Optional specific Web Speech voice; overrides heuristics when available. */
   speechVoiceKey?: string;
+  /** browser (default) or openai. */
+  readAloudProvider?: ReadAloudProvider;
+  openaiVoice?: string;
+  openaiSpeed?: number;
 }
 
 type ViewMode = "details" | "flashcard";
@@ -62,6 +67,9 @@ export function FlashcardModal({
   englishTts = "default",
   voiceStyle = "default",
   speechVoiceKey,
+  readAloudProvider = "browser",
+  openaiVoice,
+  openaiSpeed,
 }: FlashcardModalProps) {
   const [currentIndex, setCurrentIndex] = useState(initialIndex);
   const [viewMode, setViewMode] = useState<ViewMode>("details");
@@ -272,6 +280,9 @@ export function FlashcardModal({
                         englishTts={englishTts}
                         voiceStyle={voiceStyle}
                         speechVoiceKey={speechVoiceKey}
+                        provider={readAloudProvider}
+                        openaiVoice={openaiVoice}
+                        openaiSpeed={openaiSpeed}
                       />
                     </div>
                     <div dir="auto" className="text-base font-medium leading-relaxed text-foreground">
@@ -299,6 +310,9 @@ export function FlashcardModal({
                         englishTts={englishTts}
                         voiceStyle={voiceStyle}
                         speechVoiceKey={speechVoiceKey}
+                        provider={readAloudProvider}
+                        openaiVoice={openaiVoice}
+                        openaiSpeed={openaiSpeed}
                       />
                     </div>
                     <div dir="auto" className="text-base leading-relaxed text-foreground">
@@ -329,6 +343,9 @@ export function FlashcardModal({
                           englishTts={englishTts}
                           voiceStyle={voiceStyle}
                           speechVoiceKey={speechVoiceKey}
+                          provider={readAloudProvider}
+                          openaiVoice={openaiVoice}
+                          openaiSpeed={openaiSpeed}
                         />
                       </div>
                       <div dir="auto" className="text-base leading-relaxed text-muted-foreground">
@@ -439,6 +456,9 @@ export function FlashcardModal({
                         englishTts={englishTts}
                         voiceStyle={voiceStyle}
                         speechVoiceKey={speechVoiceKey}
+                        provider={readAloudProvider}
+                        openaiVoice={openaiVoice}
+                        openaiSpeed={openaiSpeed}
                       />
                     </div>
                   </div>

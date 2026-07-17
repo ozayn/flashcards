@@ -6,11 +6,12 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
   flashcardSpeechStore,
-  isSpeechSynthesisAvailable,
+  isFlashcardSpeechAvailable,
   type EnglishTtsPreference,
   type VoiceStylePreference,
   speakOrToggleReadCard,
 } from "@/lib/flashcard-speech";
+import type { ReadAloudProvider } from "@/lib/openai-tts-config";
 
 type ReadTabSpeakButtonProps = {
   /** Unique per card+context (e.g. study read tab). Toggling this key while playing stops. */
@@ -22,6 +23,9 @@ type ReadTabSpeakButtonProps = {
   englishTts?: EnglishTtsPreference;
   voiceStyle?: VoiceStylePreference;
   speechVoiceKey?: string;
+  provider?: ReadAloudProvider;
+  openaiVoice?: string;
+  openaiSpeed?: number;
 };
 
 /**
@@ -35,6 +39,9 @@ export function ReadTabSpeakButton({
   englishTts = "default",
   voiceStyle = "default",
   speechVoiceKey,
+  provider = "browser",
+  openaiVoice,
+  openaiSpeed,
 }: ReadTabSpeakButtonProps) {
   const [apiOk, setApiOk] = useState(false);
   const playingKey = useSyncExternalStore(
@@ -45,8 +52,8 @@ export function ReadTabSpeakButton({
   const isPlaying = playingKey === utteranceKey;
 
   useEffect(() => {
-    setApiOk(isSpeechSynthesisAvailable());
-  }, []);
+    setApiOk(isFlashcardSpeechAvailable(provider));
+  }, [provider]);
 
   const onClick = useCallback(
     (e: React.MouseEvent) => {
@@ -56,9 +63,12 @@ export function ReadTabSpeakButton({
         englishTts,
         voiceStyle,
         speechVoiceKey: speechVoiceKey?.trim() || undefined,
+        provider,
+        openaiVoice,
+        openaiSpeed,
       });
     },
-    [answer, englishTts, question, speechVoiceKey, utteranceKey, voiceStyle]
+    [answer, englishTts, question, speechVoiceKey, utteranceKey, voiceStyle, provider, openaiVoice, openaiSpeed]
   );
 
   if (!apiOk) return null;

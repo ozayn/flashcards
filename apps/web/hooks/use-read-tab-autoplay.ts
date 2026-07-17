@@ -8,6 +8,7 @@ import {
   type EnglishTtsPreference,
   type VoiceStylePreference,
 } from "@/lib/flashcard-speech";
+import type { ReadAloudProvider } from "@/lib/openai-tts-config";
 
 export type ReadAutoplayState = "off" | "running" | "paused";
 
@@ -28,6 +29,9 @@ type UseReadTabAutoplayArgs = {
   voiceStyle: VoiceStylePreference;
   /** Stored `getSpeechVoiceKey`; empty = auto. */
   speechVoiceKey: string;
+  provider?: ReadAloudProvider;
+  openaiVoice?: string;
+  openaiSpeed?: number;
 };
 
 /**
@@ -43,6 +47,9 @@ export function useReadTabAutoplay({
   englishTts,
   voiceStyle,
   speechVoiceKey,
+  provider = "browser",
+  openaiVoice,
+  openaiSpeed,
 }: UseReadTabAutoplayArgs) {
   const [state, setState] = useState<ReadAutoplayState>("off");
   const runIdRef = useRef(0);
@@ -113,6 +120,9 @@ export function useReadTabAutoplay({
             englishTts,
             voiceStyle,
             speechVoiceKey: speechVoiceKey.trim() || undefined,
+            provider,
+            openaiVoice,
+            openaiSpeed,
           }
         );
         if (runIdRef.current !== myRun) return;
@@ -159,7 +169,7 @@ export function useReadTabAutoplay({
         setState("off");
       }
     },
-    [englishTts, setCurrentIndex, sleepWithGap, speechVoiceKey, voiceStyle, waitResume]
+    [englishTts, setCurrentIndex, sleepWithGap, speechVoiceKey, voiceStyle, waitResume, provider, openaiVoice, openaiSpeed]
   );
 
   const stop = useCallback(() => {

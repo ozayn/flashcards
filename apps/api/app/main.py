@@ -47,6 +47,7 @@ from app.api import (
     webpage,
     flashcard_images,
     study_ideas,
+    speech,
 )
 from app.core.database import engine, Base
 from app.core.init_db import init_db
@@ -182,6 +183,7 @@ app.include_router(generation.router)
 app.include_router(reviews.router)
 app.include_router(youtube.router)
 app.include_router(webpage.router)
+app.include_router(speech.router)
 
 
 @app.get("/")

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from uuid import uuid4
-from sqlalchemy import String, DateTime, Enum, Boolean, Integer
+from sqlalchemy import String, DateTime, Enum, Boolean, Integer, Float
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -49,6 +49,18 @@ class User(Base):
     # Optional Web Speech API voice id (getSpeechSynthesis voiceKey); empty = auto/preference-based
     speech_voice: Mapped[str] = mapped_column(
         String(512), default="", nullable=False
+    )
+    # Read-aloud provider: browser (Web Speech API) or openai (server TTS). Default browser.
+    read_aloud_provider: Mapped[str] = mapped_column(
+        String(16), default="browser", nullable=False
+    )
+    # Selected OpenAI TTS voice id when provider is openai (e.g. fable, marin).
+    openai_tts_voice: Mapped[str] = mapped_column(
+        String(32), default="fable", nullable=False
+    )
+    # OpenAI TTS playback speed (0.25–4.0). Separate from browser speech (no rate setting).
+    openai_tts_speed: Mapped[float] = mapped_column(
+        Float, default=1.0, nullable=False
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, nullable=False

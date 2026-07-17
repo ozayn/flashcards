@@ -4,8 +4,16 @@
  */
 import type { EnglishTtsPreference, VoiceStylePreference } from "./flashcard-speech";
 import { normalizeEnglishTtsPreference, normalizeVoiceStylePreference } from "./flashcard-speech";
+import {
+  normalizeOpenAiTtsSpeed,
+  normalizeOpenAiTtsVoice,
+  normalizeReadAloudProvider,
+  type OpenAiTtsVoiceId,
+  type ReadAloudProvider,
+} from "./openai-tts-config";
 
 export type { EnglishTtsPreference, VoiceStylePreference } from "./flashcard-speech";
+export type { OpenAiTtsVoiceId, ReadAloudProvider } from "./openai-tts-config";
 
 const API_BASE = "/api/proxy";
 
@@ -1456,6 +1464,12 @@ export interface UserSettings {
    * may be copied once to local storage for migration.
    */
   speech_voice: string;
+  /** browser (default) or openai — account-level read-aloud provider. */
+  read_aloud_provider: ReadAloudProvider;
+  /** Curated OpenAI TTS voice when provider is openai. */
+  openai_tts_voice: OpenAiTtsVoiceId;
+  /** OpenAI TTS speed (0.25–4). Separate from browser (no rate setting). */
+  openai_tts_speed: number;
 }
 
 const _userSettingsTtl = new Map<string, _TtlEntry<UserSettings>>();
@@ -1466,6 +1480,9 @@ function _cloneUserSettings(s: UserSettings): UserSettings {
     english_tts: normalizeEnglishTtsPreference(s.english_tts),
     voice_style: normalizeVoiceStylePreference(s.voice_style),
     speech_voice: typeof s.speech_voice === "string" ? s.speech_voice.trim().slice(0, 512) : "",
+    read_aloud_provider: normalizeReadAloudProvider(s.read_aloud_provider),
+    openai_tts_voice: normalizeOpenAiTtsVoice(s.openai_tts_voice),
+    openai_tts_speed: normalizeOpenAiTtsSpeed(s.openai_tts_speed),
   };
 }
 
@@ -1497,6 +1514,15 @@ export async function getUserSettings(userId: string): Promise<UserSettings> {
                 .trim()
                 .slice(0, 512)
             : "",
+        read_aloud_provider: normalizeReadAloudProvider(
+          (raw as UserSettings & { read_aloud_provider?: string }).read_aloud_provider
+        ),
+        openai_tts_voice: normalizeOpenAiTtsVoice(
+          (raw as UserSettings & { openai_tts_voice?: string }).openai_tts_voice
+        ),
+        openai_tts_speed: normalizeOpenAiTtsSpeed(
+          (raw as UserSettings & { openai_tts_speed?: number }).openai_tts_speed
+        ),
       };
       _userSettingsTtl.set(userId, {
         value: data,
@@ -1536,6 +1562,15 @@ export async function updateUserSettings(
             .trim()
             .slice(0, 512)
         : "",
+    read_aloud_provider: normalizeReadAloudProvider(
+      (raw as UserSettings & { read_aloud_provider?: string }).read_aloud_provider
+    ),
+    openai_tts_voice: normalizeOpenAiTtsVoice(
+      (raw as UserSettings & { openai_tts_voice?: string }).openai_tts_voice
+    ),
+    openai_tts_speed: normalizeOpenAiTtsSpeed(
+      (raw as UserSettings & { openai_tts_speed?: number }).openai_tts_speed
+    ),
   };
   _userSettingsTtl.set(userId, {
     value: updated,

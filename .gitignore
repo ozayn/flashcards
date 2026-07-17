@@ -46,3 +46,4 @@ dev.db
 
 # API upload storage (dev / local; created at runtime)
 apps/api/app/data/flashcard_images/
+apps/api/app/data/openai_tts_cache/

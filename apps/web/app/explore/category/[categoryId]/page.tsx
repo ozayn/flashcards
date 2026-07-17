@@ -12,6 +12,7 @@ import {
   shouldShowAnswerDetailed,
 } from "@/lib/format-flashcard-answer-display";
 import { cancelAllFlashcardSpeech } from "@/lib/flashcard-speech";
+import { FlashcardSpeechErrorBanner } from "@/components/flashcard-speech-error-banner";
 import {
   getCategoryDecks,
   getCategories,
@@ -86,6 +87,9 @@ function CategoryExplorePageInner({ params }: CategoryExplorePageProps) {
     english_tts: "default",
     voice_style: "default",
     speech_voice: "",
+    read_aloud_provider: "browser",
+    openai_tts_voice: "fable",
+    openai_tts_speed: 1.0,
   });
   const localSpeechVoiceKey = useLocalSpeechVoiceKey();
   useMigrateAccountSpeechFromSettings(userSettings);
@@ -115,6 +119,9 @@ function CategoryExplorePageInner({ params }: CategoryExplorePageProps) {
     englishTts: userSettings.english_tts,
     voiceStyle: userSettings.voice_style,
     speechVoiceKey: localSpeechVoiceKey,
+    provider: userSettings.read_aloud_provider,
+    openaiVoice: userSettings.openai_tts_voice,
+    openaiSpeed: userSettings.openai_tts_speed,
   });
   const {
     state: readAllState,
@@ -508,6 +515,7 @@ function CategoryExplorePageInner({ params }: CategoryExplorePageProps) {
       className="h-full min-h-0 flex flex-col items-center overflow-hidden relative"
       data-study
     >
+      <FlashcardSpeechErrorBanner />
       <header className="shrink-0 border-b border-border/40 bg-background/90 backdrop-blur-sm">
         <div className="mx-auto max-w-4xl px-3 py-2 sm:px-6 sm:py-2.5 md:px-8 landscape-mobile:py-1.5 landscape-mobile:pl-2 landscape-mobile:pr-2">
           <div className="flex items-start gap-2 sm:items-center sm:gap-3">
@@ -604,6 +612,9 @@ function CategoryExplorePageInner({ params }: CategoryExplorePageProps) {
                   englishTts={userSettings.english_tts}
                   voiceStyle={userSettings.voice_style}
                   speechVoiceKey={localSpeechVoiceKey}
+                  provider={userSettings.read_aloud_provider}
+                  openaiVoice={userSettings.openai_tts_voice}
+                  openaiSpeed={userSettings.openai_tts_speed}
                 />
                 <ReadTabReadAllBar
                   className="ms-0.5"
@@ -725,6 +736,9 @@ function CategoryExplorePageInner({ params }: CategoryExplorePageProps) {
                       englishTts={userSettings.english_tts}
                       voiceStyle={userSettings.voice_style}
                       speechVoiceKey={localSpeechVoiceKey}
+                      provider={userSettings.read_aloud_provider}
+                      openaiVoice={userSettings.openai_tts_voice}
+                      openaiSpeed={userSettings.openai_tts_speed}
                     />
                   </div>
                 </div>

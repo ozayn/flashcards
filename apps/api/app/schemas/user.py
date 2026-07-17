@@ -65,6 +65,9 @@ class UserSettingsResponse(BaseModel):
     english_tts: str = "default"
     voice_style: str = "default"
     speech_voice: str = ""
+    read_aloud_provider: str = "browser"
+    openai_tts_voice: str = "fable"
+    openai_tts_speed: float = Field(default=1.0, ge=0.25, le=4.0)
 
     model_config = {"from_attributes": True}
 
@@ -82,6 +85,14 @@ class UserSettingsUpdate(BaseModel):
     speech_voice: Optional[str] = Field(
         default=None, max_length=512
     )
+    read_aloud_provider: Optional[str] = Field(
+        default=None, pattern="^(browser|openai)$"
+    )
+    openai_tts_voice: Optional[str] = Field(
+        default=None,
+        pattern="^(fable|shimmer|marin|coral|nova|alloy|echo|sage)$",
+    )
+    openai_tts_speed: Optional[float] = Field(default=None, ge=0.25, le=4.0)
 
 
 class UserProfileNameUpdate(BaseModel):
