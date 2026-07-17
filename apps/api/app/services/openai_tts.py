@@ -1,17 +1,15 @@
-"""Synthesize OpenAI TTS audio with on-disk cache.
+"""Synthesize OpenAI TTS audio with durable on-disk cache.
 
-Cache key = SHA-256 of normalized text + model + voice + speed + instructions fingerprint + format.
-Audio files live under FLASHCARD_TTS_CACHE_DIR (or apps/api/app/data/openai_tts_cache).
-Blobs are NOT stored in Postgres.
+See ``openai_tts_cache`` for key composition, sidecar metadata, cleanup, and
+single-flight locking. Blobs are NOT stored in Postgres.
 """
 
 from __future__ import annotations
 
-import hashlib
 import logging
 import os
-import re
-from pathlib import Path
+import time
+from typing import Any
 
 from app.core.openai_tts_config import (
     OPENAI_TTS_MAX_INPUT_CHARS,
@@ -23,15 +21,24 @@ from app.core.openai_tts_config import (
     openai_tts_unavailable_reason,
 )
 from app.llm.direct_outbound import openai_client
+from app.services.openai_tts_cache import (
+    OPENAI_TTS_PREPROCESSING_VERSION,
+    cache_key_for,
+    get_or_generate_cached_audio,
+    instructions_fingerprint,
+    normalize_language_for_tts_cache,
+    write_cached_audio,
+)
 
 logger = logging.getLogger(__name__)
 
-_RESPONSE_FORMAT = "mp3"
-_CACHE_DIR = Path(
-    os.environ.get("FLASHCARD_TTS_CACHE_DIR", "")
-    or (Path(__file__).resolve().parent.parent / "data" / "openai_tts_cache")
-)
-_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+# Re-export for callers/tests that imported from this module.
+__all__ = [
+    "OpenAiTtsError",
+    "cache_key_for",
+    "synthesize_openai_tts",
+    "OPENAI_TTS_PREPROCESSING_VERSION",
+]
 
 
 class OpenAiTtsError(Exception):
@@ -44,46 +51,16 @@ class OpenAiTtsError(Exception):
         self.http_status = http_status
 
 
-def _normalize_text_for_cache(text: str) -> str:
-    return re.sub(r"\s+", " ", (text or "").strip())
-
-
-def cache_key_for(
-    *,
-    text: str,
-    model: str,
-    voice: str,
-    speed: float,
-    instructions: str,
-) -> str:
-    payload = "\n".join(
-        [
-            _normalize_text_for_cache(text),
-            model.strip(),
-            voice.strip().lower(),
-            f"{clamp_openai_tts_speed(speed):.2f}",
-            hashlib.sha256(instructions.encode("utf-8")).hexdigest()[:16],
-            _RESPONSE_FORMAT,
-        ]
-    )
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
-
-
-def _cache_path(key: str) -> Path:
-    return _CACHE_DIR / f"{key}.mp3"
-
-
 def synthesize_openai_tts(
     *,
     text: str,
     voice: str | None = None,
     speed: float | None = None,
     language: str | None = None,
-) -> tuple[bytes, dict]:
+) -> tuple[bytes, dict[str, Any]]:
     """
-    Return (mp3_bytes, meta) where meta includes model, voice, speed, cache hit flag.
-
-    Raises OpenAiTtsError on config / validation / upstream failures.
+    Return (mp3_bytes, meta) where meta includes model, voice, speed, cache hit flag,
+    and openai_latency_ms on misses.
     """
     reason = openai_tts_unavailable_reason()
     if reason == "feature_disabled":
@@ -112,114 +89,131 @@ def synthesize_openai_tts(
     model = get_openai_tts_model()
     resolved_voice = normalize_openai_tts_voice(voice)
     resolved_speed = clamp_openai_tts_speed(speed)
+    lang = normalize_language_for_tts_cache(language)
     instructions = build_openai_tts_instructions(language)
+    instr_fp = instructions_fingerprint(instructions)
     key = cache_key_for(
         text=trimmed,
         model=model,
         voice=resolved_voice,
         speed=resolved_speed,
         instructions=instructions,
+        language=lang,
+        preprocessing_version=OPENAI_TTS_PREPROCESSING_VERSION,
     )
-    path = _cache_path(key)
 
-    if path.is_file() and path.stat().st_size > 0:
-        audio = path.read_bytes()
-        return audio, {
-            "model": model,
-            "voice": resolved_voice,
-            "speed": resolved_speed,
-            "cache": "hit",
-            "cache_key": key,
-            "input_characters": len(trimmed),
-        }
+    def _generate() -> tuple[bytes, dict[str, Any]]:
+        api_key = (os.environ.get("OPENAI_API_KEY") or "").strip()
+        client = openai_client(api_key)
+        t0 = time.perf_counter()
+        try:
+            response = client.audio.speech.create(
+                model=model,
+                voice=resolved_voice,
+                input=trimmed,
+                instructions=instructions,
+                response_format="mp3",
+                speed=resolved_speed,
+            )
+            audio = (
+                response.content
+                if hasattr(response, "content")
+                else bytes(response.read())
+            )
+        except Exception as exc:  # noqa: BLE001
+            msg = str(exc) or "OpenAI speech request failed."
+            lower = msg.lower()
+            status = getattr(exc, "status_code", None) or getattr(exc, "status", None)
+            err_type = type(exc).__name__
+            safe_msg = msg.replace("\n", " ")[:240]
 
-    api_key = (os.environ.get("OPENAI_API_KEY") or "").strip()
-    client = openai_client(api_key)
-
-    try:
-        response = client.audio.speech.create(
-            model=model,
-            voice=resolved_voice,
-            input=trimmed,
-            instructions=instructions,
-            response_format=_RESPONSE_FORMAT,
-            speed=resolved_speed,
-        )
-        audio = response.content if hasattr(response, "content") else bytes(response.read())
-    except Exception as exc:  # noqa: BLE001
-        msg = str(exc) or "OpenAI speech request failed."
-        lower = msg.lower()
-        status = getattr(exc, "status_code", None) or getattr(exc, "status", None)
-        err_type = type(exc).__name__
-        # Truncate; never include response bodies that might echo secrets.
-        safe_msg = msg.replace("\n", " ")[:240]
-
-        if status == 401 or "incorrect api key" in lower or "invalid_api_key" in lower:
-            logger.error(
-                "openai_tts_upstream auth_failed status=%s type=%s detail=%s",
+            if status == 401 or "incorrect api key" in lower or "invalid_api_key" in lower:
+                logger.error(
+                    "openai_tts_upstream auth_failed status=%s type=%s detail=%s",
+                    status,
+                    err_type,
+                    safe_msg,
+                )
+                raise OpenAiTtsError(
+                    "authentication_failed",
+                    "OpenAI authentication failed. Check OPENAI_API_KEY on the API service.",
+                    http_status=502,
+                ) from exc
+            if status == 429 or "rate limit" in lower:
+                logger.warning(
+                    "openai_tts_upstream rate_limited status=%s type=%s",
+                    status,
+                    err_type,
+                )
+                raise OpenAiTtsError(
+                    "rate_limited",
+                    "OpenAI rate limit reached. Try again shortly.",
+                    http_status=502,
+                ) from exc
+            if "insufficient_quota" in lower or (
+                "quota" in lower and status in (429, 402, None)
+            ):
+                logger.error(
+                    "openai_tts_upstream insufficient_quota status=%s type=%s",
+                    status,
+                    err_type,
+                )
+                raise OpenAiTtsError(
+                    "insufficient_quota",
+                    "OpenAI quota exceeded.",
+                    http_status=502,
+                ) from exc
+            logger.exception(
+                "openai_tts_upstream failed status=%s type=%s detail=%s",
                 status,
                 err_type,
                 safe_msg,
             )
             raise OpenAiTtsError(
-                "authentication_failed",
-                "OpenAI authentication failed. Check OPENAI_API_KEY on the API service.",
+                "upstream_error",
+                "OpenAI voice request failed. Please try again.",
                 http_status=502,
             ) from exc
-        if status == 429 or "rate limit" in lower:
-            logger.warning(
-                "openai_tts_upstream rate_limited status=%s type=%s",
-                status,
-                err_type,
-            )
+
+        latency_ms = int((time.perf_counter() - t0) * 1000)
+        if not audio:
             raise OpenAiTtsError(
-                "rate_limited",
-                "OpenAI rate limit reached. Try again shortly.",
+                "upstream_error",
+                "OpenAI returned empty audio.",
                 http_status=502,
-            ) from exc
-        if "insufficient_quota" in lower or ("quota" in lower and status in (429, 402, None)):
-            logger.error(
-                "openai_tts_upstream insufficient_quota status=%s type=%s",
-                status,
-                err_type,
             )
-            raise OpenAiTtsError(
-                "insufficient_quota",
-                "OpenAI quota exceeded.",
-                http_status=502,
-            ) from exc
-        logger.exception(
-            "openai_tts_upstream failed status=%s type=%s detail=%s",
-            status,
-            err_type,
-            safe_msg,
+
+        write_meta = write_cached_audio(
+            key,
+            audio,
+            model=model,
+            voice=resolved_voice,
+            speed=resolved_speed,
+            language=lang,
+            instructions_fingerprint=instr_fp,
+            preprocessing_version=OPENAI_TTS_PREPROCESSING_VERSION,
         )
-        raise OpenAiTtsError(
-            "upstream_error",
-            "OpenAI voice request failed. Please try again.",
-            http_status=502,
-        ) from exc
+        return audio, {
+            "model": model,
+            "voice": resolved_voice,
+            "speed": resolved_speed,
+            "language": lang,
+            "cache": "miss",
+            "cache_write": write_meta.get("cache_write", "ok"),
+            "cache_key": key,
+            "byte_size": len(audio),
+            "input_characters": len(trimmed),
+            "openai_latency_ms": latency_ms,
+            "preprocessing_version": OPENAI_TTS_PREPROCESSING_VERSION,
+        }
 
-    if not audio:
-        raise OpenAiTtsError(
-            "upstream_error",
-            "OpenAI returned empty audio.",
-            http_status=502,
-        )
-
-    try:
-        path.write_bytes(audio)
-        cache_write = "ok"
-    except OSError:
-        logger.warning("Failed to write OpenAI TTS cache file %s", path, exc_info=True)
-        cache_write = "failed"
-
-    return audio, {
-        "model": model,
-        "voice": resolved_voice,
-        "speed": resolved_speed,
-        "cache": "miss",
-        "cache_write": cache_write,
-        "cache_key": key,
-        "input_characters": len(trimmed),
-    }
+    audio, meta = get_or_generate_cached_audio(key, _generate)
+    # Ensure consistent response shape on hits.
+    meta.setdefault("model", model)
+    meta.setdefault("voice", resolved_voice)
+    meta.setdefault("speed", resolved_speed)
+    meta.setdefault("language", lang)
+    meta.setdefault("byte_size", len(audio))
+    meta.setdefault("input_characters", len(trimmed))
+    meta.setdefault("preprocessing_version", OPENAI_TTS_PREPROCESSING_VERSION)
+    return audio, meta

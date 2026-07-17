@@ -7,6 +7,7 @@ GET  /speech/openai/status — whether OpenAI TTS is configured + caller may use
 from __future__ import annotations
 
 import logging
+import time
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -59,9 +60,7 @@ class OpenAiSpeechStatusResponse(BaseModel):
     max_input_chars: int
     requires_sign_in: bool = True
     requires_product_admin: bool = True
-    # True when the current acting user is a product admin (False if signed out).
     caller_is_product_admin: bool = False
-    # Convenience: configured AND this caller may use it.
     available_for_caller: bool = False
     paid_plan_required: bool = False
 
@@ -94,6 +93,10 @@ async def _require_product_admin_user(
             detail="OpenAI voice is only available to product admins.",
         )
     return user
+
+
+# Alias for tests
+require_product_admin_user = _require_product_admin_user
 
 
 @router.get("/openai/status", response_model=OpenAiSpeechStatusResponse)
@@ -164,6 +167,7 @@ async def openai_speech(
         openai_api_key_configured(),
     )
 
+    t0 = time.perf_counter()
     try:
         audio, meta = synthesize_openai_tts(
             text=payload.text,
@@ -185,19 +189,25 @@ async def openai_speech(
         )
         raise HTTPException(status_code=exc.http_status, detail=exc.message) from exc
 
+    cache_status = str(meta.get("cache", "miss"))
+    total_ms = int((time.perf_counter() - t0) * 1000)
     logger.info(
-        "openai_tts_ok user_id=%s cache=%s model=%s voice=%s bytes=%s",
+        "openai_tts_ok user_id=%s cache=%s model=%s voice=%s bytes=%s "
+        "openai_latency_ms=%s total_ms=%s cache_key=%s",
         user_id,
-        meta.get("cache"),
+        cache_status,
         meta.get("model"),
         meta.get("voice"),
         len(audio),
+        meta.get("openai_latency_ms"),
+        total_ms,
+        str(meta.get("cache_key", ""))[:16],
     )
 
     headers = {
         "Content-Type": "audio/mpeg",
         "Cache-Control": "private, max-age=3600",
-        "X-Memo-Tts-Cache": str(meta.get("cache", "miss")),
+        "X-Memo-Tts-Cache": cache_status,
         "X-Memo-Tts-Model": str(meta.get("model", "")),
         "X-Memo-Tts-Voice": str(meta.get("voice", "")),
         "X-Memo-Tts-Speed": f"{float(meta.get('speed', 1.0)):.2f}",
