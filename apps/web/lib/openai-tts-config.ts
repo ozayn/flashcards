@@ -1,12 +1,17 @@
 /**
- * Curated OpenAI TTS voices for MemoNext (v1).
+ * Curated OpenAI TTS voices for MemoNext.
  * Keep in sync with apps/api/app/core/openai_tts_config.py OPENAI_TTS_VOICES.
+ *
+ * Default base voice: `cedar` — with server-side British warm-male instructions this was
+ * closer to the intended educational delivery than `marin` (which tends more feminine).
+ * Gender presentation is not guaranteed by the voice id alone; instructions bias delivery.
  */
 
 export const OPENAI_TTS_VOICES = [
+  { id: "cedar", label: "Cedar (default)" },
+  { id: "marin", label: "Marin" },
   { id: "fable", label: "Fable" },
   { id: "shimmer", label: "Shimmer" },
-  { id: "marin", label: "Marin" },
   { id: "coral", label: "Coral" },
   { id: "nova", label: "Nova" },
   { id: "alloy", label: "Alloy" },
@@ -16,7 +21,7 @@ export const OPENAI_TTS_VOICES = [
 
 export type OpenAiTtsVoiceId = (typeof OPENAI_TTS_VOICES)[number]["id"];
 
-export const DEFAULT_OPENAI_TTS_VOICE: OpenAiTtsVoiceId = "fable";
+export const DEFAULT_OPENAI_TTS_VOICE: OpenAiTtsVoiceId = "cedar";
 
 export type ReadAloudProvider = "browser" | "openai";
 

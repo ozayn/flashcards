@@ -1,7 +1,7 @@
 """OpenAI text-to-speech endpoint for MemoNext read-aloud.
 
-POST /speech/openai — authenticated, returns audio/mpeg (buffered MP3, Planlet-style).
-GET  /speech/openai/status — whether OpenAI TTS is configured (no secrets leaked).
+POST /speech/openai — product-admin only; returns audio/mpeg.
+GET  /speech/openai/status — whether OpenAI TTS is configured + caller may use it.
 """
 
 from __future__ import annotations
@@ -23,9 +23,11 @@ from app.core.openai_tts_config import (
     get_openai_tts_default_voice,
     get_openai_tts_model,
     is_openai_tts_enabled,
+    openai_api_key_configured,
     openai_tts_unavailable_reason,
 )
-from app.core.user_access import get_trusted_acting_user_id
+from app.core.product_admin import user_has_product_admin_access
+from app.core.user_access import fetch_user, get_trusted_acting_user_id
 from app.services.openai_tts import OpenAiTtsError, synthesize_openai_tts
 from app.utils.tts_rate_limit import check_sliding_window_rate_limit
 
@@ -55,39 +57,69 @@ class OpenAiSpeechStatusResponse(BaseModel):
     default_voice: str
     voices: list[str]
     max_input_chars: int
-    # Scaffolding for a future paid-plan gate (not enforced in v1 beyond sign-in).
     requires_sign_in: bool = True
+    requires_product_admin: bool = True
+    # True when the current acting user is a product admin (False if signed out).
+    caller_is_product_admin: bool = False
+    # Convenience: configured AND this caller may use it.
+    available_for_caller: bool = False
     paid_plan_required: bool = False
 
 
-def _require_signed_in_user(trusted_id: Optional[str]) -> str:
+async def _require_product_admin_user(
+    db: AsyncSession,
+    trusted_id: Optional[str],
+):
+    """
+    Auth for OpenAI TTS:
+    - 401 if missing/guest acting user
+    - 403 if signed in but not a product admin (not ALLOWED_LOGIN_EMAILS)
+    """
     if not trusted_id or not trusted_id.strip():
-        raise HTTPException(
-            status_code=401,
-            detail="Sign in to use OpenAI voice.",
-        )
+        raise HTTPException(status_code=401, detail="Sign in to use OpenAI voice.")
     if is_guest_trial_user_id(trusted_id):
-        raise HTTPException(
-            status_code=401,
-            detail="Sign in to use OpenAI voice.",
+        raise HTTPException(status_code=401, detail="Sign in to use OpenAI voice.")
+    user = await fetch_user(db, trusted_id.strip())
+    if not user:
+        raise HTTPException(status_code=401, detail="Sign in to use OpenAI voice.")
+    is_admin = user_has_product_admin_access(user)
+    if not is_admin:
+        logger.info(
+            "openai_tts_denied user_id=%s email=%s product_admin=False",
+            user.id,
+            (user.email or "")[:80],
         )
-    return trusted_id.strip()
+        raise HTTPException(
+            status_code=403,
+            detail="OpenAI voice is only available to product admins.",
+        )
+    return user
 
 
 @router.get("/openai/status", response_model=OpenAiSpeechStatusResponse)
 async def openai_speech_status(
     trusted_id: Optional[str] = Depends(get_trusted_acting_user_id),
+    db: AsyncSession = Depends(get_db),
 ):
-    """Public-ish status for the Profile UI (no API key leakage)."""
+    """Status for the Profile UI (no secrets). Includes whether this caller may use OpenAI TTS."""
     reason = openai_tts_unavailable_reason()
+    configured = is_openai_tts_enabled()
+    caller_is_admin = False
+    if trusted_id and not is_guest_trial_user_id(trusted_id):
+        user = await fetch_user(db, trusted_id.strip())
+        caller_is_admin = user_has_product_admin_access(user)
+
     return OpenAiSpeechStatusResponse(
-        available=is_openai_tts_enabled(),
+        available=configured,
         reason=reason,
         model=get_openai_tts_model(),
         default_voice=get_openai_tts_default_voice(),
         voices=list(OPENAI_TTS_VOICES),
         max_input_chars=OPENAI_TTS_MAX_INPUT_CHARS,
         requires_sign_in=True,
+        requires_product_admin=True,
+        caller_is_product_admin=caller_is_admin,
+        available_for_caller=configured and caller_is_admin,
         paid_plan_required=False,
     )
 
@@ -99,14 +131,13 @@ async def openai_speech(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Synthesize MP3 audio for the given text via OpenAI TTS.
+    Synthesize MP3 via OpenAI TTS.
 
-    Auth: requires a signed-in OAuth user (HMAC acting-user headers from the Next.js proxy).
-    Guest trial accounts are rejected. Response body is raw audio/mpeg.
+    Requires a signed-in product admin. Guest trial and regular users are rejected.
     """
-    # db reserved for a future per-user / plan.pro feature gate.
-    _ = db
-    user_id = _require_signed_in_user(trusted_id)
+    user = await _require_product_admin_user(db, trusted_id)
+    user_id = user.id
+    email = (user.email or "")[:80]
 
     if not check_sliding_window_rate_limit(
         f"openai-tts:{user_id}",
@@ -118,6 +149,21 @@ async def openai_speech(
             detail="Too many OpenAI voice requests. Please wait a moment.",
         )
 
+    model = get_openai_tts_model()
+    voice = (payload.voice or get_openai_tts_default_voice()).strip().lower()
+    logger.info(
+        "openai_tts_request user_id=%s email=%s product_admin=True "
+        "model=%s voice=%s speed=%.2f lang=%s text_len=%s api_key_configured=%s",
+        user_id,
+        email,
+        model,
+        voice,
+        float(payload.speed),
+        (payload.language or "")[:16],
+        len((payload.text or "").strip()),
+        openai_api_key_configured(),
+    )
+
     try:
         audio, meta = synthesize_openai_tts(
             text=payload.text,
@@ -126,7 +172,27 @@ async def openai_speech(
             language=payload.language,
         )
     except OpenAiTtsError as exc:
+        logger.warning(
+            "openai_tts_failed user_id=%s email=%s product_admin=True "
+            "model=%s voice=%s code=%s http_status=%s api_key_configured=%s",
+            user_id,
+            email,
+            model,
+            voice,
+            exc.code,
+            exc.http_status,
+            openai_api_key_configured(),
+        )
         raise HTTPException(status_code=exc.http_status, detail=exc.message) from exc
+
+    logger.info(
+        "openai_tts_ok user_id=%s cache=%s model=%s voice=%s bytes=%s",
+        user_id,
+        meta.get("cache"),
+        meta.get("model"),
+        meta.get("voice"),
+        len(audio),
+    )
 
     headers = {
         "Content-Type": "audio/mpeg",

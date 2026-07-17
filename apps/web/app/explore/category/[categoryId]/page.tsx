@@ -28,6 +28,7 @@ import { ReadTabReadAllBar } from "@/components/read-tab-read-all-bar";
 import { ReadTabSpeakButton } from "@/components/read-tab-speak-button";
 import { useReadTabAutoplay } from "@/hooks/use-read-tab-autoplay";
 import { useLocalSpeechVoiceKey } from "@/hooks/use-local-speech-voice-key";
+import { useEffectiveReadAloudProvider } from "@/hooks/use-effective-read-aloud-provider";
 import { useMigrateAccountSpeechFromSettings } from "@/hooks/use-migrate-account-speech-voice";
 import { cn } from "@/lib/utils";
 import { FlashcardCardImage } from "@/components/flashcard-card-image";
@@ -88,11 +89,15 @@ function CategoryExplorePageInner({ params }: CategoryExplorePageProps) {
     voice_style: "default",
     speech_voice: "",
     read_aloud_provider: "browser",
-    openai_tts_voice: "fable",
+    openai_tts_voice: "cedar",
     openai_tts_speed: 1.0,
   });
   const localSpeechVoiceKey = useLocalSpeechVoiceKey();
   useMigrateAccountSpeechFromSettings(userSettings);
+  const effectiveReadAloudProvider = useEffectiveReadAloudProvider({
+    userSettings,
+    setUserSettings,
+  });
   const touchStartX = useRef(0);
   const [bookmarkBusyId, setBookmarkBusyId] = useState<string | null>(null);
 
@@ -119,7 +124,7 @@ function CategoryExplorePageInner({ params }: CategoryExplorePageProps) {
     englishTts: userSettings.english_tts,
     voiceStyle: userSettings.voice_style,
     speechVoiceKey: localSpeechVoiceKey,
-    provider: userSettings.read_aloud_provider,
+    provider: effectiveReadAloudProvider,
     openaiVoice: userSettings.openai_tts_voice,
     openaiSpeed: userSettings.openai_tts_speed,
   });
@@ -612,7 +617,7 @@ function CategoryExplorePageInner({ params }: CategoryExplorePageProps) {
                   englishTts={userSettings.english_tts}
                   voiceStyle={userSettings.voice_style}
                   speechVoiceKey={localSpeechVoiceKey}
-                  provider={userSettings.read_aloud_provider}
+                  provider={effectiveReadAloudProvider}
                   openaiVoice={userSettings.openai_tts_voice}
                   openaiSpeed={userSettings.openai_tts_speed}
                 />
@@ -736,7 +741,7 @@ function CategoryExplorePageInner({ params }: CategoryExplorePageProps) {
                       englishTts={userSettings.english_tts}
                       voiceStyle={userSettings.voice_style}
                       speechVoiceKey={localSpeechVoiceKey}
-                      provider={userSettings.read_aloud_provider}
+                      provider={effectiveReadAloudProvider}
                       openaiVoice={userSettings.openai_tts_voice}
                       openaiSpeed={userSettings.openai_tts_speed}
                     />

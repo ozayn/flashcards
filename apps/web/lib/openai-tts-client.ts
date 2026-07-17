@@ -78,6 +78,9 @@ export type OpenAiSpeechStatus = {
   voices: string[];
   max_input_chars: number;
   requires_sign_in: boolean;
+  requires_product_admin?: boolean;
+  caller_is_product_admin?: boolean;
+  available_for_caller?: boolean;
   paid_plan_required: boolean;
 };
 
@@ -88,10 +91,13 @@ export async function fetchOpenAiSpeechStatus(): Promise<OpenAiSpeechStatus> {
       available: false,
       reason: "unavailable",
       model: "gpt-4o-mini-tts",
-      default_voice: "fable",
+      default_voice: "cedar",
       voices: [],
       max_input_chars: 3500,
       requires_sign_in: true,
+      requires_product_admin: true,
+      caller_is_product_admin: false,
+      available_for_caller: false,
       paid_plan_required: false,
     };
   }

@@ -1,6 +1,6 @@
 """Synthesize OpenAI TTS audio with on-disk cache.
 
-Cache key = SHA-256 of normalized text + model + voice + speed + format.
+Cache key = SHA-256 of normalized text + model + voice + speed + instructions fingerprint + format.
 Audio files live under FLASHCARD_TTS_CACHE_DIR (or apps/api/app/data/openai_tts_cache).
 Blobs are NOT stored in Postgres.
 """
@@ -15,6 +15,7 @@ from pathlib import Path
 
 from app.core.openai_tts_config import (
     OPENAI_TTS_MAX_INPUT_CHARS,
+    build_openai_tts_instructions,
     clamp_openai_tts_speed,
     get_openai_tts_model,
     is_openai_tts_enabled,
@@ -32,16 +33,6 @@ _CACHE_DIR = Path(
 )
 _CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-# Calm educational tone (same spirit as Planlet's NEUTRAL_EDUCATIONAL default).
-_DEFAULT_INSTRUCTIONS = (
-    "Read in a calm, natural, intelligent educational tone. Use clear pacing and "
-    "thoughtful emphasis. Avoid sounding theatrical, promotional, overly cheerful, or robotic."
-)
-_FARSI_APPENDIX = (
-    " For Persian (Farsi) content: preserve the original language and pronunciation. "
-    "Do not read Persian as Arabic. Keep names and non-English phrases natural."
-)
-
 
 class OpenAiTtsError(Exception):
     """Raised for configuration / validation / upstream TTS failures."""
@@ -54,17 +45,24 @@ class OpenAiTtsError(Exception):
 
 
 def _normalize_text_for_cache(text: str) -> str:
-    # Collapse runs of whitespace so trivial formatting diffs share a cache entry.
     return re.sub(r"\s+", " ", (text or "").strip())
 
 
-def cache_key_for(*, text: str, model: str, voice: str, speed: float) -> str:
+def cache_key_for(
+    *,
+    text: str,
+    model: str,
+    voice: str,
+    speed: float,
+    instructions: str,
+) -> str:
     payload = "\n".join(
         [
             _normalize_text_for_cache(text),
             model.strip(),
             voice.strip().lower(),
             f"{clamp_openai_tts_speed(speed):.2f}",
+            hashlib.sha256(instructions.encode("utf-8")).hexdigest()[:16],
             _RESPONSE_FORMAT,
         ]
     )
@@ -73,13 +71,6 @@ def cache_key_for(*, text: str, model: str, voice: str, speed: float) -> str:
 
 def _cache_path(key: str) -> Path:
     return _CACHE_DIR / f"{key}.mp3"
-
-
-def _build_instructions(language: str | None) -> str:
-    lang = (language or "").strip().lower()
-    if lang.startswith("fa") or lang in ("farsi", "persian"):
-        return _DEFAULT_INSTRUCTIONS + _FARSI_APPENDIX
-    return _DEFAULT_INSTRUCTIONS
 
 
 def synthesize_openai_tts(
@@ -121,8 +112,13 @@ def synthesize_openai_tts(
     model = get_openai_tts_model()
     resolved_voice = normalize_openai_tts_voice(voice)
     resolved_speed = clamp_openai_tts_speed(speed)
+    instructions = build_openai_tts_instructions(language)
     key = cache_key_for(
-        text=trimmed, model=model, voice=resolved_voice, speed=resolved_speed
+        text=trimmed,
+        model=model,
+        voice=resolved_voice,
+        speed=resolved_speed,
+        instructions=instructions,
     )
     path = _cache_path(key)
 
@@ -139,10 +135,8 @@ def synthesize_openai_tts(
 
     api_key = (os.environ.get("OPENAI_API_KEY") or "").strip()
     client = openai_client(api_key)
-    instructions = _build_instructions(language)
 
     try:
-        # gpt-4o-mini-tts accepts instructions; speed is supported on speech.create.
         response = client.audio.speech.create(
             model=model,
             voice=resolved_voice,
@@ -152,30 +146,59 @@ def synthesize_openai_tts(
             speed=resolved_speed,
         )
         audio = response.content if hasattr(response, "content") else bytes(response.read())
-    except Exception as exc:  # noqa: BLE001 - map broadly for user-facing codes
+    except Exception as exc:  # noqa: BLE001
         msg = str(exc) or "OpenAI speech request failed."
         lower = msg.lower()
         status = getattr(exc, "status_code", None) or getattr(exc, "status", None)
+        err_type = type(exc).__name__
+        # Truncate; never include response bodies that might echo secrets.
+        safe_msg = msg.replace("\n", " ")[:240]
+
         if status == 401 or "incorrect api key" in lower or "invalid_api_key" in lower:
+            logger.error(
+                "openai_tts_upstream auth_failed status=%s type=%s detail=%s",
+                status,
+                err_type,
+                safe_msg,
+            )
             raise OpenAiTtsError(
                 "authentication_failed",
-                "OpenAI authentication failed.",
-                http_status=503,
+                "OpenAI authentication failed. Check OPENAI_API_KEY on the API service.",
+                http_status=502,
             ) from exc
         if status == 429 or "rate limit" in lower:
+            logger.warning(
+                "openai_tts_upstream rate_limited status=%s type=%s",
+                status,
+                err_type,
+            )
             raise OpenAiTtsError(
                 "rate_limited",
                 "OpenAI rate limit reached. Try again shortly.",
-                http_status=503,
+                http_status=502,
             ) from exc
-        if "insufficient_quota" in lower or "quota" in lower:
+        if "insufficient_quota" in lower or ("quota" in lower and status in (429, 402, None)):
+            logger.error(
+                "openai_tts_upstream insufficient_quota status=%s type=%s",
+                status,
+                err_type,
+            )
             raise OpenAiTtsError(
                 "insufficient_quota",
                 "OpenAI quota exceeded.",
-                http_status=503,
+                http_status=502,
             ) from exc
-        logger.exception("OpenAI TTS synthesis failed")
-        raise OpenAiTtsError("upstream_error", msg, http_status=502) from exc
+        logger.exception(
+            "openai_tts_upstream failed status=%s type=%s detail=%s",
+            status,
+            err_type,
+            safe_msg,
+        )
+        raise OpenAiTtsError(
+            "upstream_error",
+            "OpenAI voice request failed. Please try again.",
+            http_status=502,
+        ) from exc
 
     if not audio:
         raise OpenAiTtsError(

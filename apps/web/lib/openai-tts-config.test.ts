@@ -5,6 +5,10 @@ import {
   normalizeOpenAiTtsVoice,
   normalizeReadAloudProvider,
 } from "./openai-tts-config";
+import {
+  preferOpenAiReadAloudByDevice,
+  resolveReadAloudProvider,
+} from "./read-aloud-provider";
 import { languageHintForOpenAiTts, plainTextForSpeech } from "./flashcard-speech";
 
 describe("openai-tts-config", () => {
@@ -14,8 +18,9 @@ describe("openai-tts-config", () => {
     expect(normalizeReadAloudProvider("nope")).toBe("browser");
   });
 
-  it("defaults OpenAI voice to fable and rejects unknown ids", () => {
+  it("defaults OpenAI voice to cedar and rejects unknown ids", () => {
     expect(normalizeOpenAiTtsVoice(undefined)).toBe(DEFAULT_OPENAI_TTS_VOICE);
+    expect(DEFAULT_OPENAI_TTS_VOICE).toBe("cedar");
     expect(normalizeOpenAiTtsVoice("marin")).toBe("marin");
     expect(normalizeOpenAiTtsVoice("not-a-voice")).toBe(DEFAULT_OPENAI_TTS_VOICE);
   });
@@ -25,6 +30,29 @@ describe("openai-tts-config", () => {
     expect(normalizeOpenAiTtsSpeed(0.1)).toBe(0.25);
     expect(normalizeOpenAiTtsSpeed(9)).toBe(4.0);
     expect(normalizeOpenAiTtsSpeed(1.2)).toBe(1.2);
+  });
+});
+
+describe("resolveReadAloudProvider", () => {
+  it("forces browser for non-admins even when saved openai", () => {
+    expect(
+      resolveReadAloudProvider({
+        saved: "openai",
+        userId: "u1",
+        isProductAdmin: false,
+      }),
+    ).toBe("browser");
+  });
+
+  it("uses browser when OpenAI is not configured", () => {
+    expect(
+      resolveReadAloudProvider({
+        saved: "openai",
+        userId: "u1",
+        isProductAdmin: true,
+        openaiConfigured: false,
+      }),
+    ).toBe("browser");
   });
 });
 
@@ -43,5 +71,11 @@ describe("plainTextForSpeech still strips display math for OpenAI path", () => {
     const out = plainTextForSpeech("Area is $$E=mc^2$$ square");
     expect(out).not.toContain("E=mc");
     expect(out.toLowerCase()).toContain("area");
+  });
+});
+
+describe("preferOpenAiReadAloudByDevice", () => {
+  it("is a function (device-specific in browser)", () => {
+    expect(typeof preferOpenAiReadAloudByDevice).toBe("function");
   });
 });

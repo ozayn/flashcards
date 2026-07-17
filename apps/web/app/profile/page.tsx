@@ -30,6 +30,12 @@ import { useMigrateAccountSpeechFromSettings } from "@/hooks/use-migrate-account
 import { setLocalSpeechVoiceKey } from "@/lib/local-speech-voice";
 import { OPENAI_TTS_SPEED_OPTIONS, OPENAI_TTS_VOICES } from "@/lib/openai-tts-config";
 import { fetchOpenAiSpeechStatus } from "@/lib/openai-tts-client";
+import {
+  markExplicitReadAloudProviderChoice,
+  resolveReadAloudProvider,
+} from "@/lib/read-aloud-provider";
+import { useClientIsAdmin } from "@/components/user-selector";
+import { userIsProductAdmin } from "@/lib/product-admin";
 
 /** Short list for profile; keep in sync with getUserActivity default. */
 const RECENT_ACTIVITY_LIMIT = 10;
@@ -105,7 +111,7 @@ function activityRowPrimary(row: UserActivityEntry): ReactNode {
 export default function ProfilePage() {
   const { data: session, status } = useSession();
   const [userId, setUserId] = useState<string | null>(null);
-  const [user, setUser] = useState<{ name: string; email: string } | null>(
+  const [user, setUser] = useState<{ name: string; email: string; role: string } | null>(
     null
   );
   const [draftName, setDraftName] = useState("");
@@ -121,8 +127,15 @@ export default function ProfilePage() {
   const [openaiTtsUnavailableReason, setOpenaiTtsUnavailableReason] = useState<
     string | null
   >(null);
+  const [openaiAvailableForCaller, setOpenaiAvailableForCaller] = useState(false);
   const localSpeechVoiceKey = useLocalSpeechVoiceKey();
   useMigrateAccountSpeechFromSettings(userSettings);
+  const isClientAdmin = useClientIsAdmin();
+  const isProductAdmin =
+    isClientAdmin ||
+    (user
+      ? userIsProductAdmin({ role: user.role, name: user.name, email: user.email })
+      : false);
 
   useEffect(() => {
     let cancelled = false;
@@ -130,11 +143,12 @@ export default function ProfilePage() {
       if (cancelled) return;
       setOpenaiTtsAvailable(Boolean(s.available));
       setOpenaiTtsUnavailableReason(s.available ? null : s.reason);
+      setOpenaiAvailableForCaller(Boolean(s.available_for_caller));
     });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [userId]);
 
   useEffect(() => {
     if (status === "loading") return;
@@ -156,7 +170,7 @@ export default function ProfilePage() {
       try {
         const row = await getUser(id);
         if (cancelled) return;
-        setUser({ name: row.name, email: row.email });
+        setUser({ name: row.name, email: row.email, role: row.role ?? "user" });
         setDraftName(row.name);
         setEditingName(false);
       } catch {
@@ -250,7 +264,11 @@ export default function ProfilePage() {
     setSaveError(null);
     try {
       const row = await patchUserProfileName(userId, draftName.trim());
-      setUser({ name: row.name, email: row.email });
+      setUser((prev) => ({
+        name: row.name,
+        email: row.email,
+        role: prev?.role ?? "user",
+      }));
       setDraftName(row.name);
       setEditingName(false);
       if (typeof window !== "undefined" && getStoredUserId() === userId) {
@@ -315,7 +333,9 @@ export default function ProfilePage() {
 
   async function handleReadAloudProviderChange(provider: ReadAloudProvider) {
     if (!userId || !userSettings) return;
+    if (provider === "openai" && !openaiAvailableForCaller) return;
     try {
+      markExplicitReadAloudProviderChoice(userId);
       const updated = await updateUserSettings(userId, {
         read_aloud_provider: provider,
       });
@@ -414,6 +434,15 @@ export default function ProfilePage() {
 
   const initials = profileInitials(user.name, user.email);
   const displayName = user.name.trim() || "No name";
+  const showOpenAiProvider = isProductAdmin;
+  const effectiveProvider = userSettings
+    ? resolveReadAloudProvider({
+        saved: userSettings.read_aloud_provider,
+        userId,
+        isProductAdmin: showOpenAiProvider,
+        openaiConfigured: openaiTtsAvailable,
+      })
+    : "browser";
 
   return (
     <PageContainer className="mx-auto w-full max-w-sm px-4 py-8 sm:py-10">
@@ -503,82 +532,93 @@ export default function ProfilePage() {
               Speech
             </h2>
             <p className="mb-2 text-xs font-medium text-foreground">Read-aloud provider</p>
-            <div
-              role="radiogroup"
-              aria-label="Read-aloud provider"
-              className="grid grid-cols-2 gap-1 rounded-lg border border-border bg-muted/40 p-1"
-            >
-              {(
-                [
-                  { value: "browser" as const, label: "Browser voice" },
-                  { value: "openai" as const, label: "OpenAI voice" },
-                ] as const
-              ).map(({ value, label }) => {
-                const selected = userSettings.read_aloud_provider === value;
-                return (
-                  <button
-                    key={value}
-                    type="button"
-                    role="radio"
-                    aria-checked={selected}
-                    className={`rounded-md px-2 py-1.5 text-sm transition-colors ${
-                      selected
-                        ? "bg-background text-foreground shadow-sm"
-                        : "text-muted-foreground hover:text-foreground"
-                    }`}
-                    onClick={() => void handleReadAloudProviderChange(value)}
-                  >
-                    {label}
-                  </button>
-                );
-              })}
-            </div>
-            <p className="mt-2 text-xs text-muted-foreground">
-              Browser voice is free and works offline. OpenAI voice is more consistent across
-              devices and requires sign-in.
-            </p>
-            {!openaiTtsAvailable ? (
-              <div
-                role="status"
-                className="mt-2 rounded-md border border-border/80 bg-muted/30 px-2.5 py-2 text-xs text-muted-foreground"
-              >
-                <p className="leading-snug text-foreground">
-                  OpenAI voice is unavailable
-                  {openaiTtsUnavailableReason === "missing_api_key"
-                    ? " (server key not configured)."
-                    : openaiTtsUnavailableReason === "feature_disabled"
-                      ? " (disabled on this server)."
-                      : "."}
+            {showOpenAiProvider ? (
+              <>
+                <div
+                  role="radiogroup"
+                  aria-label="Read-aloud provider"
+                  className="grid grid-cols-2 gap-1 rounded-lg border border-border bg-muted/40 p-1"
+                >
+                  {(
+                    [
+                      { value: "browser" as const, label: "Browser voice" },
+                      { value: "openai" as const, label: "OpenAI voice" },
+                    ] as const
+                  ).map(({ value, label }) => {
+                    const selected = effectiveProvider === value;
+                    const disabled = value === "openai" && !openaiAvailableForCaller;
+                    return (
+                      <button
+                        key={value}
+                        type="button"
+                        role="radio"
+                        aria-checked={selected}
+                        disabled={disabled}
+                        className={`rounded-md px-2 py-1.5 text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                          selected
+                            ? "bg-background text-foreground shadow-sm"
+                            : "text-muted-foreground hover:text-foreground"
+                        }`}
+                        onClick={() => void handleReadAloudProviderChange(value)}
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Browser voice is free and works offline. OpenAI voice is more consistent on
+                  phones and PWAs (product admins only). On Mac, Browser is the default until you
+                  choose otherwise.
                 </p>
-                {userSettings.read_aloud_provider === "openai" ? (
-                  <button
-                    type="button"
-                    className="mt-1.5 font-medium text-foreground underline-offset-2 hover:underline"
-                    onClick={() => void handleReadAloudProviderChange("browser")}
+                {!openaiTtsAvailable ? (
+                  <div
+                    role="status"
+                    className="mt-2 rounded-md border border-border/80 bg-muted/30 px-2.5 py-2 text-xs text-muted-foreground"
                   >
-                    Switch to Browser voice
-                  </button>
-                ) : (
-                  <p className="mt-1 leading-snug">
-                    You can keep using Browser voice. Ask an admin to set{" "}
-                    <code className="text-[10px]">OPENAI_API_KEY</code> on the API if you need
-                    OpenAI voice.
-                  </p>
-                )}
-              </div>
-            ) : null}
+                    <p className="leading-snug text-foreground">
+                      OpenAI voice is unavailable
+                      {openaiTtsUnavailableReason === "missing_api_key"
+                        ? " (server key not configured)."
+                        : openaiTtsUnavailableReason === "feature_disabled"
+                          ? " (disabled on this server)."
+                          : "."}
+                    </p>
+                    {effectiveProvider === "openai" ? (
+                      <button
+                        type="button"
+                        className="mt-1.5 font-medium text-foreground underline-offset-2 hover:underline"
+                        onClick={() => void handleReadAloudProviderChange("browser")}
+                      >
+                        Switch to Browser voice
+                      </button>
+                    ) : (
+                      <p className="mt-1 leading-snug">
+                        Using Browser voice. Set{" "}
+                        <code className="text-[10px]">OPENAI_API_KEY</code> on the API service and
+                        restart.
+                      </p>
+                    )}
+                  </div>
+                ) : null}
+              </>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                Browser voice (device speech). OpenAI voice is limited to product admins.
+              </p>
+            )}
           </div>
         ) : null}
 
-        {userSettings && userSettings.read_aloud_provider === "openai" ? (
+        {userSettings && showOpenAiProvider && effectiveProvider === "openai" ? (
           <div className="w-full border-t border-border/40 pt-4 text-left space-y-4">
             <div>
               <h2 className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                 OpenAI voice
               </h2>
               <p className="mb-2 text-xs text-muted-foreground">
-                Separate from the browser speaking-voice picker. Applies to English and Farsi
-                cards.
+                Default is Cedar with a warm British educational style (server-side). Separate from
+                the browser speaking-voice picker.
               </p>
               <select
                 className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm"
@@ -628,7 +668,7 @@ export default function ProfilePage() {
           </div>
         ) : null}
 
-        {userSettings && userSettings.read_aloud_provider === "browser" ? (
+        {userSettings && effectiveProvider === "browser" ? (
           <div className="w-full border-t border-border/40 pt-4 text-left">
             <h2 className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
               English accent
@@ -663,7 +703,7 @@ export default function ProfilePage() {
           </div>
         ) : null}
 
-        {userSettings && userSettings.read_aloud_provider === "browser" ? (
+        {userSettings && effectiveProvider === "browser" ? (
           <div className="w-full border-t border-border/40 pt-4 text-left">
             <h2 className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
               Preferred voice style
@@ -698,7 +738,7 @@ export default function ProfilePage() {
           </div>
         ) : null}
 
-        {userSettings && userSettings.read_aloud_provider === "browser" ? (
+        {userSettings && effectiveProvider === "browser" ? (
           <div className="w-full border-t border-border/40 pt-4 text-left">
             <h2 className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
               Speaking voice

@@ -45,6 +45,7 @@ import {
 } from "@/lib/api";
 import { getStoredUserId, useTierLimits } from "@/components/user-selector";
 import { useLocalSpeechVoiceKey } from "@/hooks/use-local-speech-voice-key";
+import { useEffectiveReadAloudProvider } from "@/hooks/use-effective-read-aloud-provider";
 import { useMigrateAccountSpeechFromSettings } from "@/hooks/use-migrate-account-speech-voice";
 import { GENERATION_TEXT_MAX_CHARS } from "@/lib/generation-text";
 import {
@@ -442,11 +443,15 @@ export default function DeckPage({ params }: DeckPageProps) {
     voice_style: "default",
     speech_voice: "",
     read_aloud_provider: "browser",
-    openai_tts_voice: "fable",
+    openai_tts_voice: "cedar",
     openai_tts_speed: 1.0,
   });
   const localSpeechVoiceKey = useLocalSpeechVoiceKey();
   useMigrateAccountSpeechFromSettings(userSettings);
+  const effectiveReadAloudProvider = useEffectiveReadAloudProvider({
+    userSettings,
+    setUserSettings,
+  });
 
   type SortOption = typeof cardSort;
   const SORT_OPTIONS: { value: SortOption; label: string }[] = [
@@ -2518,7 +2523,7 @@ export default function DeckPage({ params }: DeckPageProps) {
           englishTts={userSettings.english_tts}
           voiceStyle={userSettings.voice_style}
           speechVoiceKey={localSpeechVoiceKey}
-          readAloudProvider={userSettings.read_aloud_provider}
+          readAloudProvider={effectiveReadAloudProvider}
           openaiVoice={userSettings.openai_tts_voice}
           openaiSpeed={userSettings.openai_tts_speed}
         />

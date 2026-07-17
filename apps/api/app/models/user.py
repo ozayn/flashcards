@@ -56,7 +56,7 @@ class User(Base):
     )
     # Selected OpenAI TTS voice id when provider is openai (e.g. fable, marin).
     openai_tts_voice: Mapped[str] = mapped_column(
-        String(32), default="fable", nullable=False
+        String(32), default="cedar", nullable=False
     )
     # OpenAI TTS playback speed (0.25–4.0). Separate from browser speech (no rate setting).
     openai_tts_speed: Mapped[float] = mapped_column(

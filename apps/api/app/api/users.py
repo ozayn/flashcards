@@ -289,7 +289,7 @@ async def get_user_settings(
         voice_style=getattr(user, "voice_style", "default"),
         speech_voice=getattr(user, "speech_voice", "") or "",
         read_aloud_provider=getattr(user, "read_aloud_provider", "browser") or "browser",
-        openai_tts_voice=getattr(user, "openai_tts_voice", "fable") or "fable",
+        openai_tts_voice=getattr(user, "openai_tts_voice", "cedar") or "cedar",
         openai_tts_speed=float(getattr(user, "openai_tts_speed", 1.0) or 1.0),
     )
 
@@ -331,6 +331,6 @@ async def update_user_settings(
         voice_style=getattr(user, "voice_style", "default"),
         speech_voice=getattr(user, "speech_voice", "") or "",
         read_aloud_provider=getattr(user, "read_aloud_provider", "browser") or "browser",
-        openai_tts_voice=getattr(user, "openai_tts_voice", "fable") or "fable",
+        openai_tts_voice=getattr(user, "openai_tts_voice", "cedar") or "cedar",
         openai_tts_speed=float(getattr(user, "openai_tts_speed", 1.0) or 1.0),
     )
