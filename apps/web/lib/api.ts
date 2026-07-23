@@ -1328,6 +1328,7 @@ export {
   parseDeckTextImport,
   looksLikeExportFormat,
   parseExportFormat,
+  cleanImportText,
 } from "./parse-deck-text-import";
 export type {
   DeckTextImportResult,

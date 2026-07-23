@@ -4,6 +4,7 @@
  */
 
 import { splitImportAnswerOnExampleMarker } from "@/lib/import-answer-split";
+import { cleanImportText } from "@/lib/clean-import-text";
 import { type ParsedQAPair, parseQAPairs } from "@/lib/parse-qa-pairs";
 
 export type DeckTextImportMetadata = {
@@ -24,6 +25,8 @@ export type DeckTextImportResult =
       metadata?: DeckTextImportMetadata;
     }
   | { ok: false; error: string };
+
+export { cleanImportText } from "@/lib/clean-import-text";
 
 function normalizeNewlines(s: string): string {
   return s.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
@@ -190,7 +193,8 @@ export function parseExportFormat(text: string): {
   metadata: DeckTextImportMetadata;
   error?: string;
 } {
-  const t = normalizeNewlines(text).trim();
+  // Keep dashed export dividers; strip other decorative separators / blank runs.
+  const t = cleanImportText(text, { preserveDashedDividers: true });
   if (!t) {
     return { pairs: [], metadata: {}, error: "Empty file." };
   }
@@ -276,14 +280,15 @@ export function parseExportFormat(text: string): {
  * mis-parsing.
  */
 export function parseDeckTextImport(text: string): DeckTextImportResult {
-  const t = text.trim();
-  if (!t) {
+  const raw = normalizeNewlines(text);
+  if (!raw.trim()) {
     return { ok: false, error: "No text to import." };
   }
 
-  const exportish = looksLikeExportFormat(t);
+  // Detect export format before stripping dashed dividers (they are structural).
+  const exportish = looksLikeExportFormat(raw);
   if (exportish) {
-    const { pairs, metadata, error } = parseExportFormat(t);
+    const { pairs, metadata, error } = parseExportFormat(raw);
     if (pairs.length > 0) {
       return { ok: true, format: "export", pairs, metadata };
     }
@@ -295,7 +300,12 @@ export function parseDeckTextImport(text: string): DeckTextImportResult {
     };
   }
 
-  const strict = parseQAPairs(t);
+  const cleaned = cleanImportText(raw);
+  if (!cleaned) {
+    return { ok: false, error: "No text to import." };
+  }
+
+  const strict = parseQAPairs(cleaned);
   if (strict && strict.length > 0) {
     return { ok: true, format: "strict", pairs: strict };
   }

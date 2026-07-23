@@ -8,6 +8,7 @@
  */
 
 import { splitImportAnswerOnExampleMarker } from "@/lib/import-answer-split";
+import { cleanImportText } from "@/lib/clean-import-text";
 
 /** Whole line is only a structural "Card N" label (content not stored). */
 const CARD_HEADING_LINE = /^\s*Card\s+\d+\s*:?\s*$/i;
@@ -21,7 +22,10 @@ export type ParsedQAPair = {
 };
 
 export function parseQAPairs(text: string): ParsedQAPair[] | null {
-  const lines = text.split(/\n/);
+  const lines = cleanImportText(text).split(/\n/);
+  if (lines.length === 1 && lines[0] === "") {
+    return null;
+  }
   const pairs: ParsedQAPair[] = [];
   let currentQ: string | null = null;
   let currentA: string[] = [];
