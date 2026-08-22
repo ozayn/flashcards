@@ -79,6 +79,7 @@ import {
   DECK_STUDY_STATUS_LABELS,
   type DeckStudyStatus,
 } from "@/lib/deck-study-status";
+import { useDeckDragEnabled } from "@/hooks/use-deck-drag-enabled";
 import { blurActiveElementToAvoidScrollOnReorder, cn } from "@/lib/utils";
 
 const SHOW_DECK_DATES_STORAGE_KEY = "flashcards_deck_show_dates";
@@ -291,23 +292,92 @@ function DraggableDeckRow({
   children,
   isDragging,
   className,
+  dragEnabled,
 }: {
   deck: Deck;
   children: React.ReactNode;
   isDragging: boolean;
   className?: string;
+  dragEnabled: boolean;
 }) {
-  const { attributes, listeners, setNodeRef } = useDraggable({ id: deck.id });
+  const { attributes, listeners, setNodeRef } = useDraggable({
+    id: deck.id,
+    disabled: !dragEnabled,
+  });
   return (
     <div
       ref={setNodeRef}
-      {...listeners}
-      {...attributes}
-      className={`touch-none ${isDragging ? "opacity-50 cursor-grabbing" : "cursor-grab"} ${className ?? ""}`}
+      {...(dragEnabled ? listeners : undefined)}
+      {...(dragEnabled ? attributes : undefined)}
+      className={cn(
+        dragEnabled && "touch-none",
+        dragEnabled &&
+          (isDragging ? "opacity-50 cursor-grabbing" : "cursor-grab"),
+        className
+      )}
     >
       {children}
     </div>
   );
+}
+
+function StaticDeckRow({
+  children,
+  className,
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return <div className={className}>{children}</div>;
+}
+
+function CategoryGroupShell({
+  id,
+  isOver,
+  dragEnabled,
+  children,
+}: {
+  id: string;
+  isOver: boolean;
+  dragEnabled: boolean;
+  children: React.ReactNode;
+}) {
+  if (dragEnabled) {
+    return (
+      <DroppableCategory id={id} isOver={isOver}>
+        {children}
+      </DroppableCategory>
+    );
+  }
+  return <div>{children}</div>;
+}
+
+function DeckRowShell({
+  deck,
+  dragEnabled,
+  isDragging,
+  className,
+  children,
+}: {
+  deck: Deck;
+  dragEnabled: boolean;
+  isDragging: boolean;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  if (dragEnabled) {
+    return (
+      <DraggableDeckRow
+        deck={deck}
+        dragEnabled
+        isDragging={isDragging}
+        className={className}
+      >
+        {children}
+      </DraggableDeckRow>
+    );
+  }
+  return <StaticDeckRow className={className}>{children}</StaticDeckRow>;
 }
 
 export default function DecksPage() {
@@ -406,6 +476,7 @@ export default function DecksPage() {
     });
   }, []);
 
+  const deckDragEnabled = useDeckDragEnabled();
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
   );
@@ -1295,6 +1366,160 @@ export default function DecksPage() {
     );
   }
 
+  const groupedCategoryContent = groupDecksByCategory(filteredDecks, categories)
+    .filter((group) => group.decks.length > 0 || !searchQuery.trim())
+    .map((group, idx) => {
+      const sourceCategoryId = activeDragId
+        ? (decks.find((d) => d.id === activeDragId)?.category_id ?? UNCATEGORIZED)
+        : null;
+      const isDropTarget =
+        deckDragEnabled &&
+        (dragOverId === group.categoryId ||
+          (!!dragOverId && group.decks.some((d) => d.id === dragOverId))) &&
+        group.categoryId !== sourceCategoryId;
+      return (
+        <CategoryGroupShell
+          key={group.categoryId}
+          id={group.categoryId}
+          isOver={isDropTarget}
+          dragEnabled={deckDragEnabled}
+        >
+          <div className={`group ${idx === 0 ? "mt-0" : "mt-4 sm:mt-6"}`}>
+            <div className="flex items-center gap-1 min-h-[36px] sm:min-h-[40px] mb-0 max-mobile:gap-0.5">
+              <button
+                type="button"
+                onClick={() => toggleCollapsed(group.categoryId)}
+                className="p-1 -ml-1 rounded-md hover:bg-muted transition-colors shrink-0 touch-manipulation"
+                aria-label={
+                  collapsedCategories.has(group.categoryId)
+                    ? "Expand category"
+                    : "Collapse category"
+                }
+              >
+                <ChevronDown
+                  className={`size-4 text-muted-foreground transition-transform duration-200 ${
+                    collapsedCategories.has(group.categoryId) ? "-rotate-90" : ""
+                  }`}
+                />
+              </button>
+              <div className="flex items-center gap-1.5 sm:gap-2 flex-1 min-w-0">
+                {group.categoryId !== UNCATEGORIZED ? (
+                  <Link
+                    href={`/categories/${group.categoryId}`}
+                    className="text-sm sm:text-base font-semibold text-foreground hover:text-foreground/70 transition-colors truncate"
+                  >
+                    {group.categoryName}
+                  </Link>
+                ) : (
+                  <span className="text-sm sm:text-base font-semibold text-foreground truncate">
+                    {group.categoryName}
+                  </span>
+                )}
+                <span className="text-xs text-muted-foreground tabular-nums shrink-0">
+                  {group.decks.length}
+                </span>
+              </div>
+              {group.categoryId !== UNCATEGORIZED && (
+                <div className="relative shrink-0 opacity-80 hover:opacity-100 transition-opacity">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-muted-foreground"
+                    aria-label="Category actions"
+                    aria-expanded={openCategoryActionsId === group.categoryId}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      e.preventDefault();
+                      setOpenCategoryActionsId((prev) =>
+                        prev === group.categoryId ? null : group.categoryId
+                      );
+                    }}
+                  >
+                    <MoreVertical className="size-4" />
+                  </Button>
+                  {openCategoryActionsId === group.categoryId && (
+                    <div
+                      className="absolute right-0 top-full z-50 mt-0.5 w-max min-w-[15rem] max-w-[calc(100vw-1.5rem)] rounded-lg border border-border bg-popover py-1 shadow-lg"
+                      onClick={(e: MouseEvent) => e.stopPropagation()}
+                      role="menu"
+                    >
+                      {group.decks.length > 0 && (
+                        <>
+                          <Link
+                            href={`/explore/category/${group.categoryId}`}
+                            role="menuitem"
+                            className="flex w-full items-center justify-start gap-2.5 whitespace-nowrap px-3 py-2.5 text-left text-sm hover:bg-muted focus-visible:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background min-h-[44px]"
+                            onClick={() => setOpenCategoryActionsId(null)}
+                          >
+                            <Eye className="size-4 shrink-0" aria-hidden />
+                            <span>Explore category</span>
+                          </Link>
+                          <Link
+                            href={`/study/category/${group.categoryId}`}
+                            role="menuitem"
+                            className="flex w-full items-center justify-start gap-2.5 whitespace-nowrap px-3 py-2.5 text-left text-sm hover:bg-muted focus-visible:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background min-h-[44px]"
+                            onClick={() => setOpenCategoryActionsId(null)}
+                          >
+                            <BookOpen className="size-4 shrink-0" aria-hidden />
+                            <span>Quiz category</span>
+                          </Link>
+                        </>
+                      )}
+                      <button
+                        type="button"
+                        role="menuitem"
+                        className="flex w-full items-center justify-start gap-2.5 whitespace-nowrap px-3 py-2.5 text-left text-sm hover:bg-muted focus-visible:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background min-h-[44px]"
+                        onClick={() => {
+                          setOpenCategoryActionsId(null);
+                          openRenameModal(group.categoryId, group.categoryName);
+                        }}
+                      >
+                        <Pencil className="size-4 shrink-0" aria-hidden />
+                        <span>Rename category</span>
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        className="flex w-full items-center justify-start gap-2.5 whitespace-nowrap px-3 py-2.5 text-left text-sm text-destructive hover:bg-destructive/10 focus-visible:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/60 focus-visible:ring-offset-2 focus-visible:ring-offset-background min-h-[44px]"
+                        onClick={() => {
+                          setOpenCategoryActionsId(null);
+                          setDeleteConfirmId(group.categoryId);
+                        }}
+                      >
+                        <Trash2 className="size-4 shrink-0" aria-hidden />
+                        <span>Delete category</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+          {!collapsedCategories.has(group.categoryId) && (
+            <div className="pl-5 sm:pl-6 max-mobile:pl-2">
+              {renderDecks(
+                group.decks,
+                (deck, content) => (
+                  <DeckRowShell
+                    key={deck.id}
+                    deck={deck}
+                    dragEnabled={deckDragEnabled}
+                    isDragging={activeDragId === deck.id}
+                    className={deckLayout === "grid" ? "h-full min-h-0" : undefined}
+                  >
+                    {content}
+                  </DeckRowShell>
+                ),
+                group.categoryId === UNCATEGORIZED ? null : group.categoryId
+              )}
+            </div>
+          )}
+        </CategoryGroupShell>
+      );
+    });
+
   return (
     <PageContainer className="max-mobile:space-y-3">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
@@ -1878,163 +2103,17 @@ export default function DecksPage() {
             </div>
           ) : viewMode === "all" ? (
             renderDecks(sortedFlatDecks)
-          ) : (
+          ) : deckDragEnabled ? (
             <DndContext
               sensors={sensors}
               onDragStart={handleDragStart}
               onDragOver={handleDragOver}
               onDragEnd={handleDragEnd}
             >
-              {groupDecksByCategory(filteredDecks, categories)
-                .filter((group) => group.decks.length > 0 || !searchQuery.trim())
-                .map((group, idx) => {
-                const sourceCategoryId = activeDragId
-                  ? (decks.find((d) => d.id === activeDragId)?.category_id ?? UNCATEGORIZED)
-                  : null;
-                const isDropTarget =
-                  (dragOverId === group.categoryId ||
-                    (!!dragOverId &&
-                      group.decks.some((d) => d.id === dragOverId))) &&
-                  group.categoryId !== sourceCategoryId;
-                return (
-                <DroppableCategory
-                  key={group.categoryId}
-                  id={group.categoryId}
-                  isOver={isDropTarget}
-                >
-                  <div
-                    className={`group ${idx === 0 ? "mt-0" : "mt-4 sm:mt-6"}`}
-                  >
-                    <div className="flex items-center gap-1 min-h-[36px] sm:min-h-[40px] mb-0 max-mobile:gap-0.5">
-                      <button
-                        type="button"
-                        onClick={() => toggleCollapsed(group.categoryId)}
-                        className="p-1 -ml-1 rounded-md hover:bg-muted transition-colors shrink-0 touch-manipulation"
-                        aria-label={collapsedCategories.has(group.categoryId) ? "Expand category" : "Collapse category"}
-                      >
-                        <ChevronDown
-                          className={`size-4 text-muted-foreground transition-transform duration-200 ${
-                            collapsedCategories.has(group.categoryId) ? "-rotate-90" : ""
-                          }`}
-                        />
-                      </button>
-                      <div className="flex items-center gap-1.5 sm:gap-2 flex-1 min-w-0">
-                        {group.categoryId !== UNCATEGORIZED ? (
-                          <Link
-                            href={`/categories/${group.categoryId}`}
-                            className="text-sm sm:text-base font-semibold text-foreground hover:text-foreground/70 transition-colors truncate"
-                          >
-                            {group.categoryName}
-                          </Link>
-                        ) : (
-                          <span className="text-sm sm:text-base font-semibold text-foreground truncate">
-                            {group.categoryName}
-                          </span>
-                        )}
-                        <span className="text-xs text-muted-foreground tabular-nums shrink-0">
-                          {group.decks.length}
-                        </span>
-                      </div>
-                      {group.categoryId !== UNCATEGORIZED && (
-                        <div className="relative shrink-0 opacity-80 hover:opacity-100 transition-opacity">
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 text-muted-foreground"
-                            aria-label="Category actions"
-                            aria-expanded={openCategoryActionsId === group.categoryId}
-                            onPointerDown={(e) => e.stopPropagation()}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              e.preventDefault();
-                              setOpenCategoryActionsId((prev) =>
-                                prev === group.categoryId ? null : group.categoryId
-                              );
-                            }}
-                          >
-                            <MoreVertical className="size-4" />
-                          </Button>
-                          {openCategoryActionsId === group.categoryId && (
-                            <div
-                              className="absolute right-0 top-full z-50 mt-0.5 w-max min-w-[15rem] max-w-[calc(100vw-1.5rem)] rounded-lg border border-border bg-popover py-1 shadow-lg"
-                              onClick={(e: MouseEvent) => e.stopPropagation()}
-                              role="menu"
-                            >
-                              {group.decks.length > 0 && (
-                                <>
-                                  <Link
-                                    href={`/explore/category/${group.categoryId}`}
-                                    role="menuitem"
-                                    className="flex w-full items-center justify-start gap-2.5 whitespace-nowrap px-3 py-2.5 text-left text-sm hover:bg-muted focus-visible:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background min-h-[44px]"
-                                    onClick={() => setOpenCategoryActionsId(null)}
-                                  >
-                                    <Eye className="size-4 shrink-0" aria-hidden />
-                                    <span>Explore category</span>
-                                  </Link>
-                                  <Link
-                                    href={`/study/category/${group.categoryId}`}
-                                    role="menuitem"
-                                    className="flex w-full items-center justify-start gap-2.5 whitespace-nowrap px-3 py-2.5 text-left text-sm hover:bg-muted focus-visible:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background min-h-[44px]"
-                                    onClick={() => setOpenCategoryActionsId(null)}
-                                  >
-                                    <BookOpen className="size-4 shrink-0" aria-hidden />
-                                    <span>Quiz category</span>
-                                  </Link>
-                                </>
-                              )}
-                              <button
-                                type="button"
-                                role="menuitem"
-                                className="flex w-full items-center justify-start gap-2.5 whitespace-nowrap px-3 py-2.5 text-left text-sm hover:bg-muted focus-visible:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background min-h-[44px]"
-                                onClick={() => {
-                                  setOpenCategoryActionsId(null);
-                                  openRenameModal(group.categoryId, group.categoryName);
-                                }}
-                              >
-                                <Pencil className="size-4 shrink-0" aria-hidden />
-                                <span>Rename category</span>
-                              </button>
-                              <button
-                                type="button"
-                                role="menuitem"
-                                className="flex w-full items-center justify-start gap-2.5 whitespace-nowrap px-3 py-2.5 text-left text-sm text-destructive hover:bg-destructive/10 focus-visible:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/60 focus-visible:ring-offset-2 focus-visible:ring-offset-background min-h-[44px]"
-                                onClick={() => {
-                                  setOpenCategoryActionsId(null);
-                                  setDeleteConfirmId(group.categoryId);
-                                }}
-                              >
-                                <Trash2 className="size-4 shrink-0" aria-hidden />
-                                <span>Delete category</span>
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  {!collapsedCategories.has(group.categoryId) && (
-                    <div className="pl-5 sm:pl-6 max-mobile:pl-2">
-                      {renderDecks(
-                        group.decks,
-                        (deck, content) => (
-                        <DraggableDeckRow
-                          key={deck.id}
-                          deck={deck}
-                          isDragging={activeDragId === deck.id}
-                          className={deckLayout === "grid" ? "h-full min-h-0" : undefined}
-                        >
-                          {content}
-                        </DraggableDeckRow>
-                        ),
-                        group.categoryId === UNCATEGORIZED ? null : group.categoryId
-                      )}
-                    </div>
-                  )}
-                </DroppableCategory>
-              );
-              })}
+              {groupedCategoryContent}
             </DndContext>
+          ) : (
+            groupedCategoryContent
           )}
         </div>
 

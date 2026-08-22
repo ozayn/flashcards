@@ -7,6 +7,7 @@ import { ChevronLeft, ChevronRight, MoreHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Flashcard } from "@/components/study/Flashcard";
+import { StudyCardOrderControl } from "@/components/study/study-card-order-control";
 import FormattedText from "@/components/FormattedText";
 import {
   buildAnswerDisplayText,
@@ -41,6 +42,16 @@ import { ReadTabSpeakButton } from "@/components/read-tab-speak-button";
 import { useReadTabAutoplay } from "@/hooks/use-read-tab-autoplay";
 import { cn } from "@/lib/utils";
 import { FlashcardCardImage } from "@/components/flashcard-card-image";
+import {
+  buildShuffledIdsCurrentFirst,
+  canonicalIdsFor,
+  findCardIndexById,
+  studyNavigateNextIndex,
+  studyNavigatePrevIndex,
+  type StudyCardOrder,
+} from "@/lib/study-card-order";
+
+const STUDY_PAGE_PATH = "apps/web/app/study/[deck_id]/page.tsx";
 
 interface StudyPageProps {
   params: { deck_id: string };
@@ -71,6 +82,7 @@ export default function StudyPage({ params }: StudyPageProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const deckView = parseDeckView(searchParams);
+  const bookmarksOnlyParam = searchParams.get("bookmarks") === "1";
 
   const setDeckView = useCallback(
     (next: DeckView) => {
@@ -117,16 +129,85 @@ export default function StudyPage({ params }: StudyPageProps) {
   const loadGenRef = useRef(0);
   const restoreAppliedForLoadGenRef = useRef<number | null>(null);
   /** Set when the user switches Read/Cards/Quiz so we restore position after refetch (localStorage may still list the previous mode). */
-  const modeSwitchSnapshotRef = useRef<{ index: number; flipped: boolean } | null>(null);
+  const modeSwitchSnapshotRef = useRef<{
+    index: number;
+    flipped: boolean;
+    cardId?: string;
+  } | null>(null);
   const cardIndexRef = useRef(0);
   const showAnswerRef = useRef(false);
   const [resumeReady, setResumeReady] = useState(false);
   const [resumeHint, setResumeHint] = useState(false);
   const [bookmarkBusyId, setBookmarkBusyId] = useState<string | null>(null);
+  /** Read/Cards order: always start original on load (shuffle persistence disabled for debugging). */
+  const [orderMode, setOrderMode] = useState<StudyCardOrder>("original");
+  const [shuffledIds, setShuffledIds] = useState<string[]>([]);
+
+  const isDev = process.env.NODE_ENV === "development";
+  const runtimeLoggedRef = useRef(false);
+
+  /** Canonical API order (all cards in deck fetch). */
+  const canonicalFlashcards = flashcards;
+
+  /** Eligible after Saved-only filter (filter first, then order). */
+  const eligibleFlashcards = useMemo(() => {
+    if (!bookmarksOnlyParam) return canonicalFlashcards;
+    return canonicalFlashcards.filter((c) => Boolean(c.bookmarked));
+  }, [canonicalFlashcards, bookmarksOnlyParam]);
+
+  const eligibleFlashcardsRef = useRef(eligibleFlashcards);
+  eligibleFlashcardsRef.current = eligibleFlashcards;
+
+  const eligibleById = useMemo(
+    () => new Map(eligibleFlashcards.map((c) => [c.id, c])),
+    [eligibleFlashcards],
+  );
+
+  /** Final Read/Cards sequence from explicit orderMode + shuffledIds. */
+  const activeStudyCards = useMemo(() => {
+    if (orderMode === "shuffle" && shuffledIds.length > 0) {
+      const cards: StudyFlashcard[] = [];
+      for (const id of shuffledIds) {
+        const card = eligibleById.get(id);
+        if (card) cards.push(card);
+      }
+      return cards;
+    }
+    return eligibleFlashcards;
+  }, [orderMode, shuffledIds, eligibleFlashcards, eligibleById]);
+
+  const activeStudyCardsRef = useRef(activeStudyCards);
+  activeStudyCardsRef.current = activeStudyCards;
+
+  const activeCards = useMemo(
+    () => (deckView === "quiz" ? eligibleFlashcards : activeStudyCards),
+    [deckView, eligibleFlashcards, activeStudyCards],
+  );
+
+  const activeCardsRef = useRef(activeCards);
+  activeCardsRef.current = activeCards;
+  const visibleCardIdRef = useRef<string | undefined>();
+
+  useEffect(() => {
+    visibleCardIdRef.current = activeCards[currentCardIndex]?.id;
+  }, [currentCardIndex, activeCards]);
+
+  useEffect(() => {
+    if (!isDev || loading || runtimeLoggedRef.current || flashcards.length === 0) {
+      return;
+    }
+    runtimeLoggedRef.current = true;
+    console.info("[study runtime]", {
+      deckId: params.deck_id,
+      componentPath: STUDY_PAGE_PATH,
+      cardCount: flashcards.length,
+      canonicalIds: canonicalIdsFor(flashcards),
+    });
+  }, [isDev, loading, flashcards, params.deck_id]);
 
   const readAutoplayCards = useMemo(
     () =>
-      flashcards.map((c) => ({
+      activeStudyCards.map((c) => ({
         id: c.id,
         question: c.question,
         answerSpeech: buildAnswerSpeechText(
@@ -135,7 +216,7 @@ export default function StudyPage({ params }: StudyPageProps) {
           c.answer_detailed
         ),
       })),
-    [flashcards]
+    [activeStudyCards]
   );
 
   const readAllAutoplay = useReadTabAutoplay({
@@ -160,8 +241,6 @@ export default function StudyPage({ params }: StudyPageProps) {
     skipToNext: skipReadAllToNext,
   } = readAllAutoplay;
 
-  const bookmarksOnlyParam = searchParams.get("bookmarks") === "1";
-
   const toggleBookmarksOnly = useCallback(() => {
     const p = new URLSearchParams(searchParams.toString());
     if (p.get("bookmarks") === "1") p.delete("bookmarks");
@@ -184,6 +263,7 @@ export default function StudyPage({ params }: StudyPageProps) {
         modeSwitchSnapshotRef.current = {
           index: cardIndexRef.current,
           flipped: showAnswerRef.current,
+          cardId: activeCardsRef.current[cardIndexRef.current]?.id,
         };
       }
       setDeckView(next);
@@ -199,7 +279,66 @@ export default function StudyPage({ params }: StudyPageProps) {
     setResumeHint(false);
   }, [params.deck_id, stopReadAll]);
 
-  const isDev = process.env.NODE_ENV === "development";
+  const changeCardOrder = useCallback(
+    (next: StudyCardOrder) => {
+      if (deckView === "quiz" || next === orderMode) return;
+      stopReadAll();
+
+      const eligible = eligibleFlashcardsRef.current;
+      const eligibleIds = canonicalIdsFor(eligible);
+      const currentIndex = cardIndexRef.current;
+      const currentId =
+        activeStudyCardsRef.current[currentIndex]?.id ??
+        eligible[currentIndex]?.id;
+
+      if (isDev) {
+        console.info("[shuffle click]", {
+          previousMode: orderMode,
+          nextMode: next,
+          currentId,
+          currentIndex,
+        });
+      }
+
+      if (next === "shuffle") {
+        const ids = buildShuffledIdsCurrentFirst(
+          eligibleIds,
+          currentId,
+          Date.now(),
+          isDev,
+        );
+        setShuffledIds(ids);
+        setOrderMode("shuffle");
+        setCurrentCardIndex(0);
+        cardIndexRef.current = 0;
+        if (isDev) {
+          console.info("[shuffle resolved]", {
+            orderMode: "shuffle",
+            canonicalIds: canonicalIdsFor(canonicalFlashcards),
+            eligibleIds,
+            shuffledIds: ids,
+            activeIds: ids,
+            currentId: ids[0],
+            currentIndex: 0,
+          });
+        }
+      } else {
+        const canonicalIdx = currentId
+          ? findCardIndexById(eligible, currentId)
+          : currentIndex;
+        setShuffledIds([]);
+        setOrderMode("original");
+        const idx =
+          canonicalIdx >= 0
+            ? canonicalIdx
+            : clampCardIndex(currentIndex, eligible.length);
+        setCurrentCardIndex(idx);
+        cardIndexRef.current = idx;
+      }
+      setShowAnswer(false);
+    },
+    [deckView, stopReadAll, orderMode, isDev, canonicalFlashcards],
+  );
 
   async function handleResetProgress() {
     const userId = getStoredUserId();
@@ -276,10 +415,27 @@ export default function StudyPage({ params }: StudyPageProps) {
     return () => window.removeEventListener("flashcard_user_changed", handleUserChanged);
   }, []);
 
+  /** Clamp index only when eligible count or quiz/cards mode changes — never on shuffle order. */
   useEffect(() => {
-    if (flashcards.length === 0) return;
-    setCurrentCardIndex((i) => Math.min(i, Math.max(0, flashcards.length - 1)));
-  }, [flashcards.length]);
+    if (eligibleFlashcards.length === 0) return;
+    const len =
+      deckView === "quiz"
+        ? eligibleFlashcards.length
+        : orderMode === "shuffle" && shuffledIds.length > 0
+          ? shuffledIds.length
+          : eligibleFlashcards.length;
+    setCurrentCardIndex((i) => {
+      const clamped = Math.min(i, Math.max(0, len - 1));
+      cardIndexRef.current = clamped;
+      return clamped;
+    });
+  }, [eligibleFlashcards.length, deckView]);
+
+  useEffect(() => {
+    setOrderMode("original");
+    setShuffledIds([]);
+    runtimeLoggedRef.current = false;
+  }, [params.deck_id, bookmarksOnlyParam]);
 
   const handleBookmarkToggle = useCallback(
     async (cardId: string, next: boolean) => {
@@ -322,7 +478,7 @@ export default function StudyPage({ params }: StudyPageProps) {
     setResumeReady(false);
     setResumeHint(false);
     setSessionComplete(false);
-  }, [params.deck_id, deckView]);
+  }, [params.deck_id, deckView, bookmarksOnlyParam]);
 
   useEffect(() => {
     setCurrentCardIndex(0);
@@ -350,7 +506,7 @@ export default function StudyPage({ params }: StudyPageProps) {
       return;
     }
 
-    if (flashcards.length === 0) {
+    if (eligibleFlashcards.length === 0) {
       setResumeReady(true);
       return;
     }
@@ -365,8 +521,19 @@ export default function StudyPage({ params }: StudyPageProps) {
     const snapshot = modeSwitchSnapshotRef.current;
     if (snapshot) {
       modeSwitchSnapshotRef.current = null;
-      const idx = clampCardIndex(snapshot.index, flashcards.length);
+      const ordered =
+        deckView === "quiz"
+          ? eligibleFlashcards
+          : activeStudyCardsRef.current;
+      const byId = snapshot.cardId
+        ? findCardIndexById(ordered, snapshot.cardId)
+        : -1;
+      const idx =
+        byId >= 0
+          ? byId
+          : clampCardIndex(snapshot.index, ordered.length);
       setCurrentCardIndex(idx);
+      cardIndexRef.current = idx;
       if (deckView === "read") {
         setShowAnswer(false);
       } else {
@@ -382,9 +549,19 @@ export default function StudyPage({ params }: StudyPageProps) {
       effectiveMode = undefined;
     }
 
+    // Shuffle persistence disabled: always restore original eligible order + position.
+    setOrderMode("original");
+    setShuffledIds([]);
+
     if (saved && effectiveMode === deckView) {
-      const idx = clampCardIndex(saved.index, flashcards.length);
+      const ordered = eligibleFlashcards;
+      const byId = saved.cardId ? findCardIndexById(ordered, saved.cardId) : -1;
+      const idx =
+        byId >= 0
+          ? byId
+          : clampCardIndex(saved.index, ordered.length);
       setCurrentCardIndex(idx);
+      cardIndexRef.current = idx;
       if (deckView === "cards" || deckView === "quiz") {
         setShowAnswer(!!saved.flipped);
       } else {
@@ -394,8 +571,9 @@ export default function StudyPage({ params }: StudyPageProps) {
         setResumeHint(true);
       }
     } else {
-      const idx = clampCardIndex(cardIndexRef.current, flashcards.length);
+      const idx = clampCardIndex(cardIndexRef.current, eligibleFlashcards.length);
       setCurrentCardIndex(idx);
+      cardIndexRef.current = idx;
       if (deckView === "read") {
         setShowAnswer(false);
       } else {
@@ -404,7 +582,7 @@ export default function StudyPage({ params }: StudyPageProps) {
     }
 
     setResumeReady(true);
-  }, [loading, flashcards.length, deckView, params.deck_id, noUserForStudy]);
+  }, [loading, eligibleFlashcards.length, deckView, params.deck_id, noUserForStudy]);
 
   useEffect(() => {
     if (!resumeHint) return;
@@ -415,13 +593,16 @@ export default function StudyPage({ params }: StudyPageProps) {
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (!resumeReady) return;
-    if (loading || flashcards.length === 0 || noUserForStudy || sessionComplete) return;
+    if (loading || eligibleFlashcards.length === 0 || noUserForStudy || sessionComplete) return;
 
+    const active = activeCardsRef.current;
     writeDeckStudyResume(params.deck_id, {
       index: currentCardIndex,
       mode: deckView,
       flipped: (deckView === "cards" || deckView === "quiz") && showAnswer,
-      cardCount: flashcards.length,
+      cardCount: active.length,
+      cardId: active[currentCardIndex]?.id,
+      cardOrder: deckView === "quiz" ? undefined : "original",
     });
   }, [
     resumeReady,
@@ -430,13 +611,14 @@ export default function StudyPage({ params }: StudyPageProps) {
     currentCardIndex,
     showAnswer,
     flashcards.length,
+    eligibleFlashcards.length,
     loading,
     noUserForStudy,
     sessionComplete,
   ]);
 
   useEffect(() => {
-    if (loading || flashcards.length === 0 || sessionComplete) return;
+    if (loading || eligibleFlashcards.length === 0 || sessionComplete) return;
     if (!userSettings.think_delay_enabled) {
       setCanFlip(true);
       return;
@@ -444,18 +626,40 @@ export default function StudyPage({ params }: StudyPageProps) {
     setCanFlip(false);
     const t = setTimeout(() => setCanFlip(true), userSettings.think_delay_ms);
     return () => clearTimeout(t);
-  }, [loading, flashcards.length, sessionComplete, currentCardIndex, userSettings.think_delay_enabled, userSettings.think_delay_ms]);
+  }, [loading, eligibleFlashcards.length, sessionComplete, currentCardIndex, userSettings.think_delay_enabled, userSettings.think_delay_ms]);
 
   const handleNext = useCallback(() => {
     stopReadAll();
     setShowAnswer(false);
-    setCurrentCardIndex((i) => Math.min(i + 1, flashcards.length - 1));
-  }, [flashcards.length, stopReadAll]);
+    setCurrentCardIndex((i) => {
+      const cards =
+        deckView === "quiz"
+          ? activeCardsRef.current
+          : activeStudyCardsRef.current;
+      const fromId = cards[i]?.id;
+      const next = studyNavigateNextIndex(i, cards.length);
+      const toId = cards[next]?.id;
+      if (isDev && orderMode === "shuffle" && deckView !== "quiz") {
+        console.info("[next runtime]", {
+          activeIds: cards.map((c) => c.id),
+          currentIndex: next,
+          fromId,
+          toId,
+        });
+      }
+      cardIndexRef.current = next;
+      return next;
+    });
+  }, [stopReadAll, isDev, orderMode, deckView]);
 
   const handlePrev = useCallback(() => {
     stopReadAll();
     setShowAnswer(false);
-    setCurrentCardIndex((i) => Math.max(i - 1, 0));
+    setCurrentCardIndex((i) => {
+      const next = studyNavigatePrevIndex(i);
+      cardIndexRef.current = next;
+      return next;
+    });
   }, [stopReadAll]);
 
   const touchStartY = useRef(0);
@@ -536,17 +740,18 @@ export default function StudyPage({ params }: StudyPageProps) {
   useEffect(() => {
     if (loading || flashcards.length === 0) return;
     const handleKeyDown = (e: KeyboardEvent) => {
+      const len = activeCardsRef.current.length;
       if (e.code === "Space") {
         e.preventDefault();
         if (deckView === "read") {
-          if (currentCardIndex < flashcards.length - 1) handleNext();
+          if (currentCardIndex < len - 1) handleNext();
         } else if (canFlip) {
           setShowAnswer((prev) => !prev);
         }
       }
       if (e.code === "ArrowRight") {
         e.preventDefault();
-        if (currentCardIndex < flashcards.length - 1) handleNext();
+        if (currentCardIndex < len - 1) handleNext();
       }
       if (e.code === "ArrowLeft") {
         e.preventDefault();
@@ -555,7 +760,7 @@ export default function StudyPage({ params }: StudyPageProps) {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [loading, flashcards.length, canFlip, handleNext, handlePrev, deckView, currentCardIndex]);
+  }, [loading, eligibleFlashcards.length, activeStudyCards.length, canFlip, handleNext, handlePrev, deckView, currentCardIndex]);
 
   if (loading) {
     return (
@@ -602,7 +807,7 @@ export default function StudyPage({ params }: StudyPageProps) {
     );
   }
 
-  if (flashcards.length === 0) {
+  if (eligibleFlashcards.length === 0) {
     return (
       <main className="min-h-screen flex flex-col pt-6 pb-8" data-study>
         <div className="max-w-4xl mx-auto w-full px-6 md:px-8 flex flex-col flex-1 justify-center gap-4">
@@ -664,9 +869,9 @@ export default function StudyPage({ params }: StudyPageProps) {
     );
   }
 
-  const card = flashcards[currentCardIndex];
+  const card = activeCards[currentCardIndex];
   const isFirst = currentCardIndex === 0;
-  const isLast = currentCardIndex === flashcards.length - 1;
+  const isLast = currentCardIndex === activeCards.length - 1;
 
   if (sessionComplete) {
     return (
@@ -801,6 +1006,12 @@ export default function StudyPage({ params }: StudyPageProps) {
                 {resumeHint && (
                   <span className="text-[11px] text-muted-foreground">Resumed where you left off</span>
                 )}
+                {deckView !== "quiz" && eligibleFlashcards.length > 1 ? (
+                  <StudyCardOrderControl
+                    value={orderMode}
+                    onChange={changeCardOrder}
+                  />
+                ) : null}
                 <button
                   type="button"
                   onClick={startFromBeginning}
@@ -924,15 +1135,15 @@ export default function StudyPage({ params }: StudyPageProps) {
                 <ReadTabReadAllBar
                   className="ms-0.5"
                   state={readAllState}
-                  disabled={flashcards.length < 1}
+                  disabled={activeStudyCards.length < 1}
                   onStart={startReadAll}
                   onPause={pauseReadAll}
                   onResume={resumeReadAll}
                   onStop={stopReadAll}
                   onSkip={skipReadAllToNext}
                   skipDisabled={
-                    flashcards.length < 2 ||
-                    currentCardIndex >= flashcards.length - 1
+                    activeStudyCards.length < 2 ||
+                    currentCardIndex >= activeStudyCards.length - 1
                   }
                 />
               </div>
@@ -995,7 +1206,7 @@ export default function StudyPage({ params }: StudyPageProps) {
                 <ChevronLeft className="size-5" />
               </Button>
               <span className="min-w-[3.5rem] text-center text-xs tabular-nums text-muted-foreground">
-                {currentCardIndex + 1} / {flashcards.length}
+                Card {currentCardIndex + 1} of {activeCards.length}
               </span>
               <Button
                 type="button"
@@ -1158,7 +1369,7 @@ export default function StudyPage({ params }: StudyPageProps) {
                 <ChevronLeft className="size-5" />
               </Button>
               <span className="min-w-[3.5rem] text-center text-xs tabular-nums text-muted-foreground">
-                {currentCardIndex + 1} / {flashcards.length}
+                Card {currentCardIndex + 1} of {activeCards.length}
               </span>
               <Button
                 type="button"

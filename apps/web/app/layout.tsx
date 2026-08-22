@@ -8,6 +8,7 @@ import { DevErrorHandler } from "@/components/dev-error-handler";
 import { SpeechSynthesisRawVoicesDev } from "@/components/speech-synthesis-raw-voices-dev";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { UNREGISTER_STALE_SERVICE_WORKERS_SCRIPT } from "@/lib/unregister-stale-service-workers";
 
 const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 
@@ -134,6 +135,9 @@ export default function RootLayout({
       <body className="antialiased bg-background text-foreground min-h-screen min-h-[100dvh] font-sans" suppressHydrationWarning>
         <Script id="theme-init" strategy="beforeInteractive">
           {themeScript}
+        </Script>
+        <Script id="unregister-stale-service-workers" strategy="beforeInteractive">
+          {UNREGISTER_STALE_SERVICE_WORKERS_SCRIPT}
         </Script>
         <DevErrorHandler />
         <AuthSessionProvider>

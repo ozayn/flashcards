@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { getBackendUrl } from "@/lib/backend-url";
+import { serverFetchBackend } from "@/lib/server-backend-fetch";
 import {
   DECK_METADATA_GENERIC_DESCRIPTION,
   DECK_METADATA_GENERIC_TITLE,
@@ -27,7 +27,7 @@ async function fetchDeckForMetadata(deckId: string): Promise<DeckMetaShape | nul
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), METADATA_FETCH_TIMEOUT_MS);
   try {
-    const res = await fetch(`${getBackendUrl()}/decks/${encodeURIComponent(deckId)}`, {
+    const res = await serverFetchBackend(`decks/${encodeURIComponent(deckId)}`, {
       signal: controller.signal,
       next: { revalidate: 60 },
     });
